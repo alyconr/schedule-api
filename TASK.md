@@ -16,7 +16,7 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 
 - [x] Inicializar backend con FastAPI.
 - [x] Configurar base de datos y conexion.
-- [ ] Crear modelos iniciales y migraciones.
+- [x] Crear modelos iniciales y migraciones.
 - [x] Definir contratos de API basicos.
 - [x] Preparar endpoints minimos para pruebas iniciales.
 

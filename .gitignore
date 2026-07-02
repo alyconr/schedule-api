@@ -23,5 +23,5 @@ coverage/
 .rapid-os/
 mcp_config.json
 skills-lock.json
-docs/
+
 opencode.jsonc

@@ -76,6 +76,14 @@ class MasterDataRoutesTest(unittest.TestCase):
         self.assertIsNotNone(EnvironmentUpdate)
         self.assertIsNotNone(TimeBlockUpdate)
 
+    def test_environment_type_rejects_invalid(self) -> None:
+        from app.schemas.master_data import EnvironmentCreate
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            EnvironmentCreate(code="X", name="Test", environment_type="invalido")
+        valid = EnvironmentCreate(code="X", name="Test", environment_type="virtual")
+        self.assertEqual(valid.environment_type, "virtual")
+
 
 if __name__ == "__main__":
     unittest.main()

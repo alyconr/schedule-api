@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.models import Instructor
+from app.models import ContractType, Instructor
 from app.schemas.master_data import InstructorCreate, InstructorUpdate
 
 
@@ -28,10 +28,8 @@ def get_instructor(instructor_id: int, session: SessionDep) -> Instructor:
 
 @router.post("", status_code=201)
 def create_instructor(payload: InstructorCreate, session: SessionDep) -> Instructor:
-    if payload.contract_type_id and not session.get(Instructor.contract_type.__class__, payload.contract_type_id):
-        from app.models import ContractType
-        if not session.get(ContractType, payload.contract_type_id):
-            raise HTTPException(422, detail="contract_type_id does not exist")
+    if payload.contract_type_id is not None and not session.get(ContractType, payload.contract_type_id):
+        raise HTTPException(422, detail="contract_type_id does not exist")
     obj = Instructor(**payload.model_dump())
     try:
         session.add(obj)
@@ -50,9 +48,7 @@ def update_instructor(
     obj = session.get(Instructor, instructor_id)
     if not obj:
         raise HTTPException(404, detail="Instructor not found")
-    if payload.contract_type_id is not None:
-        from app.models import ContractType
-        if not session.get(ContractType, payload.contract_type_id):
+    if payload.contract_type_id is not None and not session.get(ContractType, payload.contract_type_id):
             raise HTTPException(422, detail="contract_type_id does not exist")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(obj, key, value)

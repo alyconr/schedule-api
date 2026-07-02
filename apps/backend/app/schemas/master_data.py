@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -150,7 +150,7 @@ class EnvironmentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     location: Optional[str] = Field(default=None, max_length=200)
     capacity: int = Field(default=0, ge=0)
-    environment_type: str = Field(default="fisico", max_length=30)
+    environment_type: Literal["fisico", "virtual", "externo"] = "fisico"
     resources: Optional[str] = None
     notes: Optional[str] = None
 
@@ -161,7 +161,7 @@ class EnvironmentUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     location: Optional[str] = Field(default=None, max_length=200)
     capacity: Optional[int] = Field(default=None, ge=0)
-    environment_type: Optional[str] = Field(default=None, max_length=30)
+    environment_type: Optional[Literal["fisico", "virtual", "externo"]] = None
     resources: Optional[str] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None

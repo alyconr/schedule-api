@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sena_horarios}
+      POSTGRES_USER: ${POSTGRES_USER:-sena_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replace_with_strong_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sena_user} -d ${POSTGRES_DB:-sena_horarios}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./apps/backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_NAME: ${APP_NAME:-Schedule Stack API}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://sena_user:replace_with_strong_password@postgres:5432/sena_horarios}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,backend,testserver}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:

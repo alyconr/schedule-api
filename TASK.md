@@ -20,6 +20,17 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Definir contratos de API basicos.
 - [x] Preparar endpoints minimos para pruebas iniciales.
 
+## Fase 3 técnica - CRUD backend de datos maestros
+
+- [x] Implementar CRUD backend mínimo de tipos de contrato.
+- [x] Implementar CRUD backend mínimo de instructores.
+- [x] Implementar CRUD backend mínimo de programas.
+- [x] Implementar CRUD backend mínimo de competencias.
+- [x] Implementar CRUD backend mínimo de RAP.
+- [x] Implementar CRUD backend mínimo de fichas.
+- [x] Implementar CRUD backend mínimo de ambientes.
+- [x] Implementar CRUD backend mínimo de bloques horarios.
+
 ## Fase 3 - Reglas de negocio criticas
 
 - [x] Implementar validaciones iniciales de disponibilidad de instructor.

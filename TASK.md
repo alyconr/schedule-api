@@ -59,6 +59,20 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [ ] Implementar CRUD y formularios de datos maestros.
 - [ ] Aplicar sistema visual definitivo.
 
+## Fase 5 técnica - Autenticación JWT y roles
+
+- [x] Crear modelos de usuarios, roles y relación usuario-rol.
+- [x] Crear migración Alembic para autenticación.
+- [x] Implementar hash seguro de contraseñas.
+- [x] Implementar emisión y validación de JWT.
+- [x] Implementar endpoints de login y usuario actual.
+- [x] Implementar CRUD mínimo de usuarios protegido por admin.
+- [x] Implementar dependencias get_current_user y require_roles.
+- [x] Proteger endpoints de datos maestros según rol.
+- [x] Proteger endpoints de programación según rol.
+- [x] Crear mecanismo seguro para crear primer usuario administrador.
+- [x] Agregar tests mínimos de autenticación y roles.
+
 ## Fase 5 - Integracion y validacion
 
 - [ ] Probar flujos principales end-to-end.

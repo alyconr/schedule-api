@@ -17,6 +17,9 @@ class Settings:
     )
     cors_origins: tuple[str, ...] = _csv(os.getenv("CORS_ORIGINS", "http://localhost:5173"))
     trusted_hosts: tuple[str, ...] = _csv(os.getenv("TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"))
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "insecure-dev-secret-do-not-use-in-production")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
     @property
     def is_production(self) -> bool:
@@ -25,4 +28,7 @@ class Settings:
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.is_production and s.jwt_secret_key == "insecure-dev-secret-do-not-use-in-production":
+        raise RuntimeError("JWT_SECRET_KEY must be set in production")
+    return s

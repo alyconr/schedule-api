@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import (
     Competency,
@@ -174,7 +175,7 @@ def _existing_for_date(
     return list(session.exec(stmt).all())
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_schedules(
     session: SessionDep,
     instructor_id: int | None = Query(default=None),
@@ -194,7 +195,7 @@ def list_schedules(
     return list(session.exec(stmt).all())
 
 
-@router.get("/{schedule_id}")
+@router.get("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_schedule(schedule_id: int, session: SessionDep) -> Schedule:
     obj = session.get(Schedule, schedule_id)
     if not obj:
@@ -202,7 +203,7 @@ def get_schedule(schedule_id: int, session: SessionDep) -> Schedule:
     return obj
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePersistResponse:
     instructor, group, environment, learning_result, competency, program = _check_entities(session, payload)
 
@@ -266,7 +267,7 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
     )
 
 
-@router.put("/{schedule_id}")
+@router.put("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_schedule(
     schedule_id: int, payload: ScheduleUpdate, session: SessionDep
 ) -> SchedulePersistResponse:
@@ -350,7 +351,7 @@ def update_schedule(
     )
 
 
-@router.delete("/{schedule_id}")
+@router.delete("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
     obj = session.get(Schedule, schedule_id)
     if not obj:
@@ -361,6 +362,6 @@ def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
     return {"ok": True}
 
 
-@router.post("/validate", response_model=ScheduleValidationResponse)
+@router.post("/validate", response_model=ScheduleValidationResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def validate_schedule_draft(payload: ScheduleValidationRequest) -> ScheduleValidationResponse:
     return ScheduleValidationResponse(**validate_schedule(payload.model_dump()))

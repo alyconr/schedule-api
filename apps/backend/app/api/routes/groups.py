@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import Group, TrainingProgram
 from app.schemas.master_data import GroupCreate, GroupUpdate
@@ -18,12 +19,12 @@ def _validate_program(session: Session, program_id: int | None) -> None:
         raise HTTPException(422, detail="training_program_id does not exist")
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_groups(session: SessionDep) -> list[Group]:
     return list(session.exec(select(Group)).all())
 
 
-@router.get("/{group_id}")
+@router.get("/{group_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_group(group_id: int, session: SessionDep) -> Group:
     obj = session.get(Group, group_id)
     if not obj:
@@ -31,7 +32,7 @@ def get_group(group_id: int, session: SessionDep) -> Group:
     return obj
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_group(payload: GroupCreate, session: SessionDep) -> Group:
     _validate_program(session, payload.training_program_id)
     obj = Group(**payload.model_dump())
@@ -45,7 +46,7 @@ def create_group(payload: GroupCreate, session: SessionDep) -> Group:
     return obj
 
 
-@router.put("/{group_id}")
+@router.put("/{group_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_group(group_id: int, payload: GroupUpdate, session: SessionDep) -> Group:
     obj = session.get(Group, group_id)
     if not obj:
@@ -63,7 +64,7 @@ def update_group(group_id: int, payload: GroupUpdate, session: SessionDep) -> Gr
     return obj
 
 
-@router.delete("/{group_id}")
+@router.delete("/{group_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_group(group_id: int, session: SessionDep) -> dict:
     obj = session.get(Group, group_id)
     if not obj:

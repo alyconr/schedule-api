@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import Competency, TrainingProgram
 from app.schemas.master_data import CompetencyCreate, CompetencyUpdate
@@ -18,12 +19,12 @@ def _validate_program(session: Session, program_id: int | None) -> None:
         raise HTTPException(422, detail="training_program_id does not exist")
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_competencies(session: SessionDep) -> list[Competency]:
     return list(session.exec(select(Competency)).all())
 
 
-@router.get("/{competency_id}")
+@router.get("/{competency_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_competency(competency_id: int, session: SessionDep) -> Competency:
     obj = session.get(Competency, competency_id)
     if not obj:
@@ -31,7 +32,7 @@ def get_competency(competency_id: int, session: SessionDep) -> Competency:
     return obj
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_competency(payload: CompetencyCreate, session: SessionDep) -> Competency:
     _validate_program(session, payload.training_program_id)
     obj = Competency(**payload.model_dump())
@@ -45,7 +46,7 @@ def create_competency(payload: CompetencyCreate, session: SessionDep) -> Compete
     return obj
 
 
-@router.put("/{competency_id}")
+@router.put("/{competency_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_competency(
     competency_id: int, payload: CompetencyUpdate, session: SessionDep
 ) -> Competency:
@@ -65,7 +66,7 @@ def update_competency(
     return obj
 
 
-@router.delete("/{competency_id}")
+@router.delete("/{competency_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_competency(competency_id: int, session: SessionDep) -> dict:
     obj = session.get(Competency, competency_id)
     if not obj:

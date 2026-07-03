@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import Competency, LearningResult
 from app.schemas.master_data import LearningResultCreate, LearningResultUpdate
@@ -18,12 +19,12 @@ def _validate_competency(session: Session, competency_id: int | None) -> None:
         raise HTTPException(422, detail="competency_id does not exist")
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_learning_results(session: SessionDep) -> list[LearningResult]:
     return list(session.exec(select(LearningResult)).all())
 
 
-@router.get("/{lr_id}")
+@router.get("/{lr_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_learning_result(lr_id: int, session: SessionDep) -> LearningResult:
     obj = session.get(LearningResult, lr_id)
     if not obj:
@@ -31,7 +32,7 @@ def get_learning_result(lr_id: int, session: SessionDep) -> LearningResult:
     return obj
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_learning_result(payload: LearningResultCreate, session: SessionDep) -> LearningResult:
     _validate_competency(session, payload.competency_id)
     obj = LearningResult(**payload.model_dump())
@@ -45,7 +46,7 @@ def create_learning_result(payload: LearningResultCreate, session: SessionDep) -
     return obj
 
 
-@router.put("/{lr_id}")
+@router.put("/{lr_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_learning_result(
     lr_id: int, payload: LearningResultUpdate, session: SessionDep
 ) -> LearningResult:
@@ -65,7 +66,7 @@ def update_learning_result(
     return obj
 
 
-@router.delete("/{lr_id}")
+@router.delete("/{lr_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_learning_result(lr_id: int, session: SessionDep) -> dict:
     obj = session.get(LearningResult, lr_id)
     if not obj:

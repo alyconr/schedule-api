@@ -10,6 +10,7 @@ from app.models.academic import (
 )
 from app.models.schedules import Schedule, ScheduleValidation, ExceptionRequest
 from app.models.audit import AuditLog
+from app.models.auth import User, Role, UserRole
 
 __all__ = [
     "ContractType",
@@ -24,4 +25,7 @@ __all__ = [
     "ScheduleValidation",
     "ExceptionRequest",
     "AuditLog",
+    "User",
+    "Role",
+    "UserRole",
 ]

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import Environment
 from app.schemas.master_data import EnvironmentCreate, EnvironmentUpdate
@@ -13,12 +14,12 @@ router = APIRouter(prefix="/environments", tags=["environments"])
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_environments(session: SessionDep) -> list[Environment]:
     return list(session.exec(select(Environment)).all())
 
 
-@router.get("/{environment_id}")
+@router.get("/{environment_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_environment(environment_id: int, session: SessionDep) -> Environment:
     obj = session.get(Environment, environment_id)
     if not obj:
@@ -26,7 +27,7 @@ def get_environment(environment_id: int, session: SessionDep) -> Environment:
     return obj
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_environment(payload: EnvironmentCreate, session: SessionDep) -> Environment:
     obj = Environment(**payload.model_dump())
     try:
@@ -39,7 +40,7 @@ def create_environment(payload: EnvironmentCreate, session: SessionDep) -> Envir
     return obj
 
 
-@router.put("/{environment_id}")
+@router.put("/{environment_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_environment(
     environment_id: int, payload: EnvironmentUpdate, session: SessionDep
 ) -> Environment:
@@ -58,7 +59,7 @@ def update_environment(
     return obj
 
 
-@router.delete("/{environment_id}")
+@router.delete("/{environment_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_environment(environment_id: int, session: SessionDep) -> dict:
     obj = session.get(Environment, environment_id)
     if not obj:

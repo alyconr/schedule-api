@@ -9,7 +9,6 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.models import (
     Competency,
-    ContractType,
     Environment,
     Group,
     Instructor,
@@ -44,6 +43,7 @@ def _build_validation_payload(
     program: TrainingProgram | None,
     existing_schedules_raw: list[Schedule],
     session: Session,
+    exclude_id: int | None = None,
 ) -> dict:
     if isinstance(payload, ScheduleUpdate) and payload.date is not None:
         ref_date = payload.date
@@ -51,14 +51,15 @@ def _build_validation_payload(
         ref_date = payload.date
 
     monday, sunday = get_week_range(ref_date)
-    week_rows = session.exec(
-        select(Schedule).where(
-            Schedule.instructor_id == payload.instructor_id,
-            Schedule.date >= monday,
-            Schedule.date <= sunday,
-            Schedule.status != "cancelled",
-        )
-    ).all()
+    stmt = select(Schedule).where(
+        Schedule.instructor_id == payload.instructor_id,
+        Schedule.date >= monday,
+        Schedule.date <= sunday,
+        Schedule.status != "cancelled",
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Schedule.id != exclude_id)
+    week_rows = session.exec(stmt).all()
     instructor_weekly_hours = float(sum(r.duration_hours for r in week_rows))
 
     contract_type_name = instructor.contract_type.name if instructor.contract_type else ""
@@ -126,12 +127,14 @@ def _check_entities(
         raise HTTPException(404, detail="Learning result not found")
 
     program: TrainingProgram | None = None
-    if payload.training_program_id is not None:
+    if group.training_program_id is not None:
+        program = session.get(TrainingProgram, group.training_program_id)
+        if payload.training_program_id is not None and payload.training_program_id != group.training_program_id:
+            raise HTTPException(422, detail="training_program_id does not match group training program")
+    elif payload.training_program_id is not None:
         program = session.get(TrainingProgram, payload.training_program_id)
         if not program:
             raise HTTPException(404, detail="Training program not found")
-    elif group.training_program_id is not None:
-        program = session.get(TrainingProgram, group.training_program_id)
 
     competency: Competency | None = None
     if payload.competency_id is not None:
@@ -298,7 +301,8 @@ def update_schedule(
 
     existing = _existing_for_date(session, MergedPayload(), exclude_id=schedule_id)
     vpayload = _build_validation_payload(
-        MergedPayload(), instructor, group, environment, learning_result, competency, program, existing, session
+        MergedPayload(), instructor, group, environment, learning_result, competency, program, existing, session,
+        exclude_id=schedule_id,
     )
     result = validate_schedule(vpayload)
 

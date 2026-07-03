@@ -5,7 +5,10 @@ import { apiRequest } from "./api/client";
 import { LoginForm } from "./components/LoginForm";
 import { AppLayout } from "./components/AppLayout";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
+<<<<<<< Updated upstream
 import { SchedulePlanner } from "./components/SchedulePlanner";
+=======
+>>>>>>> Stashed changes
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -186,7 +189,11 @@ const resourceConfigs: Record<string, ResourceConfig> = {
 function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+<<<<<<< Updated upstream
   const [activeTab, setActiveTab] = useState("schedules");
+=======
+  const [activeTab, setActiveTab] = useState("contract-types");
+>>>>>>> Stashed changes
 
   // Validation Form state
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
@@ -312,9 +319,13 @@ function AppContent() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
     >
+<<<<<<< Updated upstream
       {activeTab === "schedules" ? (
         <SchedulePlanner currentUser={currentUser} />
       ) : activeTab === "validation" ? (
+=======
+      {activeTab === "validation" ? (
+>>>>>>> Stashed changes
         !canValidate ? (
           <div className="error-panel">
             <h3>Acceso Denegado</h3>

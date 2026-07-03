@@ -100,6 +100,7 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Manejar visualmente errores 401 y 403.
 - [x] Mantener build frontend funcionando.
 
+<<<<<<< Updated upstream
 ## Fase 7 - Frontend programación de horarios
 
 - [x] Crear tipos TypeScript para horarios y validaciones.
@@ -116,6 +117,8 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Aplicar permisos visuales por rol.
 - [x] Mantener build frontend funcionando.
 
+=======
+>>>>>>> Stashed changes
 ## Reglas de trabajo
 
 - Priorizar la simplicidad y el MVP.
@@ -123,4 +126,7 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - Consultar AGENTS.md antes de iniciar cambios importantes.
 - No empezar una funcionalidad grande sin tener un paso anterior validado.
 
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes

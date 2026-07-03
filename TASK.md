@@ -39,6 +39,18 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Validar reglas iniciales de capacidad y carga horaria.
 - [x] Asegurar que las reglas de negocio queden centralizadas y no dispersas.
 
+## Fase 4 técnica - Programación persistente
+
+- [x] Implementar CRUD backend mínimo de programación.
+- [x] Conectar creación de horarios con datos reales de base de datos.
+- [x] Validar cruces reales por instructor, ficha y ambiente.
+- [x] Calcular carga semanal real del instructor.
+- [x] Validar RAP contra programa de la ficha.
+- [x] Bloquear guardado cuando existan reglas bloqueantes.
+- [x] Guardar horarios válidos o con advertencias.
+- [x] Persistir validaciones asociadas al horario.
+- [x] Mantener compatibilidad con endpoint de validación existente.
+
 ## Fase 4 - Frontend inicial
 
 - [x] Crear estructura base de la interfaz.

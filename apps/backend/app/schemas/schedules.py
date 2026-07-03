@@ -1,4 +1,5 @@
-from datetime import date, time
+from datetime import date as date_type, time
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,7 +18,7 @@ class ExistingSchedule(BaseModel):
     group_id: str
     environment_id: str
     learning_result_id: str
-    date: date
+    date: date_type
     start_time: time
     end_time: time
     environment_type: EnvironmentType = "fisico"
@@ -31,7 +32,7 @@ class ScheduleValidationRequest(BaseModel):
     environment_id: str
     learning_result_id: str
     program_learning_result_ids: list[str] = Field(min_length=1)
-    date: date
+    date: date_type
     start_time: time
     end_time: time
     duration_hours: float = Field(gt=0)
@@ -60,4 +61,51 @@ class ScheduleValidationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: ValidationStatus
+    validations: list[ValidationResult]
+
+
+class ScheduleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instructor_id: int
+    group_id: int
+    training_program_id: int | None = None
+    competency_id: int | None = None
+    learning_result_id: int
+    environment_id: int
+    date: date_type
+    weekday: int | None = None
+    start_time: time
+    end_time: time
+    block_id: int | None = None
+    subblock_id: int | None = None
+    duration_hours: float = Field(gt=0)
+    notes: str | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instructor_id: int | None = None
+    group_id: int | None = None
+    training_program_id: int | None = None
+    competency_id: int | None = None
+    learning_result_id: int | None = None
+    environment_id: int | None = None
+    date: date_type | None = None
+    weekday: int | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    block_id: int | None = None
+    subblock_id: int | None = None
+    duration_hours: float | None = Field(default=None, gt=0)
+    notes: str | None = None
+    status: str | None = None
+
+
+class SchedulePersistResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    schedule: dict | None = None
     validations: list[ValidationResult]

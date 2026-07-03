@@ -10,7 +10,7 @@ def _csv(value: str) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     app_env: str = os.getenv("APP_ENV", "local")
-    app_name: str = os.getenv("APP_NAME", "Schedule Stack API")
+    app_name: str = os.getenv("APP_NAME", "GESTION DE HORARIOS CGMLTI API")
     database_url: str = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg://sena_user:replace_with_strong_password@localhost:5432/sena_horarios",

@@ -43,7 +43,7 @@ export function AppLayout({
       <aside className="sidebar">
         <div className="sidebar-brand">
           <p className="eyebrow">CGMLTI Bogotá</p>
-          <h2>Schedule Stack</h2>
+          <h2>GESTION DE HORARIOS CGMLTI</h2>
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (

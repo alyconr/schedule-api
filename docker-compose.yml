@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-local}
-      APP_NAME: ${APP_NAME:-Schedule Stack API}
+      APP_NAME: ${APP_NAME:-GESTION DE HORARIOS CGMLTI API}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://sena_user:replace_with_strong_password@postgres:5432/sena_horarios}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,backend,testserver}

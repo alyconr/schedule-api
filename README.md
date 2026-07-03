@@ -1,4 +1,4 @@
-# Schedule Stack
+# GESTION DE HORARIOS CGMLTI
 
 Aplicacion web para planear y validar horarios de instructores SENA CGMLTI.
 

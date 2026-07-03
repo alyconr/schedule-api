@@ -44,8 +44,9 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
+          <img className="sena-login-logo" src="/logo-sena.svg" alt="SENA" />
           <p className="eyebrow">CGMLTI Bogotá</p>
-          <h1>Schedule Stack</h1>
+          <h1>GESTION DE HORARIOS CGMLTI</h1>
           <p className="subtitle">Accede para gestionar y programar horarios</p>
         </div>
 

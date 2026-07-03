@@ -301,6 +301,9 @@ function AppContent() {
       ? "Válido"
       : "Sin validar";
 
+  const roles = currentUser?.roles || [];
+  const canValidate = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
+
   return (
     <AppLayout
       currentUser={currentUser}
@@ -309,8 +312,14 @@ function AppContent() {
       setActiveTab={setActiveTab}
     >
       {activeTab === "validation" ? (
-        <section className="workspace">
-          <header className="topbar">
+        !canValidate ? (
+          <div className="error-panel">
+            <h3>Acceso Denegado</h3>
+            <p>No tienes suficientes permisos para validar horarios.</p>
+          </div>
+        ) : (
+          <section className="workspace">
+            <header className="topbar">
             <div>
               <p className="eyebrow">Validación de Horarios</p>
               <h1>Validar Asignación</h1>
@@ -424,6 +433,7 @@ function AppContent() {
             )}
           </section>
         </section>
+      )
       ) : (
         <ResourceCrud config={resourceConfigs[activeTab]} currentUser={currentUser} />
       )}

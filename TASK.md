@@ -75,11 +75,11 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 
 ## Fase 5 - Integracion y validacion
 
-- [x] Probar flujos principales end-to-end.
+- [ ] Probar flujos principales end-to-end.
 - [x] Revisar seguridad basica en configuracion, CORS, entradas y respuestas.
-- [x] Corregir errores y ajustar reglas de negocio.
-- [x] Preparar una primera version funcional para revision.
-- [x] Documentar lo que queda pendiente para la siguiente iteracion.
+- [ ] Corregir errores y ajustar reglas de negocio.
+- [ ] Preparar una primera version funcional para revision.
+- [ ] Documentar lo que queda pendiente para la siguiente iteracion.
 
 ## Fase 6 - Frontend login y CRUD datos maestros
 

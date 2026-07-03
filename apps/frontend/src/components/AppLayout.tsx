@@ -15,6 +15,9 @@ export function AppLayout({
   setActiveTab,
   children,
 }: AppLayoutProps) {
+  const roles = currentUser.roles || [];
+  const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
+
   const menuItems = [
     { id: "contract-types", label: "Tipos de Contrato" },
     { id: "instructors", label: "Instructores" },
@@ -24,7 +27,7 @@ export function AppLayout({
     { id: "groups", label: "Fichas / Grupos" },
     { id: "environments", label: "Ambientes" },
     { id: "time-blocks", label: "Bloques Horarios" },
-    { id: "validation", label: "Validación de Horario" },
+    ...(canWrite ? [{ id: "validation", label: "Validación de Horario" }] : []),
   ];
 
   return (

@@ -56,8 +56,8 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Crear estructura base de la interfaz.
 - [x] Disenar primera pantalla operativa del flujo principal.
 - [x] Conectar pantalla inicial con la API de validacion.
-- [ ] Implementar CRUD y formularios de datos maestros.
-- [ ] Aplicar sistema visual definitivo.
+- [x] Implementar CRUD y formularios de datos maestros.
+- [x] Aplicar sistema visual definitivo.
 
 ## Fase 5 técnica - Autenticación JWT y roles
 
@@ -75,11 +75,30 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 
 ## Fase 5 - Integracion y validacion
 
-- [ ] Probar flujos principales end-to-end.
+- [x] Probar flujos principales end-to-end.
 - [x] Revisar seguridad basica en configuracion, CORS, entradas y respuestas.
-- [ ] Corregir errores y ajustar reglas de negocio.
-- [ ] Preparar una primera version funcional para revision.
-- [ ] Documentar lo que queda pendiente para la siguiente iteracion.
+- [x] Corregir errores y ajustar reglas de negocio.
+- [x] Preparar una primera version funcional para revision.
+- [x] Documentar lo que queda pendiente para la siguiente iteracion.
+
+## Fase 6 - Frontend login y CRUD datos maestros
+
+- [x] Implementar pantalla de login.
+- [x] Implementar manejo de sesión con JWT.
+- [x] Implementar cliente API con Authorization Bearer.
+- [x] Implementar consulta de usuario actual.
+- [x] Implementar layout autenticado.
+- [x] Implementar logout.
+- [x] Implementar CRUD frontend de tipos de contrato.
+- [x] Implementar CRUD frontend de instructores.
+- [x] Implementar CRUD frontend de programas.
+- [x] Implementar CRUD frontend de competencias.
+- [x] Implementar CRUD frontend de RAP.
+- [x] Implementar CRUD frontend de fichas.
+- [x] Implementar CRUD frontend de ambientes.
+- [x] Implementar CRUD frontend de bloques horarios.
+- [x] Manejar visualmente errores 401 y 403.
+- [x] Mantener build frontend funcionando.
 
 ## Reglas de trabajo
 
@@ -87,3 +106,4 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - Usar las skills del proyecto cuando aplique: ponytail, fastapi, frontend-design, security-best-practices y review/audit.
 - Consultar AGENTS.md antes de iniciar cambios importantes.
 - No empezar una funcionalidad grande sin tener un paso anterior validado.
+

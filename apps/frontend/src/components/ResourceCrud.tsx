@@ -1,0 +1,310 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData";
+import { CurrentUser } from "../types/auth";
+
+export type FieldConfig = {
+  name: string;
+  label: string;
+  type: "text" | "number" | "date" | "textarea" | "select" | "checkbox";
+  required?: boolean;
+  options?: { label: string; value: string | number }[];
+  relatedEndpoint?: string;
+  relatedDisplayField?: string;
+};
+
+export type ResourceConfig = {
+  key: string;
+  label: string;
+  endpoint: string;
+  fields: FieldConfig[];
+};
+
+interface ResourceCrudProps {
+  config: ResourceConfig;
+  currentUser: CurrentUser;
+}
+
+export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
+  const queryClient = useQueryClient();
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const roles = currentUser.roles || [];
+  const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
+  const canDelete = roles.includes("admin") || roles.includes("coordinador");
+
+  // Fetch resource data
+  const { data: items = [], isLoading, isError, error } = useQuery<any[]>({
+    queryKey: [config.endpoint],
+    queryFn: () => fetchList<any>(config.endpoint),
+  });
+
+  // Extract and fetch related endpoints
+  const relatedEndpoints = Array.from(
+    new Set(config.fields.map((f) => f.relatedEndpoint).filter(Boolean))
+  ) as string[];
+
+  const relatedQueries = useQueries({
+    queries: relatedEndpoints.map((endpoint) => ({
+      queryKey: [endpoint],
+      queryFn: () => fetchList<any>(endpoint),
+    })),
+  });
+
+  const relatedDataMap: Record<string, any[]> = {};
+  relatedEndpoints.forEach((endpoint, index) => {
+    relatedDataMap[endpoint] = relatedQueries[index]?.data || [];
+  });
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: (data: any) => createItem(config.endpoint, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      showSuccess("Registro creado correctamente.");
+      closeForm();
+    },
+    onError: (err: any) => {
+      setErrorMsg(err.message || "Error al crear el registro.");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => updateItem(config.endpoint, id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      showSuccess("Registro actualizado correctamente.");
+      closeForm();
+    },
+    onError: (err: any) => {
+      setErrorMsg(err.message || "Error al actualizar el registro.");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteItem(config.endpoint, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      showSuccess("Registro eliminado o inactivado correctamente.");
+    },
+    onError: (err: any) => {
+      setErrorMsg(err.message || "Error al eliminar el registro.");
+    },
+  });
+
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const openCreateForm = () => {
+    setEditingItem(null);
+    setErrorMsg(null);
+    setIsFormOpen(true);
+  };
+
+  const openEditForm = (item: any) => {
+    setEditingItem(item);
+    setErrorMsg(null);
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingItem(null);
+    setErrorMsg(null);
+  };
+
+  const handleDelete = (id: number) => {
+    if (window.confirm("¿Está seguro de eliminar o inactivar este registro?")) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    const formData = new FormData(e.currentTarget);
+    const payload: Record<string, any> = {};
+
+    config.fields.forEach((field) => {
+      const val = formData.get(field.name);
+
+      if (field.type === "checkbox") {
+        payload[field.name] = val === "on";
+      } else if (field.type === "number") {
+        payload[field.name] = val !== null && val !== "" ? Number(val) : null;
+      } else {
+        payload[field.name] = val !== null && val !== "" ? String(val) : null;
+      }
+    });
+
+    if (editingItem) {
+      updateMutation.mutate({ id: editingItem.id, data: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const renderFieldValue = (item: any, field: FieldConfig) => {
+    const rawVal = item[field.name];
+
+    if (field.type === "checkbox") {
+      return rawVal ? "Sí" : "No";
+    }
+
+    if (field.relatedEndpoint) {
+      const list = relatedDataMap[field.relatedEndpoint] || [];
+      const matched = list.find((x) => x.id === rawVal);
+      if (matched) {
+        return matched[field.relatedDisplayField || "name"] || rawVal;
+      }
+    }
+
+    if (field.options) {
+      const opt = field.options.find((o) => o.value === rawVal);
+      if (opt) return opt.label;
+    }
+
+    return rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+  };
+
+  return (
+    <div className="crud-section">
+      <div className="crud-header">
+        <h2>{config.label}</h2>
+        {canWrite && (
+          <button className="btn-primary" onClick={openCreateForm}>
+            Nuevo Registro
+          </button>
+        )}
+      </div>
+
+      {successMsg && <div className="toast toast-success">{successMsg}</div>}
+      {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
+
+      {isLoading ? (
+        <div className="loader">Cargando datos...</div>
+      ) : isError ? (
+        <div className="error-panel">
+          <h3>Error al cargar los datos</h3>
+          <p>{error?.toString() || "No fue posible conectar con el servidor."}</p>
+        </div>
+      ) : (
+        <div className="table-responsive">
+          <table className="crud-table">
+            <thead>
+              <tr>
+                {config.fields.map((f) => (
+                  <th key={f.name}>{f.label}</th>
+                ))}
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={config.fields.length + 1} className="text-center empty-cell">
+                    No se encontraron registros.
+                  </td>
+                </tr>
+              ) : (
+                items.map((item: any) => (
+                  <tr key={item.id}>
+                    {config.fields.map((f) => (
+                      <td key={f.name}>{renderFieldValue(item, f)}</td>
+                    ))}
+                    <td className="actions-cell">
+                      {canWrite && (
+                        <button className="btn-edit" onClick={() => openEditForm(item)}>
+                          Editar
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button className="btn-delete" onClick={() => handleDelete(item.id)}>
+                          Eliminar
+                        </button>
+                      )}
+                      {!canWrite && <span className="text-muted">Solo lectura</span>}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {isFormOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>{editingItem ? `Editar ${config.label}` : `Nuevo ${config.label}`}</h3>
+            <form onSubmit={handleFormSubmit} className="crud-form">
+              <div className="form-fields">
+                {config.fields.map((field) => {
+                  const defaultValue = editingItem ? editingItem[field.name] : "";
+
+                  return (
+                    <label key={field.name} className="form-label">
+                      {field.label} {field.required && <span className="req">*</span>}
+                      {field.type === "textarea" ? (
+                        <textarea
+                          name={field.name}
+                          defaultValue={defaultValue || ""}
+                          required={field.required}
+                        />
+                      ) : field.type === "select" ? (
+                        <select name={field.name} defaultValue={defaultValue || ""} required={field.required}>
+                          <option value="">Seleccione una opción...</option>
+                          {field.options
+                            ? field.options.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))
+                            : (relatedDataMap[field.relatedEndpoint || ""] || []).map((opt: any) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt[field.relatedDisplayField || "name"]}
+                                </option>
+                              ))}
+                        </select>
+                      ) : field.type === "checkbox" ? (
+                        <input
+                          type="checkbox"
+                          name={field.name}
+                          defaultChecked={!!defaultValue}
+                          className="form-checkbox"
+                        />
+                      ) : (
+                        <input
+                          type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+                          name={field.name}
+                          defaultValue={defaultValue ?? ""}
+                          required={field.required}
+                          step={field.type === "number" ? "any" : undefined}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn-secondary" onClick={closeForm}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {createMutation.isPending || updateMutation.isPending ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

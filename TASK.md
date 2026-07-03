@@ -100,7 +100,6 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Manejar visualmente errores 401 y 403.
 - [x] Mantener build frontend funcionando.
 
-<<<<<<< Updated upstream
 ## Fase 7 - Frontend programación de horarios
 
 - [x] Crear tipos TypeScript para horarios y validaciones.
@@ -117,8 +116,21 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Aplicar permisos visuales por rol.
 - [x] Mantener build frontend funcionando.
 
-=======
->>>>>>> Stashed changes
+## Fase 7.1 - Gestión visual de usuarios y roles
+
+- [x] Crear endpoint backend para listar roles activos.
+- [x] Registrar router de roles.
+- [x] Crear API frontend de usuarios.
+- [x] Crear tipos frontend de usuarios y roles.
+- [x] Implementar pantalla de gestión de usuarios.
+- [x] Permitir crear usuarios desde frontend.
+- [x] Permitir editar usuarios desde frontend.
+- [x] Permitir inactivar usuarios desde frontend.
+- [x] Permitir asignar roles desde frontend.
+- [x] Mostrar sección solo para administradores.
+- [x] Mantener build frontend funcionando.
+- [x] Mantener tests backend funcionando.
+
 ## Reglas de trabajo
 
 - Priorizar la simplicidad y el MVP.
@@ -126,7 +138,3 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - Consultar AGENTS.md antes de iniciar cambios importantes.
 - No empezar una funcionalidad grande sin tener un paso anterior validado.
 
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes

@@ -21,7 +21,7 @@ def main() -> None:
     engine = create_engine(settings.database_url, pool_pre_ping=True)
 
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "ChangeMe123!")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "Sena1234")
     admin_full_name = os.environ.get("ADMIN_FULL_NAME", "Administrador")
 
     if not admin_password or len(admin_password) < 8:

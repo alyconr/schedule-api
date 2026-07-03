@@ -17,12 +17,11 @@ export function AppLayout({
 }: AppLayoutProps) {
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
+  const isAdmin = roles.includes("admin");
 
   const menuItems = [
-<<<<<<< Updated upstream
+    ...(isAdmin ? [{ id: "users", label: "Usuarios" }] : []),
     { id: "schedules", label: "Programación de Horarios" },
-=======
->>>>>>> Stashed changes
     { id: "contract-types", label: "Tipos de Contrato" },
     { id: "instructors", label: "Instructores" },
     { id: "training-programs", label: "Programas de Formación" },
@@ -31,11 +30,7 @@ export function AppLayout({
     { id: "groups", label: "Fichas / Grupos" },
     { id: "environments", label: "Ambientes" },
     { id: "time-blocks", label: "Bloques Horarios" },
-<<<<<<< Updated upstream
     ...(canWrite ? [{ id: "validation", label: "Validación Manual" }] : []),
-=======
-    ...(canWrite ? [{ id: "validation", label: "Validación de Horario" }] : []),
->>>>>>> Stashed changes
   ];
 
   return (

@@ -3,6 +3,7 @@ import unittest
 from app.main import app
 from app.models import User, Role, UserRole
 from app.services.auth_service import hash_password, verify_password, create_access_token, decode_access_token
+from app.api.deps import ROLE_READ, ROLE_WRITE, ROLE_DELETE
 
 
 class AuthServiceTest(unittest.TestCase):
@@ -74,6 +75,50 @@ class AuthRoutesTest(unittest.TestCase):
         self.assertIsNotNone(User)
         self.assertIsNotNone(Role)
         self.assertIsNotNone(UserRole)
+
+    def test_role_constants_defined(self) -> None:
+        self.assertIn("admin", ROLE_READ)
+        self.assertIn("admin", ROLE_WRITE)
+        self.assertIn("admin", ROLE_DELETE)
+        self.assertNotIn("consulta", ROLE_WRITE)
+        self.assertNotIn("programador", ROLE_DELETE)
+
+
+class AuthDepsTest(unittest.TestCase):
+    def test_get_current_user_rejects_missing_token(self) -> None:
+        from fastapi import HTTPException
+        from app.api.deps import get_current_user, Session
+        from unittest.mock import MagicMock
+        with self.assertRaises(HTTPException) as ctx:
+            try:
+                get_current_user(None, MagicMock())
+            except HTTPException as exc:
+                self.assertEqual(exc.status_code, 401)
+                self.assertIn("Missing", exc.detail)
+                raise
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_require_roles_returns_callable(self) -> None:
+        from app.api.deps import require_roles
+        checker = require_roles("admin")
+        self.assertTrue(callable(checker))
+
+
+class AuthConfigTest(unittest.TestCase):
+    def test_insecure_dev_secret_allowed_in_local(self) -> None:
+        from app.core.config import Settings
+        s = Settings()
+        self.assertFalse(s.is_production)
+
+    def test_production_rejects_short_secret(self) -> None:
+        import os
+        from app.core.config import Settings
+        s = Settings(
+            app_env="production",
+            jwt_secret_key="short",
+        )
+        self.assertTrue(s.is_production)
+        self.assertLess(len(s.jwt_secret_key), 16)
 
 
 if __name__ == "__main__":

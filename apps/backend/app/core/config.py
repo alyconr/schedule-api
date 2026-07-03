@@ -29,6 +29,7 @@ class Settings:
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
-    if s.is_production and s.jwt_secret_key == "insecure-dev-secret-do-not-use-in-production":
-        raise RuntimeError("JWT_SECRET_KEY must be set in production")
+    if s.is_production:
+        if s.jwt_secret_key == "insecure-dev-secret-do-not-use-in-production" or len(s.jwt_secret_key) < 16:
+            raise RuntimeError("JWT_SECRET_KEY must be at least 16 characters and not the default in production")
     return s

@@ -30,6 +30,7 @@ def _user_to_response(user: User, session: Session) -> UserResponse:
 
 
 def _resolve_roles(session: Session, role_names: list[str]) -> list[Role]:
+    role_names = list(dict.fromkeys(role_names))
     roles = []
     for name in role_names:
         role = session.exec(select(Role).where(Role.name == name)).first()

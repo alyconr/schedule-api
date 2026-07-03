@@ -9,7 +9,7 @@ from app.models import Role, User, UserRole
 from app.services.auth_service import decode_access_token
 
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 SessionDep = Annotated[Session, Depends(get_session)]
 
 ROLE_READ = ("admin", "coordinador", "programador", "consulta")
@@ -18,9 +18,11 @@ ROLE_DELETE = ("admin", "coordinador")
 
 
 def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     session: SessionDep,
 ) -> User:
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization token")
     try:
         payload = decode_access_token(credentials.credentials)
     except ValueError:
@@ -43,9 +45,16 @@ def get_current_user(
 
 
 def get_current_user_roles(current_user: Annotated[User, Depends(get_current_user)], session: SessionDep) -> list[str]:
-    role_ids = session.exec(select(UserRole.role_id).where(UserRole.user_id == current_user.id)).all()
-    roles = session.exec(select(Role.name).where(Role.id.in_(role_ids))).all()
-    return list(roles)
+    return list(
+        session.exec(
+            select(Role.name).where(
+                Role.id.in_(
+                    select(UserRole.role_id).where(UserRole.user_id == current_user.id)
+                ),
+                Role.is_active == True,
+            )
+        ).all()
+    )
 
 
 def require_roles(*allowed_roles: str):
@@ -53,8 +62,16 @@ def require_roles(*allowed_roles: str):
         current_user: Annotated[User, Depends(get_current_user)],
         session: SessionDep,
     ) -> User:
-        role_ids = session.exec(select(UserRole.role_id).where(UserRole.user_id == current_user.id)).all()
-        user_roles = session.exec(select(Role.name).where(Role.id.in_(role_ids))).all()
+        user_roles = list(
+            session.exec(
+                select(Role.name).where(
+                    Role.id.in_(
+                        select(UserRole.role_id).where(UserRole.user_id == current_user.id)
+                    ),
+                    Role.is_active == True,
+                )
+            ).all()
+        )
         if not any(role in allowed_roles for role in user_roles):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return current_user

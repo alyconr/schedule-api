@@ -100,10 +100,27 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Manejar visualmente errores 401 y 403.
 - [x] Mantener build frontend funcionando.
 
+## Fase 7 - Frontend programación de horarios
+
+- [x] Crear tipos TypeScript para horarios y validaciones.
+- [x] Crear API frontend para schedules.
+- [x] Implementar pantalla de programación de horarios.
+- [x] Cargar instructores, fichas, ambientes, programas, competencias, RAP y bloques.
+- [x] Implementar formulario de creación de horario persistente.
+- [x] Conectar creación con POST /api/v1/schedules.
+- [x] Mostrar bloqueos y advertencias devueltas por el backend.
+- [x] Implementar listado de horarios existentes.
+- [x] Implementar filtros simples de horarios.
+- [x] Implementar edición básica de horarios.
+- [x] Implementar cancelación lógica de horarios.
+- [x] Aplicar permisos visuales por rol.
+- [x] Mantener build frontend funcionando.
+
 ## Reglas de trabajo
 
 - Priorizar la simplicidad y el MVP.
 - Usar las skills del proyecto cuando aplique: ponytail, fastapi, frontend-design, security-best-practices y review/audit.
 - Consultar AGENTS.md antes de iniciar cambios importantes.
 - No empezar una funcionalidad grande sin tener un paso anterior validado.
+
 

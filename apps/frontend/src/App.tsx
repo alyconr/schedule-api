@@ -5,6 +5,7 @@ import { apiRequest } from "./api/client";
 import { LoginForm } from "./components/LoginForm";
 import { AppLayout } from "./components/AppLayout";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
+import { SchedulePlanner } from "./components/SchedulePlanner";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -185,7 +186,7 @@ const resourceConfigs: Record<string, ResourceConfig> = {
 function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
-  const [activeTab, setActiveTab] = useState("contract-types");
+  const [activeTab, setActiveTab] = useState("schedules");
 
   // Validation Form state
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
@@ -311,7 +312,9 @@ function AppContent() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
     >
-      {activeTab === "validation" ? (
+      {activeTab === "schedules" ? (
+        <SchedulePlanner currentUser={currentUser} />
+      ) : activeTab === "validation" ? (
         !canValidate ? (
           <div className="error-panel">
             <h3>Acceso Denegado</h3>

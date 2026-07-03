@@ -19,6 +19,7 @@ export function AppLayout({
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
 
   const menuItems = [
+    { id: "schedules", label: "Programación de Horarios" },
     { id: "contract-types", label: "Tipos de Contrato" },
     { id: "instructors", label: "Instructores" },
     { id: "training-programs", label: "Programas de Formación" },
@@ -27,7 +28,7 @@ export function AppLayout({
     { id: "groups", label: "Fichas / Grupos" },
     { id: "environments", label: "Ambientes" },
     { id: "time-blocks", label: "Bloques Horarios" },
-    ...(canWrite ? [{ id: "validation", label: "Validación de Horario" }] : []),
+    ...(canWrite ? [{ id: "validation", label: "Validación Manual" }] : []),
   ];
 
   return (

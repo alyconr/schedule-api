@@ -113,7 +113,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const activeSchedules = schedules.filter((s) => s.status !== "cancelled");
 
   // Reset form helper
-  const resetForm = () => {
+  const resetForm = (keepValidation = false) => {
     setEditingSchedule(null);
     setDateVal("");
     setGroupId("");
@@ -127,9 +127,11 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
     setEndTime("");
     setDurationHours("");
     setNotes("");
-    setValidationStatus(null);
-    setValidations([]);
     setErrorMsg(null);
+    if (!keepValidation) {
+      setValidationStatus(null);
+      setValidations([]);
+    }
   };
 
   // Populate form for editing
@@ -168,7 +170,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
             ? "Horario guardado con advertencias."
             : "Horario programado exitosamente."
         );
-        resetForm();
+        resetForm(true);
       }
     },
     onError: (err: any) => {
@@ -191,7 +193,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
             ? "Horario actualizado con advertencias."
             : "Horario actualizado exitosamente."
         );
-        resetForm();
+        resetForm(true);
       }
     },
     onError: (err: any) => {
@@ -639,7 +641,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
 
                 <div className="form-actions-inline">
                   {editingSchedule && (
-                    <button type="button" className="btn-secondary" onClick={resetForm}>
+                    <button type="button" className="btn-secondary" onClick={() => resetForm()}>
                       Cancelar
                     </button>
                   )}

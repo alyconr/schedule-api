@@ -9,6 +9,7 @@ import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
 import { ImportWizard } from "./components/ImportWizard";
+import { TopicSelectionPage } from "./components/TopicSelectionPage";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -321,6 +322,8 @@ function AppContent() {
         <ImportWizard currentUser={currentUser} />
       ) : activeTab === "schedules" ? (
         <SchedulePlanner currentUser={currentUser} />
+      ) : activeTab === "topic-selection" ? (
+        <TopicSelectionPage currentUser={currentUser} />
       ) : activeTab === "validation" ? (
         !canValidate ? (
           <div className="error-panel">

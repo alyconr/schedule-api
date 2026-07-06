@@ -7,9 +7,48 @@ interface ImportWizardProps {
   currentUser: CurrentUser;
 }
 
+type ImportType = "semaforos_sena" | "semaforos_relacional" | "instructors_environments" | "groups";
+
+const importTypeHelp: Record<ImportType, string> = {
+  semaforos_sena:
+    "Usa este tipo solo para el archivo completo que contiene LISTA_INSTRUCTORES_AMBIENTES y FICHAS.",
+  semaforos_relacional:
+    "Usa este tipo para archivos normalizados RA/Tematicas o para reconstruir relaciones por trimestre y color.",
+  instructors_environments:
+    "Usa este tipo para cargar unicamente instructores y ambientes desde LISTA_INSTRUCTORES_AMBIENTES.",
+  groups: "Usa este tipo para cargar unicamente fichas/grupos desde la hoja FICHAS.",
+};
+
+function guessImportTypeFromFileName(fileName: string): ImportType {
+  const normalized = fileName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (
+    normalized.includes("ra_tematic") ||
+    normalized.includes("tematica") ||
+    normalized.includes("tematicas") ||
+    normalized.includes("relacional") ||
+    normalized.includes("oferta_abierta")
+  ) {
+    return "semaforos_relacional";
+  }
+
+  if (normalized.includes("instructor") || normalized.includes("ambiente")) {
+    return "instructors_environments";
+  }
+
+  if (normalized.includes("ficha") || normalized.includes("grupo")) {
+    return "groups";
+  }
+
+  return "semaforos_sena";
+}
+
 export function ImportWizard({ currentUser }: ImportWizardProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [importType, setImportType] = useState<string>("semaforos_sena");
+  const [importType, setImportType] = useState<ImportType>("semaforos_sena");
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -31,7 +70,9 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      setImportType(guessImportTypeFromFileName(selectedFile.name));
       setPreview(null);
       setResult(null);
       setErrorMsg(null);
@@ -113,12 +154,12 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       case "learning_results":
         return "Resultados de Aprendizaje (RAP)";
       case "topics":
-        return "Tematicas";
+        return "Temáticas";
       case "color_groups":
         return "Grupos por Color";
       case "ra_topic_relations":
       case "learning_result_topics":
-        return "Relaciones RA-Tematica";
+        return "Relaciones RA-Temática";
       case "contract_types":
         return "Tipos de Contrato";
       case "programs":
@@ -147,12 +188,13 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
           <div className="form-row">
             <label>
               Tipo de Carga
-              <select value={importType} onChange={(e) => setImportType(e.target.value)}>
+              <select value={importType} onChange={(e) => setImportType(e.target.value as ImportType)}>
                 <option value="semaforos_sena">Semáforos Completos (.xlsx)</option>
                 <option value="semaforos_relacional">Semáforos RA / Temáticas (.xlsx)</option>
                 <option value="instructors_environments">Instructores y Ambientes (.xlsx)</option>
                 <option value="groups">Fichas / Grupos (.xlsx)</option>
               </select>
+              <small className="field-help">{importTypeHelp[importType]}</small>
             </label>
 
             <label>

@@ -130,6 +130,25 @@ Orientar el desarrollo del proyecto paso a paso desde la inicializacion hasta la
 - [x] Mostrar sección solo para administradores.
 - [x] Mantener build frontend funcionando.
 - [x] Mantener tests backend funcionando.
+- [x] Mantener build frontend funcionando.
+
+## Fase 8 - Importador Excel/CSV
+
+- [x] Crear schemas backend para importaciones.
+- [x] Crear servicio backend de importación.
+- [x] Implementar preview de archivo Excel/CSV.
+- [x] Implementar commit de importación.
+- [x] Soportar hoja LISTA_INSTRUCTORES_AMBIENTES.
+- [x] Soportar hoja FICHAS.
+- [x] Implementar preview básico de hojas de semáforo.
+- [x] Validar campos obligatorios, duplicados, fechas y relaciones.
+- [x] Proteger endpoints por rol.
+- [x] Crear API frontend de importaciones.
+- [x] Crear pantalla de Carga Masiva.
+- [x] Mostrar resumen, warnings y errores.
+- [x] Confirmar importación desde frontend.
+- [x] Mantener tests backend funcionando.
+- [x] Mantener build frontend funcionando.
 
 ## Reglas de trabajo
 

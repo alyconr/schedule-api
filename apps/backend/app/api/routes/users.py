@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import require_roles
+from app.api.deps import require_roles, CurrentUserDep
 from app.db import get_session
 from app.models import Role, User, UserRole
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
@@ -77,7 +77,15 @@ def create_user(payload: UserCreate, session: SessionDep) -> UserResponse:
 
 
 @router.put("/{user_id}")
-def update_user(user_id: int, payload: UserUpdate, session: SessionDep) -> UserResponse:
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> UserResponse:
+    if user_id == current_user.id and payload.roles is not None and "admin" not in payload.roles:
+        raise HTTPException(422, detail="You cannot remove your own admin role")
+
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, detail="User not found")
@@ -110,7 +118,14 @@ def update_user(user_id: int, payload: UserUpdate, session: SessionDep) -> UserR
 
 
 @router.delete("/{user_id}")
-def delete_user(user_id: int, session: SessionDep) -> dict:
+def delete_user(
+    user_id: int,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> dict:
+    if user_id == current_user.id:
+        raise HTTPException(422, detail="You cannot deactivate your own user")
+
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, detail="User not found")

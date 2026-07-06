@@ -121,5 +121,39 @@ class AuthConfigTest(unittest.TestCase):
         self.assertLess(len(s.jwt_secret_key), 16)
 
 
+class UserManagementSecurityTest(unittest.TestCase):
+    def test_cannot_deactivate_self(self) -> None:
+        from fastapi import HTTPException
+        from app.api.routes.users import delete_user
+        from app.models import User
+        from unittest.mock import MagicMock
+        
+        current_user = User(id=1, email="admin@example.com", full_name="Admin", is_active=True)
+        session = MagicMock()
+        
+        with self.assertRaises(HTTPException) as ctx:
+            delete_user(user_id=1, session=session, current_user=current_user)
+        
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertIn("cannot deactivate your own user", ctx.exception.detail)
+
+    def test_cannot_remove_own_admin_role(self) -> None:
+        from fastapi import HTTPException
+        from app.api.routes.users import update_user
+        from app.models import User
+        from app.schemas.auth import UserUpdate
+        from unittest.mock import MagicMock
+        
+        current_user = User(id=1, email="admin@example.com", full_name="Admin", is_active=True)
+        session = MagicMock()
+        payload = UserUpdate(roles=["coordinador"]) # no admin role
+        
+        with self.assertRaises(HTTPException) as ctx:
+            update_user(user_id=1, payload=payload, session=session, current_user=current_user)
+            
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertIn("cannot remove your own admin role", ctx.exception.detail)
+
+
 if __name__ == "__main__":
     unittest.main()

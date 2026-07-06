@@ -107,6 +107,10 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   };
 
   const handleRoleToggle = (roleName: string) => {
+    if (editingUser && editingUser.id === currentUser.id && roleName === "admin") {
+      setErrorMsg("No puedes quitarte tu propio rol de administrador.");
+      return;
+    }
     setSelectedRoles((prev) =>
       prev.includes(roleName)
         ? prev.filter((r) => r !== roleName)
@@ -126,6 +130,11 @@ export function UserManagement({ currentUser }: UserManagementProps) {
 
     if (selectedRoles.length === 0) {
       setErrorMsg("Debe seleccionar al menos un rol para el usuario.");
+      return;
+    }
+
+    if (editingUser && editingUser.id === currentUser.id && !selectedRoles.includes("admin")) {
+      setErrorMsg("No puedes quitarte tu propio rol de administrador.");
       return;
     }
 
@@ -200,14 +209,14 @@ export function UserManagement({ currentUser }: UserManagementProps) {
         </div>
       ) : (
         <div className="table-responsive">
-          <table className="table">
+          <table className="crud-table">
             <thead>
               <tr>
                 <th>Nombre</th>
                 <th>Email</th>
                 <th>Roles</th>
                 <th>Estado</th>
-                <th className="text-right">Acciones</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -233,7 +242,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                       {user.is_active ? "Activo" : "Inactivo"}
                     </span>
                   </td>
-                  <td className="text-right actions-cell">
+                  <td className="actions-cell">
                     <button
                       className="btn-edit"
                       onClick={() => openEditForm(user)}
@@ -241,7 +250,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                     >
                       Editar
                     </button>
-                    {user.is_active && (
+                    {user.is_active && user.id !== currentUser.id && (
                       <button
                         className="btn-delete"
                         onClick={() => handleDeactivate(user)}
@@ -322,6 +331,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                           type="checkbox"
                           checked={selectedRoles.includes(role.name)}
                           onChange={() => handleRoleToggle(role.name)}
+                          disabled={editingUser?.id === currentUser.id && role.name === "admin"}
                         />
                         <div className="role-details">
                           <strong>{role.name.toUpperCase()}</strong>
@@ -336,6 +346,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                             type="checkbox"
                             checked={selectedRoles.includes(roleName)}
                             onChange={() => handleRoleToggle(roleName)}
+                            disabled={editingUser?.id === currentUser.id && roleName === "admin"}
                           />
                           <div className="role-details">
                             <strong>{roleName.toUpperCase()}</strong>

@@ -5,3 +5,5 @@ psycopg[binary]>=3.3,<4
 alembic>=1.17,<2
 PyJWT>=2.10,<3
 pwdlib[argon2]>=0.2,<1
+openpyxl>=3.1,<4
+python-multipart>=0.0.20

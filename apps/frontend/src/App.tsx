@@ -7,6 +7,7 @@ import { AppLayout } from "./components/AppLayout";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
+import { ImportWizard } from "./components/ImportWizard";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -315,6 +316,8 @@ function AppContent() {
     >
       {activeTab === "users" ? (
         <UserManagement currentUser={currentUser} />
+      ) : activeTab === "imports" ? (
+        <ImportWizard currentUser={currentUser} />
       ) : activeTab === "schedules" ? (
         <SchedulePlanner currentUser={currentUser} />
       ) : activeTab === "validation" ? (

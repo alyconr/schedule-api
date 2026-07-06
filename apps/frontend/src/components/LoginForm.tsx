@@ -42,41 +42,46 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
 
   return (
     <div className="login-container">
+      <div className="login-bg-shapes" aria-hidden="true" />
       <div className="login-card">
         <div className="login-header">
           <img className="sena-login-logo" src="/logo-sena.svg" alt="SENA" />
-          <p className="eyebrow">CGMLTI Bogotá</p>
-          <h1>GESTION DE HORARIOS CGMLTI</h1>
-          <p className="subtitle">Accede para gestionar y programar horarios</p>
+          <p className="login-eyebrow">CGMLTI Bogotá</p>
+          <h1 className="login-title">Gestión de Horarios</h1>
+          <p className="login-subtitle">Accede para programar y consultar la asignación académica</p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="login-form">
-          <label>
-            Correo Institucional
+        <form onSubmit={handleSubmit(onSubmit)} className="login-form" noValidate>
+          <div className="login-field">
+            <label htmlFor="login-email">Correo Institucional</label>
             <input
+              id="login-email"
               type="email"
               placeholder="ejemplo@sena.edu.co"
               {...register("email")}
               className={errors.email ? "input-error" : ""}
+              autoComplete="email"
             />
-            {errors.email && <span className="error-message">{errors.email.message}</span>}
-          </label>
+            {errors.email && <span className="field-error">{errors.email.message}</span>}
+          </div>
 
-          <label>
-            Contraseña
+          <div className="login-field">
+            <label htmlFor="login-password">Contraseña</label>
             <input
+              id="login-password"
               type="password"
-              placeholder="••••••••"
+              placeholder="Ingrese su contraseña"
               {...register("password")}
               className={errors.password ? "input-error" : ""}
+              autoComplete="current-password"
             />
-            {errors.password && <span className="error-message">{errors.password.message}</span>}
-          </label>
+            {errors.password && <span className="field-error">{errors.password.message}</span>}
+          </div>
 
-          {apiError && <p className="form-error">{apiError}</p>}
+          {apiError && <div className="login-api-error">{apiError}</div>}
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+          <button type="submit" className="login-submit" disabled={loading}>
+            {loading ? "Iniciando sesión…" : "Iniciar Sesión"}
           </button>
         </form>
       </div>

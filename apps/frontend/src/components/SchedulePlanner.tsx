@@ -22,6 +22,8 @@ import {
   ValidationResult,
 } from "../types/schedules";
 import { CurrentUser } from "../types/auth";
+import { useToast } from "./ToastProvider";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
@@ -81,10 +83,12 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [notes, setNotes] = useState("");
 
   // Feedback states
+  const { addToast } = useToast();
   const [validationStatus, setValidationStatus] = useState<string | null>(null);
   const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
+  const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
 
   // 1. Fetch Master Data
   const masterQueries = useQueries({
@@ -205,7 +209,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
     setNotes(sch.notes || "");
   };
 
-  // Mutations
+// Mutations
   const createMutation = useMutation({
     mutationFn: createSchedule,
     onSuccess: (res) => {
@@ -216,7 +220,8 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
         setErrorMsg("Error: La programación está bloqueada por reglas del negocio.");
       } else {
         queryClient.invalidateQueries({ queryKey: ["schedules"] });
-        showSuccess(
+        addToast(
+          "success",
           res.status === "warning"
             ? "Horario guardado con advertencias."
             : "Horario programado exitosamente."
@@ -239,7 +244,8 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
         setErrorMsg("Error: La actualización está bloqueada por reglas de negocio.");
       } else {
         queryClient.invalidateQueries({ queryKey: ["schedules"] });
-        showSuccess(
+        addToast(
+          "success",
           res.status === "warning"
             ? "Horario actualizado con advertencias."
             : "Horario actualizado exitosamente."
@@ -252,21 +258,16 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
     },
   });
 
-  const deleteMutation = useMutation({
+const deleteMutation = useMutation({
     mutationFn: cancelSchedule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
-      showSuccess("Horario cancelado correctamente (borrado lógico).");
+      addToast("success", "Horario cancelado correctamente.");
     },
     onError: (err: any) => {
-      setErrorMsg(err.message || "Error al cancelar el horario.");
+      addToast("error", err.message || "Error al cancelar el horario.");
     },
   });
-
-  const showSuccess = (msg: string) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  };
 
   // Event handlers
   const handleFichaChange = (id: number) => {
@@ -328,9 +329,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   };
 
   const handleCancelClick = (id: number) => {
-    if (window.confirm("¿Seguro que deseas cancelar este horario?")) {
-      deleteMutation.mutate(id);
-    }
+    setConfirmCancelId(id);
   };
 
   const handleFormSubmit = (e: FormEvent) => {
@@ -402,7 +401,6 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
         </div>
       </div>
 
-      {successMsg && <div className="toast toast-success">{successMsg}</div>}
       {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
 
       {/* 2. Filter panel */}
@@ -476,6 +474,11 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                     <h3>Vista semanal de programación</h3>
                   </div>
                   <span className="week-view-count">{activeSchedules.length} horarios</span>
+                  {activeSchedules.length > 0 && (
+                    <button className="btn-secondary" style={{ marginLeft: 12 }} onClick={() => setShowFullscreenMatrix(true)} type="button">
+                      Ampliar matriz
+                    </button>
+                  )}
                 </div>
                 <div className="week-grid" role="list">
                   {schedulesByWeekday.map((day) => (
@@ -836,6 +839,67 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
           </div>
         )}
       </div>
+
+      {/* Fullscreen matrix modal */}
+      {showFullscreenMatrix && (
+        <div className="modal-overlay fullscreen-matrix" role="dialog" aria-modal="true" aria-labelledby="matrix-title">
+          <div className="fullscreen-matrix-content">
+            <div className="fullscreen-matrix-header">
+              <div>
+                <span className="eyebrow">Matriz académica</span>
+                <h3 id="matrix-title">Matriz semanal de programación</h3>
+              </div>
+              <button className="btn-secondary" onClick={() => setShowFullscreenMatrix(false)} aria-label="Cerrar matriz">Cerrar</button>
+            </div>
+            <div className="fullscreen-week-grid">
+              {schedulesByWeekday.map((day) => (
+                <div className="week-day-column" key={day.index}>
+                  <div className="week-day-heading">
+                    <strong>{day.label}</strong>
+                    <span>{day.schedules.length}</span>
+                  </div>
+                  <div className="week-day-body">
+                    {day.schedules.length === 0 ? (
+                      <p className="week-empty">Sin programación</p>
+                    ) : (
+                      day.schedules.map((sch) => {
+                        const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
+                        return (
+                          <button
+                            className={`week-schedule-card ${statusClass}`}
+                            disabled={!canWrite}
+                            key={sch.id}
+                            onClick={() => { setShowFullscreenMatrix(false); handleEditInit(sch); }}
+                            title={canWrite ? "Editar horario" : "Modo consulta"}
+                            type="button"
+                          >
+                            <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
+                            <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
+                            <span>Ficha {group ? group.code : sch.group_id}</span>
+                            <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
+                            {rap?.code && <span className="week-rap">{rap.code}</span>}
+                            <small>{statusName}</small>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmCancelId !== null}
+        title="Cancelar horario"
+        message="¿Seguro que deseas cancelar este horario?"
+        confirmLabel="Cancelar horario"
+        confirmDanger
+        onConfirm={() => { if (confirmCancelId) { deleteMutation.mutate(confirmCancelId); setConfirmCancelId(null); } }}
+        onCancel={() => setConfirmCancelId(null)}
+      />
     </div>
   );
 }

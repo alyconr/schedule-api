@@ -4,6 +4,7 @@ import { getMe } from "./api/auth";
 import { apiRequest } from "./api/client";
 import { LoginForm } from "./components/LoginForm";
 import { AppLayout } from "./components/AppLayout";
+import { ToastProvider } from "./components/ToastProvider";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
@@ -453,7 +454,9 @@ function AppContent() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

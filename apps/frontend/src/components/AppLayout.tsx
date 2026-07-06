@@ -88,6 +88,7 @@ export function AppLayout({
           <button
             className="btn-toggle-sidebar"
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            aria-label={isSidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
             title={isSidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
           >
             <svg

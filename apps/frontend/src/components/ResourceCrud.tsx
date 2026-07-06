@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData";
 import { CurrentUser } from "../types/auth";
+import { useToast } from "./ToastProvider";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export type FieldConfig = {
   name: string;
@@ -42,11 +44,12 @@ function getFieldValue(item: any, field: FieldConfig, relatedDataMap: Record<str
 
 export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
 
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
@@ -88,7 +91,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     mutationFn: (data: any) => createItem(config.endpoint, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.endpoint] });
-      showSuccess("Registro creado correctamente.");
+      addToast("success", "Registro creado correctamente.");
       closeForm();
     },
     onError: (err: any) => {
@@ -100,7 +103,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     mutationFn: ({ id, data }: { id: number; data: any }) => updateItem(config.endpoint, id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.endpoint] });
-      showSuccess("Registro actualizado correctamente.");
+      addToast("success", "Registro actualizado correctamente.");
       closeForm();
     },
     onError: (err: any) => {
@@ -112,17 +115,12 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     mutationFn: (id: number) => deleteItem(config.endpoint, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.endpoint] });
-      showSuccess("Registro eliminado o inactivado correctamente.");
+      addToast("success", "Registro eliminado o inactivado correctamente.");
     },
     onError: (err: any) => {
-      setErrorMsg(err.message || "Error al eliminar el registro.");
+      addToast("error", err.message || "Error al eliminar el registro.");
     },
   });
-
-  const showSuccess = (msg: string) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  };
 
   const openCreateForm = () => {
     setEditingItem(null);
@@ -142,9 +140,14 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     setErrorMsg(null);
   };
 
-  const handleDelete = (id: number) => {
-    if (window.confirm("¿Está seguro de eliminar o inactivar este registro?")) {
-      deleteMutation.mutate(id);
+  const handleDelete = (item: any) => {
+    setConfirmDelete(item);
+  };
+
+  const confirmDeleteAction = () => {
+    if (confirmDelete) {
+      deleteMutation.mutate(confirmDelete.id);
+      setConfirmDelete(null);
     }
   };
 
@@ -192,7 +195,6 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         )}
       </div>
 
-      {successMsg && <div className="toast toast-success">{successMsg}</div>}
       {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
 
       <div className="crud-toolbar">
@@ -256,7 +258,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                         </button>
                       )}
                       {canDelete && (
-                        <button className="btn-delete" onClick={() => handleDelete(item.id)}>
+                        <button className="btn-delete" onClick={() => handleDelete(item)}>
                           Eliminar
                         </button>
                       )}
@@ -271,9 +273,9 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
       )}
 
       {isFormOpen && (
-        <div className="modal-overlay">
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="crud-modal-title">
           <div className="modal-content">
-            <h3>{editingItem ? `Editar ${config.label}` : `Nuevo ${config.label}`}</h3>
+            <h3 id="crud-modal-title">{editingItem ? `Editar ${config.label}` : `Nuevo ${config.label}`}</h3>
             <form onSubmit={handleFormSubmit} className="crud-form">
               <div className="form-fields">
                 {config.fields.map((field) => {
@@ -336,6 +338,16 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Eliminar registro"
+        message={`¿Está seguro de eliminar o inactivar "${confirmDelete ? (confirmDelete.name || confirmDelete.code || confirmDelete.id) : ""}"?`}
+        confirmLabel="Eliminar"
+        confirmDanger
+        onConfirm={confirmDeleteAction}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }

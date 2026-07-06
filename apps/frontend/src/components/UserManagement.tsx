@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchUsers, createUser, updateUser, deactivateUser, fetchRoles } from "../api/users";
 import { User, UserCreate, UserUpdate, Role, CurrentUser } from "../types/auth";
+import { useToast } from "./ToastProvider";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface UserManagementProps {
   currentUser: CurrentUser;
@@ -9,10 +11,11 @@ interface UserManagementProps {
 
 export function UserManagement({ currentUser }: UserManagementProps) {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<User | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,7 +41,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     mutationFn: (data: UserCreate) => createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
-      showSuccess("Usuario creado correctamente.");
+      addToast("success", "Usuario creado correctamente.");
       closeForm();
     },
     onError: (err: any) => {
@@ -50,7 +53,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     mutationFn: ({ id, data }: { id: number; data: UserUpdate }) => updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
-      showSuccess("Usuario actualizado correctamente.");
+      addToast("success", "Usuario actualizado correctamente.");
       closeForm();
     },
     onError: (err: any) => {
@@ -62,17 +65,12 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     mutationFn: (id: number) => deactivateUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
-      showSuccess("Usuario inactivado correctamente.");
+      addToast("success", "Usuario inactivado correctamente.");
     },
     onError: (err: any) => {
-      setErrorMsg(err.message || "Error al inactivar el usuario.");
+      addToast("error", err.message || "Error al inactivar el usuario.");
     },
   });
-
-  const showSuccess = (msg: string) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  };
 
   const openCreateForm = () => {
     setEditingUser(null);
@@ -151,9 +149,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   };
 
   const handleDeactivate = (user: User) => {
-    if (window.confirm(`¿Está seguro de que desea inactivar al usuario "${user.full_name}"?`)) {
-      deactivateMutation.mutate(user.id);
-    }
+    setConfirmDeactivate(user);
   };
 
   if (!isAdmin) {
@@ -175,7 +171,6 @@ export function UserManagement({ currentUser }: UserManagementProps) {
         <button className="btn-primary" onClick={openCreateForm}>+ Nuevo Usuario</button>
       </div>
 
-      {successMsg && <div className="toast toast-success">{successMsg}</div>}
       {errorMsg && !isFormOpen && <div className="toast toast-error">{errorMsg}</div>}
 
       {isLoadingUsers ? (
@@ -237,9 +232,9 @@ export function UserManagement({ currentUser }: UserManagementProps) {
       )}
 
       {isFormOpen && (
-        <div className="modal-overlay">
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
           <div className="modal-content">
-            <h3>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</h3>
+            <h3 id="user-modal-title">{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</h3>
             {errorMsg && <div className="toast toast-error" style={{ marginBottom: 16 }}>{errorMsg}</div>}
 
             <form onSubmit={handleSubmit} className="crud-form">
@@ -305,6 +300,16 @@ export function UserManagement({ currentUser }: UserManagementProps) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeactivate !== null}
+        title="Inactivar usuario"
+        message={confirmDeactivate ? `¿Está seguro de que desea inactivar al usuario "${confirmDeactivate.full_name}"?` : ""}
+        confirmLabel="Inactivar"
+        confirmDanger
+        onConfirm={() => { if (confirmDeactivate) { deactivateMutation.mutate(confirmDeactivate.id); setConfirmDeactivate(null); } }}
+        onCancel={() => setConfirmDeactivate(null)}
+      />
     </div>
   );
 }

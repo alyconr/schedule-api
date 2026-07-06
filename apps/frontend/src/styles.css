@@ -894,6 +894,128 @@ textarea {
   .tab-pane {
     padding: 16px;
   }
+.schedule-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- CRUD SEARCH, TOOLBAR & IMPROVEMENTS --- */
+.crud-header {
+  align-items: flex-start;
+}
+
+.crud-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crud-header-text h2 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.crud-subtitle {
+  margin: 0;
+  color: #5f7166;
+  font-size: 0.92rem;
+}
+
+.crud-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.crud-search {
+  flex: 1;
+  max-width: 380px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  font-size: 0.9rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.crud-search:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(39, 122, 72, 0.12);
+}
+
+.crud-count {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cell-default {
+  max-width: 220px;
+}
+
+.cell-textarea {
+  max-width: 280px;
+}
+
+.cell-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* --- RESPONSIVENESS --- */
+@media (max-width: 1024px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 16px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+  }
+  .sidebar.collapsed {
+    display: none;
+  }
+  .sidebar-inner {
+    width: 100%;
+    min-width: 0;
+  }
+  .sidebar-brand {
+    max-width: 520px;
+  }
+  .sidebar-nav {
+    gap: 14px;
+  }
+  .nav-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .nav-section-title {
+    flex: 0 0 100%;
+  }
+  .nav-btn {
+    width: auto;
+  }
+  .main-content,
+  .sidebar.collapsed + .main-content {
+    width: 100%;
+    margin-left: 0;
+  }
+  .main-header {
+    padding: 0 16px;
+  }
+  .tab-pane {
+    padding: 16px;
+  }
   .schedule-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -913,8 +1035,6 @@ textarea {
     grid-template-columns: repeat(6, minmax(170px, 1fr));
   }
 }
-
-@media (max-width: 768px) {
   .main-header {
     height: auto;
     min-height: 0;

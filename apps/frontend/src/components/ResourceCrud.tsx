@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData";
 import { CurrentUser } from "../types/auth";
@@ -25,24 +25,38 @@ interface ResourceCrudProps {
   currentUser: CurrentUser;
 }
 
+function getFieldValue(item: any, field: FieldConfig, relatedDataMap: Record<string, any[]>): string {
+  const rawVal = item[field.name];
+  if (field.type === "checkbox") return rawVal ? "Sí" : "No";
+  if (field.relatedEndpoint) {
+    const list = relatedDataMap[field.relatedEndpoint] || [];
+    const matched = list.find((x) => x.id === rawVal);
+    if (matched) return String(matched[field.relatedDisplayField || "name"] || "");
+  }
+  if (field.options) {
+    const opt = field.options.find((o) => o.value === rawVal);
+    if (opt) return opt.label;
+  }
+  return rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+}
+
 export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const queryClient = useQueryClient();
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const canDelete = roles.includes("admin") || roles.includes("coordinador");
 
-  // Fetch resource data
   const { data: items = [], isLoading, isError, error } = useQuery<any[]>({
     queryKey: [config.endpoint],
     queryFn: () => fetchList<any>(config.endpoint),
   });
 
-  // Extract and fetch related endpoints
   const relatedEndpoints = Array.from(
     new Set(config.fields.map((f) => f.relatedEndpoint).filter(Boolean))
   ) as string[];
@@ -59,7 +73,17 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     relatedDataMap[endpoint] = relatedQueries[index]?.data || [];
   });
 
-  // Mutations
+  const filteredItems = useMemo(() => {
+    if (!searchTerm.trim()) return items;
+    const term = searchTerm.toLowerCase();
+    return items.filter((item: any) =>
+      config.fields.some((f) => {
+        const val = getFieldValue(item, f, relatedDataMap);
+        return val.toLowerCase().includes(term);
+      })
+    );
+  }, [items, searchTerm, config.fields, relatedDataMap]);
+
   const createMutation = useMutation({
     mutationFn: (data: any) => createItem(config.endpoint, data),
     onSuccess: () => {
@@ -151,32 +175,16 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   };
 
   const renderFieldValue = (item: any, field: FieldConfig) => {
-    const rawVal = item[field.name];
-
-    if (field.type === "checkbox") {
-      return rawVal ? "Sí" : "No";
-    }
-
-    if (field.relatedEndpoint) {
-      const list = relatedDataMap[field.relatedEndpoint] || [];
-      const matched = list.find((x) => x.id === rawVal);
-      if (matched) {
-        return matched[field.relatedDisplayField || "name"] || rawVal;
-      }
-    }
-
-    if (field.options) {
-      const opt = field.options.find((o) => o.value === rawVal);
-      if (opt) return opt.label;
-    }
-
-    return rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+    return getFieldValue(item, field, relatedDataMap);
   };
 
   return (
     <div className="crud-section">
       <div className="crud-header">
-        <h2>{config.label}</h2>
+        <div className="crud-header-text">
+          <h2>{config.label}</h2>
+          <p className="crud-subtitle">Administra la información base usada para la programación académica.</p>
+        </div>
         {canWrite && (
           <button className="btn-primary" onClick={openCreateForm}>
             Nuevo Registro
@@ -186,6 +194,19 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
 
       {successMsg && <div className="toast toast-success">{successMsg}</div>}
       {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
+
+      <div className="crud-toolbar">
+        <input
+          className="crud-search"
+          type="text"
+          placeholder="Buscar registros..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <span className="crud-count">
+          Mostrando {filteredItems.length} de {items.length} registros
+        </span>
+      </div>
 
       {isLoading ? (
         <div className="loader">Cargando datos...</div>
@@ -209,14 +230,24 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
               {items.length === 0 ? (
                 <tr>
                   <td colSpan={config.fields.length + 1} className="text-center empty-cell">
-                    No se encontraron registros.
+                    <strong>Aún no hay registros para este módulo.</strong>
+                    <span>Utilice el botón "Nuevo Registro" para agregar el primero.</span>
+                  </td>
+                </tr>
+              ) : filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={config.fields.length + 1} className="text-center empty-cell">
+                    <strong>No se encontraron registros con ese criterio.</strong>
+                    <span>Intente con otro término de búsqueda.</span>
                   </td>
                 </tr>
               ) : (
-                items.map((item: any) => (
+                filteredItems.map((item: any) => (
                   <tr key={item.id}>
                     {config.fields.map((f) => (
-                      <td key={f.name}>{renderFieldValue(item, f)}</td>
+                      <td key={f.name} className={f.type === "textarea" ? "cell-textarea" : "cell-default"}>
+                        <span className="cell-text">{renderFieldValue(item, f)}</span>
+                      </td>
                     ))}
                     <td className="actions-cell">
                       {canWrite && (

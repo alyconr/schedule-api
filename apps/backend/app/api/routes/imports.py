@@ -39,7 +39,7 @@ async def preview_import(
         raise HTTPException(status_code=400, detail="El archivo excede el tamaño límite de 10 MB.")
         
     # Validate import_type
-    allowed_types = ["semaforos_sena", "instructors_environments", "groups"]
+    allowed_types = ["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
     if import_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
         
@@ -72,7 +72,7 @@ async def commit_import(
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
         
     # Validate import_type
-    allowed_types = ["semaforos_sena", "instructors_environments", "groups"]
+    allowed_types = ["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
     if import_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
         
@@ -88,7 +88,7 @@ async def commit_import(
 def get_template_info() -> TemplateInfoResponse:
     return TemplateInfoResponse(
         supported_formats=[".xlsx", ".csv"],
-        supported_import_types=["semaforos_sena", "instructors_environments", "groups"],
+        supported_import_types=["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"],
         required_sheets=["LISTA_INSTRUCTORES_AMBIENTES", "FICHAS"],
         optional_sheets=[
             "Semaforo con RA",

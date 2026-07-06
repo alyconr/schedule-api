@@ -112,6 +112,13 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         return "Fichas / Grupos";
       case "learning_results":
         return "Resultados de Aprendizaje (RAP)";
+      case "topics":
+        return "Tematicas";
+      case "color_groups":
+        return "Grupos por Color";
+      case "ra_topic_relations":
+      case "learning_result_topics":
+        return "Relaciones RA-Tematica";
       case "contract_types":
         return "Tipos de Contrato";
       case "programs":
@@ -142,6 +149,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
               Tipo de Carga
               <select value={importType} onChange={(e) => setImportType(e.target.value)}>
                 <option value="semaforos_sena">Semáforos Completos (.xlsx)</option>
+                <option value="semaforos_relacional">Semáforos RA / Temáticas (.xlsx)</option>
                 <option value="instructors_environments">Instructores y Ambientes (.xlsx)</option>
                 <option value="groups">Fichas / Grupos (.xlsx)</option>
               </select>

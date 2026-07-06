@@ -3,6 +3,7 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -95,6 +96,44 @@ class LearningResult(SQLModel, table=True):
     is_active: bool = Field(default=True)
 
     competency: Optional[Competency] = Relationship(back_populates="learning_results")
+
+
+class Topic(SQLModel, table=True):
+    __tablename__ = "topics"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    code: str = Field(unique=True, max_length=50)
+    name: str = Field(max_length=500)
+    program_scope: Optional[str] = Field(default=None, max_length=50)
+    trimester: Optional[str] = Field(default=None, max_length=50)
+    trimester_number: Optional[int] = None
+    estimated_hours: Optional[Decimal] = Field(default=None, max_digits=6, decimal_places=1)
+    source_sheet: Optional[str] = Field(default=None, max_length=150)
+    source_address: Optional[str] = Field(default=None, max_length=20)
+    source_row: Optional[int] = None
+    source_col: Optional[int] = None
+    color_key: Optional[str] = Field(default=None, max_length=100)
+    color_hex: Optional[str] = Field(default=None, max_length=20)
+    is_active: bool = Field(default=True)
+
+
+class LearningResultTopic(SQLModel, table=True):
+    __tablename__ = "learning_result_topics"
+    __table_args__ = (UniqueConstraint("learning_result_id", "topic_id", "group_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    relation_id: str = Field(unique=True, max_length=120)
+    learning_result_id: int = Field(foreign_key="learning_results.id")
+    topic_id: int = Field(foreign_key="topics.id")
+    group_id: str = Field(max_length=80)
+    program_scope: Optional[str] = Field(default=None, max_length=50)
+    trimester_number: Optional[int] = None
+    color_key: Optional[str] = Field(default=None, max_length=100)
+    color_hex: Optional[str] = Field(default=None, max_length=20)
+    relation_method: str = Field(default="same_trimester_and_same_fill_color", max_length=80)
+    relation_status: str = Field(default="OK", max_length=50)
+    confidence: str = Field(default="alta", max_length=20)
+    needs_manual_review: bool = Field(default=False)
 
 
 class Group(SQLModel, table=True):

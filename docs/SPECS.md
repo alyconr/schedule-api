@@ -1,4 +1,14 @@
 SPECS.md
+
+## Importacion relacional de semaforos
+
+El importador soporta el tipo `semaforos_relacional` para reconstruir la relacion entre resultados de aprendizaje y tematicas desde hojas de semaforo de Oferta Abierta y Cadena. La regla aplicada es:
+
+```text
+mismo contexto + mismo trimestre + mismo color de fondo
+```
+
+La vista previa entrega `learning_results`, `topics`, `color_groups` y `ra_topic_relations`. En el commit se crean o actualizan resultados de aprendizaje, tematicas y la tabla puente `learning_result_topics`, conservando contexto, hoja, direccion de celda, trimestre, color y marca de revision manual cuando un bloque de color contiene varios RA y varias tematicas.
 Aplicación de Programación de Horarios de Instructores SENA
 CGMLTI SENA Bogotá
 1. Propósito del proyecto

@@ -111,6 +111,12 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
 
   // Filter out logically deleted schedules
   const activeSchedules = schedules.filter((s) => s.status !== "cancelled");
+  const plannerStats = {
+    active: activeSchedules.length,
+    warnings: activeSchedules.filter((s) => s.status === "warning").length,
+    instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
+    environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
+  };
 
   // Reset form helper
   const resetForm = (keepValidation = false) => {
@@ -322,10 +328,32 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   return (
     <div className="schedule-planner">
       {/* 1. Header & Quick stats */}
-      <div className="crud-header">
+      <div className="planner-hero">
         <div>
+          <p className="eyebrow">Programación académica</p>
           <h2>Planificación de Horarios</h2>
-          <p className="subtitle">Gestión de la programación académica en ambientes, instructores y fichas</p>
+          <p className="subtitle">
+            Organiza la programación académica por instructor, ficha, ambiente y RAP.
+          </p>
+        </div>
+      </div>
+
+      <div className="schedule-summary-grid" aria-label="Resumen de programación">
+        <div className="schedule-summary-card">
+          <span>Horarios activos</span>
+          <strong>{plannerStats.active}</strong>
+        </div>
+        <div className="schedule-summary-card warning">
+          <span>Con advertencias</span>
+          <strong>{plannerStats.warnings}</strong>
+        </div>
+        <div className="schedule-summary-card">
+          <span>Instructores programados</span>
+          <strong>{plannerStats.instructors}</strong>
+        </div>
+        <div className="schedule-summary-card">
+          <span>Ambientes usados</span>
+          <strong>{plannerStats.environments}</strong>
         </div>
       </div>
 
@@ -334,43 +362,49 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
 
       {/* 2. Filter panel */}
       <form className="schedule-filters" onSubmit={handleApplyFilters}>
-        <label>
-          Fecha
-          <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
-        </label>
-        <label>
-          Instructor
-          <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)}>
-            <option value="">Todos los instructores</option>
-            {instructors.map((ins) => (
-              <option key={ins.id} value={ins.id}>
-                {ins.first_name} {ins.last_name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Ficha / Grupo
-          <select value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
-            <option value="">Todas las fichas</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.code}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Ambiente
-          <select value={filterEnvironment} onChange={(e) => setFilterEnvironment(e.target.value)}>
-            <option value="">Todos los ambientes</option>
-            {environments.map((env) => (
-              <option key={env.id} value={env.id}>
-                {env.code} ({env.name})
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="filter-heading">
+          <span className="eyebrow">Filtros</span>
+          <strong>Consulta de agenda</strong>
+        </div>
+        <div className="filter-fields">
+          <label>
+            Fecha
+            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+          </label>
+          <label>
+            Instructor
+            <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)}>
+              <option value="">Todos los instructores</option>
+              {instructors.map((ins) => (
+                <option key={ins.id} value={ins.id}>
+                  {ins.first_name} {ins.last_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Ficha / Grupo
+            <select value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
+              <option value="">Todas las fichas</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Ambiente
+            <select value={filterEnvironment} onChange={(e) => setFilterEnvironment(e.target.value)}>
+              <option value="">Todos los ambientes</option>
+              {environments.map((env) => (
+                <option key={env.id} value={env.id}>
+                  {env.code} ({env.name})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="filter-actions">
           <button type="submit" className="btn-primary">Filtrar</button>
           <button type="button" className="btn-secondary" onClick={handleClearFilters}>Limpiar</button>
@@ -407,7 +441,8 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                   {activeSchedules.length === 0 ? (
                     <tr>
                       <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
-                        No hay horarios programados coincidentes con los filtros.
+                        <strong>No hay horarios programados</strong>
+                        <span>Ajusta los filtros o registra una nueva programación académica.</span>
                       </td>
                     </tr>
                   ) : (
@@ -418,7 +453,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                       const rap = learningResults.find((x) => x.id === sch.learning_result_id);
 
                       const statusClass =
-                        sch.status === "validated"
+                        sch.status === "validated" || sch.status === "valid"
                           ? "status-validated"
                           : sch.status === "warning"
                           ? "status-warning"
@@ -427,10 +462,12 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                           : "status-idle";
 
                       const statusName =
-                        sch.status === "validated"
+                        sch.status === "validated" || sch.status === "valid"
                           ? "Válido"
                           : sch.status === "warning"
                           ? "Con Alertas"
+                          : sch.status === "blocked"
+                          ? "Bloqueado"
                           : "Borrador";
 
                       return (
@@ -477,8 +514,13 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
         {!isConsulta && (
           <div className="schedule-form-section">
             <div className="form-card">
-              <h3>{editingSchedule ? "Editar Programación" : "Programar Horario"}</h3>
+              <div className="form-card-header">
+                <span className="eyebrow">Panel de programación</span>
+                <h3>{editingSchedule ? "Editar Programación" : "Programar Horario"}</h3>
+              </div>
               <form onSubmit={handleFormSubmit} className="schedule-form">
+                <div className="schedule-form-group">
+                  <p className="form-group-title">Horario</p>
                 <label className="form-label">
                   Fecha <span className="req">*</span>
                   <input
@@ -488,7 +530,10 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                     required
                   />
                 </label>
+                </div>
 
+                <div className="schedule-form-group">
+                  <p className="form-group-title">Datos académicos</p>
                 <label className="form-label">
                   Ficha / Grupo <span className="req">*</span>
                   <select
@@ -550,7 +595,10 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                     ))}
                   </select>
                 </label>
+                </div>
 
+                <div className="schedule-form-group">
+                  <p className="form-group-title">Asignación</p>
                 <label className="form-label">
                   Instructor <span className="req">*</span>
                   <select
@@ -582,7 +630,10 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                     ))}
                   </select>
                 </label>
+                </div>
 
+                <div className="schedule-form-group">
+                  <p className="form-group-title">Bloque y duración</p>
                 <label className="form-label">
                   Bloque Horario Institucional
                   <select
@@ -629,6 +680,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
                     />
                   </label>
                 </div>
+                </div>
 
                 <label className="form-label">
                   Notas / Observaciones
@@ -654,18 +706,24 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
 
             {/* Panel de retroalimentación de validación */}
             {(validationStatus || validations.length > 0) && (
-              <div className={`validation-panel validation-panel-${validationStatus}`}>
-                <h4>Resultado de Validación del Backend</h4>
-                <p>
-                  Estado:{" "}
-                  <strong>
-                    {validationStatus === "blocked"
-                      ? "BLOQUEADO"
-                      : validationStatus === "warning"
-                      ? "ADVERTENCIA"
-                      : "VÁLIDO"}
-                  </strong>
-                </p>
+              <div
+                className={`validation-panel validation-panel-${
+                  validationStatus === "blocked" ? "blocked" : validationStatus === "warning" ? "warning" : "valid"
+                }`}
+              >
+                <div className="validation-heading">
+                  <span className="validation-light" aria-hidden="true"></span>
+                  <div>
+                    <h4>Resultado de Validación del Backend</h4>
+                    <p>
+                      {validationStatus === "blocked"
+                        ? "Bloqueado por reglas de negocio"
+                        : validationStatus === "warning"
+                        ? "Guardado con advertencias"
+                        : "Programación válida"}
+                    </p>
+                  </div>
+                </div>
                 <div className="validation-list">
                   {validations.length === 0 ? (
                     <p className="no-violations">No se detectaron infracciones de reglas de negocio.</p>

@@ -894,6 +894,21 @@ textarea {
   .tab-pane {
     padding: 16px;
   }
+  .schedule-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .schedule-filters {
+    grid-template-columns: 1fr;
+  }
+  .filter-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .filter-actions {
+    justify-content: flex-start;
+  }
+  .schedule-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -940,6 +955,17 @@ textarea {
   .band.compact {
     grid-template-columns: 1fr !important;
   }
+  .schedule-summary-grid,
+  .filter-fields {
+    grid-template-columns: 1fr;
+  }
+  .filter-actions {
+    flex-direction: column;
+  }
+  .filter-actions .btn-primary,
+  .filter-actions .btn-secondary {
+    width: 100%;
+  }
 }
 
 /* --- SCHEDULE PLANNER WORKSPACE --- */
@@ -949,16 +975,106 @@ textarea {
   gap: 20px;
 }
 
-.schedule-filters {
+.planner-hero {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
   align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+
+.planner-hero h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  line-height: 1.05;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.planner-hero .subtitle {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: #5f7166;
+  font-size: 1rem;
+}
+
+.schedule-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.schedule-summary-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 104px;
+  padding: 18px;
+  border: 1px solid #d7e5da;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(145deg, #ffffff 0%, #f2f8f3 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.schedule-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: var(--color-primary);
+}
+
+.schedule-summary-card.warning::before {
+  background: var(--color-warning);
+}
+
+.schedule-summary-card span {
+  display: block;
+  color: #5f7166;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.schedule-summary-card strong {
+  display: block;
+  margin-top: 10px;
+  color: #102319;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.schedule-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
   background: var(--color-white);
   padding: 20px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border: 1px solid #d7e5da;
   box-shadow: var(--shadow-sm);
+}
+
+.filter-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.filter-heading .eyebrow {
+  margin: 0;
+}
+
+.filter-heading strong {
+  color: #102319;
+  font-size: 1rem;
+}
+
+.filter-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(145px, 1fr));
+  gap: 12px;
 }
 
 .schedule-filters label {
@@ -968,7 +1084,6 @@ textarea {
   font-weight: 700;
   font-size: 0.85rem;
   color: #475569;
-  flex: 1 1 200px;
 }
 
 .schedule-filters input,
@@ -977,13 +1092,14 @@ textarea {
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: #f8fafc;
+  background: #f8fbf8;
+  color: var(--color-text);
 }
 
 .filter-actions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  justify-content: flex-end;
 }
 
 .schedule-grid {
@@ -1001,6 +1117,42 @@ textarea {
   min-width: 0;
 }
 
+.schedule-table-section .table-responsive {
+  border-color: #d7e5da;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 35px rgba(16, 35, 25, 0.08);
+}
+
+.schedule-table-section .crud-table th {
+  background: #edf6ef;
+  color: #335343;
+}
+
+.schedule-table-section .crud-table td {
+  vertical-align: top;
+}
+
+.empty-cell {
+  background: #f8fbf8;
+}
+
+.empty-cell strong,
+.empty-cell span {
+  display: block;
+}
+
+.empty-cell strong {
+  color: #102319;
+  font-style: normal;
+  font-size: 1rem;
+}
+
+.empty-cell span {
+  margin-top: 4px;
+  color: #64748b;
+  font-style: normal;
+}
+
 .schedule-form-section {
   display: flex;
   flex-direction: column;
@@ -1009,14 +1161,24 @@ textarea {
 
 .form-card {
   background: var(--color-white);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border: 1px solid #d7e5da;
   padding: 24px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 16px 35px rgba(16, 35, 25, 0.09);
+}
+
+.form-card-header {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e4eee6;
+}
+
+.form-card-header .eyebrow {
+  margin: 0 0 5px;
 }
 
 .form-card h3 {
-  margin: 0 0 20px;
+  margin: 0;
   font-size: 1.25rem;
   font-weight: 800;
   color: #0f172a;
@@ -1026,6 +1188,24 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.schedule-form-group {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e2ece4;
+  border-radius: var(--radius-md);
+  background: #fbfdfb;
+}
+
+.form-group-title {
+  margin: 0;
+  color: var(--color-primary-hover);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .form-row-compact {
@@ -1051,8 +1231,9 @@ textarea {
 
 /* --- BADGES & STATUSES --- */
 .schedule-status {
-  display: inline-block;
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
   border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -1072,6 +1253,11 @@ textarea {
 .status-blocked {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.status-idle {
+  background: #eef2f7;
+  color: #475569;
 }
 
 .status-cancelled {
@@ -1102,16 +1288,38 @@ textarea {
   color: #92400e;
 }
 
+.validation-panel-valid,
 .validation-panel-validated {
   background: #ecfdf5;
   border: 1px solid #a7f3d0;
   color: #065f46;
 }
 
+.validation-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.validation-light {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.55);
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 .validation-panel h4 {
   margin: 0;
   font-size: 1rem;
   font-weight: 800;
+}
+
+.validation-panel p {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
 }
 
 .validation-list {

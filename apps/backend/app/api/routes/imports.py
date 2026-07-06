@@ -14,6 +14,7 @@ from app.services import import_service
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 SessionDep = Annotated[Session, Depends(get_session)]
+ALLOWED_IMPORT_TYPES = ["schedule_normalized", "semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
 
 
 @router.post("/preview", response_model=ImportPreviewResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])
@@ -39,8 +40,7 @@ async def preview_import(
         raise HTTPException(status_code=400, detail="El archivo excede el tamaño límite de 10 MB.")
         
     # Validate import_type
-    allowed_types = ["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
-    if import_type not in allowed_types:
+    if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
         
     try:
@@ -72,8 +72,7 @@ async def commit_import(
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
         
     # Validate import_type
-    allowed_types = ["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
-    if import_type not in allowed_types:
+    if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
         
     try:
@@ -88,9 +87,16 @@ async def commit_import(
 def get_template_info() -> TemplateInfoResponse:
     return TemplateInfoResponse(
         supported_formats=[".xlsx", ".csv"],
-        supported_import_types=["semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"],
-        required_sheets=["LISTA_INSTRUCTORES_AMBIENTES", "FICHAS"],
+        supported_import_types=ALLOWED_IMPORT_TYPES,
+        required_sheets=[
+            "LISTA INSTRUCTORES",
+            "AMBIENTES",
+            "FICHAS",
+            "Semaforo con RA cadena",
+            "Semaforo con RA Oferta Abierta",
+        ],
         optional_sheets=[
+            "LISTA_INSTRUCTORES_AMBIENTES",
             "Semaforo con RA",
             "Semaforo Cadena",
             "Semaforo RA - Oferta Abierta",

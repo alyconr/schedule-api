@@ -3,7 +3,10 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from sqlmodel import Session, SQLModel, create_engine, select
+
 from app.main import app
+from app.models import ContractType, Environment, Group, Instructor, LearningResult, LearningResultTopic, Topic, TrainingProgram
 from app.services.import_service import (
     normalize_header,
     normalize_contract_type,
@@ -14,6 +17,72 @@ from app.services.import_service import (
     commit_workbook
 )
 from app.api.routes.imports import get_template_info
+
+
+def build_schedule_normalized_workbook_bytes() -> bytes:
+    import io
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "LISTA INSTRUCTORES"
+    ws.append(["NOMBRE COMPLETO", "TIPO CONTRATO", "HORAS FORMACION", "HORAS ADICIONALES", "COORDINACION"])
+    ws.append(["ANA MARIA PEREZ", "PLANTA", 30, 2, "Teleinformatica"])
+
+    ws = wb.create_sheet("AMBIENTES")
+    ws.append(["NUMERO", "AMBIENTE O UBICACION"])
+    ws.append(["301", "Aula 301"])
+
+    ws = wb.create_sheet("FICHAS")
+    ws.append([
+        "No. FICHA",
+        "FICHA",
+        "NIVEL",
+        "COORDINACION",
+        "TRIMESTRE",
+        "FECHA INICIO",
+        "FECHA FIN LECTIVA",
+        "FECHA INICIO PRODUCTIVA",
+        "FECHA FIN PRODUCTIVA",
+        "JORNADA",
+    ])
+    ws.append([
+        "3068352",
+        "7_TRM_3068352_(MM)_DESARROLLO DE PROCESOS DE MERCADEO",
+        "Tecnologo",
+        "Mercadeo",
+        "TRIMESTRE I - II",
+        "2026-07-13",
+        "2026-12-13",
+        "2027-01-01",
+        "2027-06-01",
+        "Diurna",
+    ])
+
+    headers = [
+        "TRIMESTRE",
+        "ORDEN_RA",
+        "CODIGO_RA",
+        "RESULTADO_APRENDIZAJE",
+        "TIPO_RESULTADO_RA",
+        "HORAS_SEMANA_RA",
+        "HORAS_TRIMESTRE_RA",
+        "TEMATICA",
+        "TIPO_RESULTADO_TEMATICA",
+        "HORAS_SEMANA_TEMATICA",
+        "COLOR_RELACION",
+    ]
+    for sheet_name, code, topic, color in (
+        ("Semaforo con RA cadena", "RA1", "Investigacion de mercados", "VERDE"),
+        ("Semaforo con RA Oferta Abierta", "RA2", "Segmentacion de clientes", "AZUL"),
+    ):
+        ws = wb.create_sheet(sheet_name)
+        ws.append(headers)
+        ws.append(["TRIMESTRE I", 1, code, f"Resultado {code}", "especifico", 4, 48, topic, "tematica", 4, color])
+
+    data = io.BytesIO()
+    wb.save(data)
+    return data.getvalue()
 
 
 class ImportsRoutesAndServiceTest(unittest.TestCase):
@@ -113,8 +182,53 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(res.summary["ra_topic_relations"].valid, 1)
         self.assertFalse(res.items["ra_topic_relations"][0]["needs_manual_review"])
 
+    def test_preview_schedule_normalized_workbook(self) -> None:
+        res = preview_workbook(
+            build_schedule_normalized_workbook_bytes(),
+            "SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx",
+            "schedule_normalized",
+        )
+
+        self.assertEqual(res.errors, [])
+        self.assertGreater(res.summary["instructors"].valid, 0)
+        self.assertGreater(res.summary["environments"].valid, 0)
+        self.assertGreater(res.summary["groups"].valid, 0)
+        self.assertGreater(res.summary["programs"].valid, 0)
+        self.assertGreater(res.summary["learning_results"].valid, 0)
+        self.assertGreater(res.summary["topics"].valid, 0)
+        self.assertGreater(res.summary["ra_topic_relations"].valid, 0)
+
+    def test_commit_schedule_normalized_workbook(self) -> None:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            result = commit_workbook(
+                session,
+                build_schedule_normalized_workbook_bytes(),
+                "schedule_normalized",
+                filename="SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx",
+            )
+
+            self.assertEqual(result.errors, [])
+            self.assertGreaterEqual(session.exec(select(ContractType)).first().id, 1)
+            self.assertIsNotNone(session.exec(select(Instructor)).first())
+            self.assertIsNotNone(session.exec(select(Environment)).first())
+            self.assertIsNotNone(session.exec(select(TrainingProgram)).first())
+            self.assertIsNotNone(session.exec(select(Group)).first())
+            self.assertIsNotNone(session.exec(select(LearningResult)).first())
+            self.assertIsNotNone(session.exec(select(Topic)).first())
+            relation = session.exec(select(LearningResultTopic)).first()
+            self.assertIsNotNone(relation)
+            self.assertIn(relation.program_scope, ("cadena", "oferta_abierta"))
+            self.assertEqual(relation.relation_method, "normalized_excel_explicit_relation")
+            self.assertEqual(relation.relation_status, "OK")
+            self.assertEqual(relation.confidence, "alta")
+            self.assertFalse(relation.needs_manual_review)
+
     def test_template_info_includes_relational_import_type(self) -> None:
         self.assertIn("semaforos_relacional", get_template_info().supported_import_types)
+        self.assertIn("schedule_normalized", get_template_info().supported_import_types)
 
     def test_parser_fails_when_mandatory_sheets_missing(self) -> None:
         import io

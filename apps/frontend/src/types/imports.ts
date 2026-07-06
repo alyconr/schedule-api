@@ -1,3 +1,10 @@
+export type ImportType =
+  | "schedule_normalized"
+  | "semaforos_sena"
+  | "semaforos_relacional"
+  | "instructors_environments"
+  | "groups";
+
 export type ImportIssue = {
   sheet: string;
   row?: number | null;

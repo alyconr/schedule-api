@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import { CurrentUser } from "../types/auth";
 import { previewImport, commitImport } from "../api/imports";
-import { ImportPreviewResponse, ImportCommitResponse, ImportIssue } from "../types/imports";
+import { ImportPreviewResponse, ImportCommitResponse, ImportIssue, ImportType } from "../types/imports";
 
 interface ImportWizardProps {
   currentUser: CurrentUser;
 }
 
-type ImportType = "semaforos_sena" | "semaforos_relacional" | "instructors_environments" | "groups";
-
 const importTypeHelp: Record<ImportType, string> = {
+  schedule_normalized:
+    "Usa este tipo para cargar el archivo normalizado con hojas LISTA INSTRUCTORES, AMBIENTES, FICHAS, Semaforo con RA cadena y Semaforo con RA Oferta Abierta.",
   semaforos_sena:
     "Usa este tipo solo para el archivo completo que contiene LISTA_INSTRUCTORES_AMBIENTES y FICHAS.",
   semaforos_relacional:
@@ -26,13 +26,19 @@ function guessImportTypeFromFileName(fileName: string): ImportType {
     .toLowerCase();
 
   if (
+    normalized.includes("normalizado") ||
+    normalized.includes("schedule_api") ||
+    normalized.includes("semaforos_normalizado") ||
+    normalized.includes("semaforos_normalizado_schedule_api") ||
     normalized.includes("ra_tematic") ||
     normalized.includes("tematica") ||
     normalized.includes("tematicas") ||
     normalized.includes("relacional") ||
     normalized.includes("oferta_abierta")
   ) {
-    return "semaforos_relacional";
+    return normalized.includes("normalizado") || normalized.includes("schedule_api")
+      ? "schedule_normalized"
+      : "semaforos_relacional";
   }
 
   if (normalized.includes("instructor") || normalized.includes("ambiente")) {
@@ -48,7 +54,7 @@ function guessImportTypeFromFileName(fileName: string): ImportType {
 
 export function ImportWizard({ currentUser }: ImportWizardProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [importType, setImportType] = useState<ImportType>("semaforos_sena");
+  const [importType, setImportType] = useState<ImportType>("schedule_normalized");
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -189,6 +195,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
             <label>
               Tipo de Carga
               <select value={importType} onChange={(e) => setImportType(e.target.value as ImportType)}>
+                <option value="schedule_normalized">Archivo normalizado Schedule API (recomendado)</option>
                 <option value="semaforos_sena">Semáforos Completos (.xlsx)</option>
                 <option value="semaforos_relacional">Semáforos RA / Temáticas (.xlsx)</option>
                 <option value="instructors_environments">Instructores y Ambientes (.xlsx)</option>

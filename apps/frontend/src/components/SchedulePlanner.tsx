@@ -15,6 +15,7 @@ import {
   LearningResult,
   Environment,
   TimeBlock,
+  ContractType,
 } from "../types/masterData";
 import {
   Schedule,
@@ -49,6 +50,16 @@ const weekDays = [
 function getWeekdayFromDate(date: string): number {
   const [year, month, day] = date.split("-").map(Number);
   return year && month && day ? new Date(year, month - 1, day).getDay() : 0;
+}
+
+function noteValue(notes: string | undefined | null, label: string): string {
+  const match = notes?.match(new RegExp(`${label}:\\s*([^|]+)`, "i"));
+  return match?.[1]?.trim() || "";
+}
+
+function trimesterFromRapCode(code: string): string {
+  const match = code.match(/(?:TRIMESTRE_|T)([IVX0-9]+)/i);
+  return match ? `T${match[1].replace(/_/g, " ")}` : "";
 }
 
 export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
@@ -100,6 +111,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
       { queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") },
       { queryKey: ["environments"], queryFn: () => fetchList<Environment>("environments") },
       { queryKey: ["time-blocks"], queryFn: () => fetchList<TimeBlock>("time-blocks") },
+      { queryKey: ["contract-types"], queryFn: () => fetchList<ContractType>("contract-types") },
     ],
   });
 
@@ -111,6 +123,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
     learningResultsQuery,
     environmentsQuery,
     timeBlocksQuery,
+    contractTypesQuery,
   ] = masterQueries;
 
   const instructors = instructorsQuery.data || [];
@@ -120,6 +133,21 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const learningResults = learningResultsQuery.data || [];
   const environments = environmentsQuery.data || [];
   const timeBlocks = timeBlocksQuery.data || [];
+  const contractTypes = contractTypesQuery.data || [];
+  const hasMasterData = instructors.length > 0 && groups.length > 0 && environments.length > 0 && learningResults.length > 0;
+  const instructorLabel = (ins: Instructor) => {
+    const contract = contractTypes.find((type) => type.id === ins.contract_type_id)?.name || "sin contrato";
+    return `${ins.first_name} ${ins.last_name} - ${contract} - max ${ins.weekly_max_hours} h`;
+  };
+  const groupLabel = (group: Group) => {
+    const trimester = noteValue(group.notes, "Trimestre");
+    return `${group.code}${group.name ? ` - ${group.name}` : ""}${group.jornada ? ` - ${group.jornada}` : ""}${trimester ? ` - ${trimester}` : ""}`;
+  };
+  const environmentLabel = (env: Environment) => `${env.code} - ${env.location || env.name}`;
+  const rapLabel = (rap: LearningResult) => {
+    const trimester = trimesterFromRapCode(rap.code);
+    return `${rap.code}${trimester ? ` - ${trimester}` : ""} - ${rap.description.slice(0, 70)}`;
+  };
 
   // 2. Fetch Schedules
   const { data: schedules = [], isLoading: schedulesLoading, isError: schedulesError } = useQuery<Schedule[]>({
@@ -402,6 +430,9 @@ const deleteMutation = useMutation({
       </div>
 
       {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
+      {!hasMasterData && !isConsulta && (
+        <div className="empty-panel">Primero cargue el archivo normalizado desde Carga Masiva.</div>
+      )}
 
       {/* 2. Filter panel */}
       <form className="schedule-filters" onSubmit={handleApplyFilters}>
@@ -420,7 +451,7 @@ const deleteMutation = useMutation({
               <option value="">Todos los instructores</option>
               {instructors.map((ins) => (
                 <option key={ins.id} value={ins.id}>
-                  {ins.first_name} {ins.last_name}
+                  {instructorLabel(ins)}
                 </option>
               ))}
             </select>
@@ -431,7 +462,7 @@ const deleteMutation = useMutation({
               <option value="">Todas las fichas</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.code}
+                  {groupLabel(g)}
                 </option>
               ))}
             </select>
@@ -442,7 +473,7 @@ const deleteMutation = useMutation({
               <option value="">Todos los ambientes</option>
               {environments.map((env) => (
                 <option key={env.id} value={env.id}>
-                  {env.code} ({env.name})
+                  {environmentLabel(env)}
                 </option>
               ))}
             </select>
@@ -643,7 +674,7 @@ const deleteMutation = useMutation({
                     <option value="">Seleccione ficha...</option>
                     {groups.map((g) => (
                       <option key={g.id} value={g.id}>
-                        {g.code} {g.name ? `- ${g.name}` : ""}
+                        {groupLabel(g)}
                       </option>
                     ))}
                   </select>
@@ -674,7 +705,7 @@ const deleteMutation = useMutation({
                     <option value="">Seleccione RAP...</option>
                     {learningResults.map((lr) => (
                       <option key={lr.id} value={lr.id}>
-                        {lr.code} - {lr.description.slice(0, 60)}...
+                        {rapLabel(lr)}
                       </option>
                     ))}
                   </select>
@@ -708,7 +739,7 @@ const deleteMutation = useMutation({
                     <option value="">Seleccione instructor...</option>
                     {instructors.map((ins) => (
                       <option key={ins.id} value={ins.id}>
-                        {ins.first_name} {ins.last_name} ({ins.specialty || "Sin especialidad"})
+                        {instructorLabel(ins)}
                       </option>
                     ))}
                   </select>
@@ -724,7 +755,7 @@ const deleteMutation = useMutation({
                     <option value="">Seleccione ambiente...</option>
                     {environments.map((env) => (
                       <option key={env.id} value={env.id}>
-                        {env.code} - {env.name} (Capacidad: {env.capacity})
+                        {environmentLabel(env)}
                       </option>
                     ))}
                   </select>

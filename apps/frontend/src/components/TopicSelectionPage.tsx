@@ -102,7 +102,7 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
           <select value={programScope} onChange={(event) => handleProgramScopeChange(event.target.value)}>
             <option value="">Todas</option>
             <option value="oferta_abierta">Oferta abierta</option>
-            <option value="oferta_cerrada">Oferta cerrada / cadena de formacion</option>
+            <option value="cadena">Cadena de formacion</option>
           </select>
         </label>
         <label>
@@ -146,8 +146,7 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
         </div>
       ) : !hasOptions ? (
         <div className="empty-panel">
-          No hay tematicas relacionadas. Primero importa el archivo normalizado RA / Tematicas desde Carga Masiva usando
-          el tipo "Semaforos RA / Tematicas".
+          No hay tematicas relacionadas. Primero cargue el archivo normalizado desde Carga Masiva.
         </div>
       ) : noLearningResults ? (
         <div className="empty-panel">

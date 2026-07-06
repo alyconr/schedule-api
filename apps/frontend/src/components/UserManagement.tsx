@@ -14,7 +14,6 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Form Fields
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,21 +22,18 @@ export function UserManagement({ currentUser }: UserManagementProps) {
 
   const isAdmin = currentUser.roles.includes("admin");
 
-  // Fetch Users
   const { data: users = [], isLoading: isLoadingUsers, isError: isErrorUsers, error: errorUsers } = useQuery<User[]>({
     queryKey: ["users"],
     queryFn: fetchUsers,
     enabled: isAdmin,
   });
 
-  // Fetch Roles
   const { data: roles = [], isLoading: isLoadingRoles } = useQuery<Role[]>({
     queryKey: ["roles"],
     queryFn: fetchRoles,
     enabled: isAdmin,
   });
 
-  // Mutations
   const createMutation = useMutation({
     mutationFn: (data: UserCreate) => createUser(data),
     onSuccess: () => {
@@ -84,7 +80,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     setEmail("");
     setPassword("");
     setIsActive(true);
-    setSelectedRoles(["consulta"]); // default role
+    setSelectedRoles(["consulta"]);
     setErrorMsg(null);
     setIsFormOpen(true);
   };
@@ -93,7 +89,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     setEditingUser(user);
     setFullName(user.full_name);
     setEmail(user.email);
-    setPassword(""); // Keep blank to not change password
+    setPassword("");
     setIsActive(user.is_active);
     setSelectedRoles(user.roles || []);
     setErrorMsg(null);
@@ -112,9 +108,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
       return;
     }
     setSelectedRoles((prev) =>
-      prev.includes(roleName)
-        ? prev.filter((r) => r !== roleName)
-        : [...prev, roleName]
+      prev.includes(roleName) ? prev.filter((r) => r !== roleName) : [...prev, roleName]
     );
   };
 
@@ -122,7 +116,6 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     e.preventDefault();
     setErrorMsg(null);
 
-    // Validation
     if (!fullName.trim() || !email.trim()) {
       setErrorMsg("El nombre completo y el correo electrónico son obligatorios.");
       return;
@@ -149,24 +142,11 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     }
 
     if (editingUser) {
-      const payload: UserUpdate = {
-        full_name: fullName,
-        email: email,
-        is_active: isActive,
-        roles: selectedRoles,
-      };
-      if (password) {
-        payload.password = password;
-      }
+      const payload: UserUpdate = { full_name: fullName, email: email, is_active: isActive, roles: selectedRoles };
+      if (password) payload.password = password;
       updateMutation.mutate({ id: editingUser.id, data: payload });
     } else {
-      const payload: UserCreate = {
-        full_name: fullName,
-        email: email,
-        password: password,
-        roles: selectedRoles,
-      };
-      createMutation.mutate(payload);
+      createMutation.mutate({ full_name: fullName, email: email, password: password, roles: selectedRoles });
     }
   };
 
@@ -176,10 +156,9 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     }
   };
 
-  // Authorization Check
   if (!isAdmin) {
     return (
-      <div className="error-panel text-center">
+      <div className="error-panel">
         <h3>Acceso Denegado</h3>
         <p>No tienes permisos para gestionar usuarios.</p>
       </div>
@@ -187,25 +166,24 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   }
 
   return (
-    <section className="workspace user-management">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Administración</p>
-          <h1>Gestión de Usuarios</h1>
+    <div className="crud-section">
+      <div className="crud-header">
+        <div className="crud-header-text">
+          <h2>Gestión de Usuarios</h2>
+          <p className="crud-subtitle">Administra usuarios, estado de acceso y roles del sistema.</p>
         </div>
-        <button className="btn-primary" onClick={openCreateForm}>
-          + Nuevo Usuario
-        </button>
-      </header>
+        <button className="btn-primary" onClick={openCreateForm}>+ Nuevo Usuario</button>
+      </div>
 
-      {successMsg && <div className="alert alert-success">{successMsg}</div>}
-      {errorMsg && !isFormOpen && <div className="alert alert-danger">{errorMsg}</div>}
+      {successMsg && <div className="toast toast-success">{successMsg}</div>}
+      {errorMsg && !isFormOpen && <div className="toast toast-error">{errorMsg}</div>}
 
       {isLoadingUsers ? (
-        <div className="loading">Cargando usuarios...</div>
+        <div className="loader">Cargando usuarios...</div>
       ) : isErrorUsers ? (
-        <div className="alert alert-danger">
-          Error al cargar usuarios: {(errorUsers as any)?.message || "Sin acceso"}
+        <div className="error-panel">
+          <h3>Error al cargar los datos</h3>
+          <p>{(errorUsers as any)?.message || "No fue posible conectar con el servidor."}</p>
         </div>
       ) : (
         <div className="table-responsive">
@@ -220,167 +198,113 @@ export function UserManagement({ currentUser }: UserManagementProps) {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="font-medium">{user.full_name}</td>
-                  <td>{user.email}</td>
-                  <td>
-                    <div className="tag-container">
-                      {user.roles?.map((role) => (
-                        <span key={role} className="tag tag-role">
-                          {role.toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <span
-                      className={`user-status ${
-                        user.is_active ? "user-status-active" : "user-status-inactive"
-                      }`}
-                    >
-                      {user.is_active ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
-                  <td className="actions-cell">
-                    <button
-                      className="btn-edit"
-                      onClick={() => openEditForm(user)}
-                      title="Editar usuario"
-                    >
-                      Editar
-                    </button>
-                    {user.is_active && user.id !== currentUser.id && (
-                      <button
-                        className="btn-delete"
-                        onClick={() => handleDeactivate(user)}
-                        title="Inactivar usuario"
-                      >
-                        Inactivar
-                      </button>
-                    )}
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center empty-cell">
+                    <strong>Aún no hay usuarios registrados.</strong>
+                    <span>Utilice el botón "Nuevo Usuario" para agregar el primero.</span>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                users.map((user) => (
+                  <tr key={user.id}>
+                    <td className="cell-default"><span className="cell-text">{user.full_name}</span></td>
+                    <td className="cell-default"><span className="cell-text">{user.email}</span></td>
+                    <td>
+                      <div className="tag-container">
+                        {user.roles?.map((role) => (
+                          <span key={role} className="tag-role">{role.toUpperCase()}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`user-status ${user.is_active ? "user-status-active" : "user-status-inactive"}`}>
+                        {user.is_active ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+                    <td className="actions-cell">
+                      <button className="btn-edit" onClick={() => openEditForm(user)}>Editar</button>
+                      {user.is_active && user.id !== currentUser.id && (
+                        <button className="btn-delete" onClick={() => handleDeactivate(user)}>Inactivar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Modal Form */}
       {isFormOpen && (
-        <div className="modal-backdrop">
+        <div className="modal-overlay">
           <div className="modal-content">
-            <h2>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</h2>
-            {errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
+            <h3>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</h3>
+            {errorMsg && <div className="toast toast-error" style={{ marginBottom: 16 }}>{errorMsg}</div>}
 
-            <form onSubmit={handleSubmit} className="user-form">
-              <label>
-                Nombre Completo
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ej. Juan Pérez"
-                  required
-                />
-              </label>
-
-              <label>
-                Correo Electrónico
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ejemplo@sena.edu.co"
-                  required
-                />
-              </label>
-
-              <label>
-                {editingUser ? "Nueva Contraseña (Opcional)" : "Contraseña"}
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={editingUser ? "Dejar en blanco para conservar" : "Mínimo 8 caracteres"}
-                  required={!editingUser}
-                />
-              </label>
-
-              {editingUser && (
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={isActive}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                  />
-                  Usuario Activo
+            <form onSubmit={handleSubmit} className="crud-form">
+              <div className="form-fields" style={{ gridTemplateColumns: "1fr" }}>
+                <label className="form-label">
+                  Nombre Completo *
+                  <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ej. Juan Pérez" required />
                 </label>
-              )}
+
+                <label className="form-label">
+                  Correo Electrónico *
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ejemplo@sena.edu.co" required />
+                </label>
+
+                <label className="form-label">
+                  {editingUser ? "Nueva Contraseña (Opcional)" : "Contraseña"}
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={editingUser ? "Dejar en blanco para conservar" : "Mínimo 8 caracteres"} required={!editingUser} />
+                </label>
+
+                {editingUser && (
+                  <label className="checkbox-label" style={{ marginTop: 4 }}>
+                    <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+                    Usuario Activo
+                  </label>
+                )}
+              </div>
 
               <div className="roles-section">
                 <span className="section-label">Asignar Roles</span>
                 {isLoadingRoles ? (
-                  <p>Cargando roles...</p>
+                  <p style={{ color: "#64748b", fontSize: "0.85rem" }}>Cargando roles...</p>
                 ) : (
                   <div className="role-checkbox-grid">
-                    {roles.map((role) => (
-                      <label key={role.id} className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={selectedRoles.includes(role.name)}
-                          onChange={() => handleRoleToggle(role.name)}
-                          disabled={editingUser?.id === currentUser.id && role.name === "admin"}
-                        />
-                        <div className="role-details">
-                          <strong>{role.name.toUpperCase()}</strong>
-                          <span className="role-desc">{role.description}</span>
-                        </div>
-                      </label>
-                    ))}
-                    {roles.length === 0 && (
-                      ["admin", "coordinador", "programador", "consulta"].map((roleName) => (
-                        <label key={roleName} className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={selectedRoles.includes(roleName)}
-                            onChange={() => handleRoleToggle(roleName)}
-                            disabled={editingUser?.id === currentUser.id && roleName === "admin"}
-                          />
-                          <div className="role-details">
-                            <strong>{roleName.toUpperCase()}</strong>
-                          </div>
-                        </label>
-                      ))
-                    )}
+                    {roles.length > 0
+                      ? roles.map((role) => (
+                          <label key={role.id} className="checkbox-label">
+                            <input type="checkbox" checked={selectedRoles.includes(role.name)} onChange={() => handleRoleToggle(role.name)} disabled={editingUser?.id === currentUser.id && role.name === "admin"} />
+                            <div className="role-details">
+                              <strong>{role.name.toUpperCase()}</strong>
+                              <span className="role-desc">{role.description}</span>
+                            </div>
+                          </label>
+                        ))
+                      : ["admin", "coordinador", "programador", "consulta"].map((roleName) => (
+                          <label key={roleName} className="checkbox-label">
+                            <input type="checkbox" checked={selectedRoles.includes(roleName)} onChange={() => handleRoleToggle(roleName)} disabled={editingUser?.id === currentUser.id && roleName === "admin"} />
+                            <div className="role-details">
+                              <strong>{roleName.toUpperCase()}</strong>
+                            </div>
+                          </label>
+                        ))}
                   </div>
                 )}
               </div>
 
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={closeForm}
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? "Guardando..."
-                    : "Guardar"}
+              <div className="form-actions">
+                <button type="button" className="btn-secondary" onClick={closeForm} disabled={createMutation.isPending || updateMutation.isPending}>Cancelar</button>
+                <button type="submit" className="btn-primary" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {createMutation.isPending || updateMutation.isPending ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

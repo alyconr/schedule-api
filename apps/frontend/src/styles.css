@@ -1698,13 +1698,24 @@ textarea {
 }
 
 .tag-role {
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
   font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  letter-spacing: 0.03em;
+}
+
+.loader {
+  padding: 32px;
+  text-align: center;
+  color: #64748b;
   font-weight: 600;
-  border-radius: 4px;
+  font-size: 0.95rem;
 }
 
 .user-form {

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
 import {
@@ -102,7 +102,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
-  const [rapTopics, setRapTopics] = useState<TopicSelectionItem[]>([]);
+  const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
 
   // 1. Fetch Master Data
   const masterQueries = useQueries({
@@ -136,10 +136,28 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const learningResults = learningResultsQuery.data || [];
   const environments = environmentsQuery.data || [];
   const timeBlocks = timeBlocksQuery.data || [];
-  const contractTypes = contractTypesQuery.data || [];
+const contractTypes = contractTypesQuery.data || [];
   const hasMasterData = instructors.length > 0 && groups.length > 0 && environments.length > 0 && learningResults.length > 0;
+
+  // useMemo maps for fast lookups
+  const instructorsById = useMemo(() => new Map(instructors.map((i) => [i.id, i])), [instructors]);
+  const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
+  const environmentsById = useMemo(() => new Map(environments.map((e) => [e.id, e])), [environments]);
+  const learningResultsById = useMemo(() => new Map(learningResults.map((lr) => [lr.id, lr])), [learningResults]);
+  const contractTypesById = useMemo(() => new Map(contractTypes.map((ct) => [ct.id, ct])), [contractTypes]);
+
+  // rapTopics query
+  const rapTopicsQuery = useQuery({
+    queryKey: ["rap-topics", selectedLearningResultId],
+    queryFn: () => getTopicSelection({ learning_result_id: selectedLearningResultId }),
+    enabled: Boolean(selectedLearningResultId),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const rapTopics = rapTopicsQuery.data ?? [];
+
   const instructorLabel = (ins: Instructor) => {
-    const contract = contractTypes.find((type) => type.id === ins.contract_type_id)?.name || "sin contrato";
+    const contract = contractTypesById.get(ins.contract_type_id ?? -1)?.name || "sin contrato";
     return `${ins.first_name} ${ins.last_name} - ${contract} - max ${ins.weekly_max_hours} h`;
   };
   const groupLabel = (group: Group) => {
@@ -158,26 +176,30 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
     queryFn: () => fetchSchedules(activeFilters),
   });
 
-  // Filter out logically deleted schedules
-  const activeSchedules = schedules.filter((s) => s.status !== "cancelled");
-  const plannerStats = {
+// Filter out logically deleted schedules
+  const activeSchedules = useMemo(
+    () => schedules.filter((s) => s.status !== "cancelled"),
+    [schedules]
+  );
+  const visibleSchedules = useMemo(() => activeSchedules.slice(0, 100), [activeSchedules]);
+  const plannerStats = useMemo(() => ({
     active: activeSchedules.length,
     warnings: activeSchedules.filter((s) => s.status === "warning").length,
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
     environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
-  };
-  const schedulesByWeekday = weekDays.map((day) => ({
+  }), [activeSchedules]);
+  const schedulesByWeekday = useMemo(() => weekDays.map((day) => ({
     ...day,
     schedules: activeSchedules
       .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
       .sort((a, b) => a.start_time.localeCompare(b.start_time)),
-  }));
+  })), [activeSchedules]);
 
-  const getScheduleDisplayData = (schedule: Schedule) => {
-    const instructor = instructors.find((x) => x.id === schedule.instructor_id);
-    const group = groups.find((x) => x.id === schedule.group_id);
-    const environment = environments.find((x) => x.id === schedule.environment_id);
-    const rap = learningResults.find((x) => x.id === schedule.learning_result_id);
+const getScheduleDisplayData = (schedule: Schedule) => {
+    const instructor = instructorsById.get(schedule.instructor_id);
+    const group = groupsById.get(schedule.group_id);
+    const environment = environmentsById.get(schedule.environment_id);
+    const rap = learningResultsById.get(schedule.learning_result_id);
     const statusClass =
       schedule.status === "validated" || schedule.status === "valid"
         ? "status-validated"
@@ -313,16 +335,8 @@ const deleteMutation = useMutation({
 
   const handleRapChange = (id: number) => {
     setLearningResultId(id);
-    setRapTopics([]);
-    const r = learningResults.find((x) => x.id === id);
-    if (r?.competency_id) {
-      setCompetencyId(r.competency_id);
-    } else {
-      setCompetencyId("");
-    }
-    if (id) {
-      getTopicSelection({ learning_result_id: id }).then(setRapTopics).catch(() => {});
-    }
+    const r = learningResultsById.get(id);
+    setCompetencyId(r?.competency_id || "");
   };
 
   const handleBlockChange = (id: number | "") => {
@@ -544,7 +558,7 @@ const deleteMutation = useMutation({
                               </td>
                             </tr>
                           ) : (
-                            activeSchedules.map((sch) => {
+                            visibleSchedules.map((sch) => {
                               const ins = instructors.find((x) => x.id === sch.instructor_id);
                               const grp = groups.find((x) => x.id === sch.group_id);
                               const env = environments.find((x) => x.id === sch.environment_id);
@@ -574,6 +588,11 @@ const deleteMutation = useMutation({
                         </tbody>
                       </table>
                     </div>
+                    {activeSchedules.length > 100 && (
+                      <p className="text-muted" style={{ padding: "8px 0 0", fontSize: "0.85rem" }}>
+                        Mostrando los primeros 100 horarios. Usa filtros para reducir los resultados.
+                      </p>
+                    )}
                   </>
                 )}
               </div>

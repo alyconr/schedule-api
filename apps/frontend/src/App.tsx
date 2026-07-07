@@ -199,7 +199,11 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [activeTab, setActiveTab] = useState("schedules");
-  const [, startTabTransition] = useTransition();
+  const [isTabPending, startTabTransition] = useTransition();
+
+  const handleTabChange = (tab: string) => {
+    startTabTransition(() => setActiveTab(tab));
+  };
 
   // Validation Form state
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
@@ -249,11 +253,7 @@ function AppContent() {
     setCurrentUser(null);
   };
 
-  const handleTabChange = (tab: string) => {
-    startTabTransition(() => setActiveTab(tab));
-  };
-
-  const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
+const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setValidationError("");
     setValidating(true);
@@ -323,11 +323,12 @@ function AppContent() {
   const canValidate = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
 
   return (
-    <AppLayout
+<AppLayout
       currentUser={currentUser}
       onLogout={handleLogout}
       activeTab={activeTab}
       setActiveTab={handleTabChange}
+      isNavigating={isTabPending}
     >
       {activeTab === "users" ? (
         <UserManagement currentUser={currentUser} />

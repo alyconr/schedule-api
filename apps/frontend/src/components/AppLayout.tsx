@@ -6,6 +6,7 @@ interface AppLayoutProps {
   onLogout: () => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  isNavigating?: boolean;
   children: React.ReactNode;
 }
 
@@ -14,6 +15,7 @@ export function AppLayout({
   onLogout,
   activeTab,
   setActiveTab,
+  isNavigating = false,
   children,
 }: AppLayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -70,12 +72,14 @@ export function AppLayout({
               <div className="nav-section" key={section.title}>
                 <p className="nav-section-title">{section.title}</p>
                 {section.items.map((item) => (
-                  <button
+<button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
                     className={`nav-btn ${activeTab === item.id ? "active" : ""}`}
+                    disabled={isNavigating}
                   >
                     {item.label}
+                    {isNavigating && activeTab !== item.id ? "…" : ""}
                   </button>
                 ))}
               </div>

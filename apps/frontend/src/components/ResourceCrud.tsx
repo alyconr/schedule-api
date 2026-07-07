@@ -1,9 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData";
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
+
+function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timeout);
+  }, [value, delay]);
+  return debounced;
+}
 
 export type FieldConfig = {
   name: string;
@@ -50,6 +59,9 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
 
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
@@ -71,21 +83,32 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     })),
   });
 
-  const relatedDataMap: Record<string, any[]> = {};
-  relatedEndpoints.forEach((endpoint, index) => {
-    relatedDataMap[endpoint] = relatedQueries[index]?.data || [];
-  });
+  const relatedDataMap = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    relatedEndpoints.forEach((endpoint, index) => {
+      map[endpoint] = relatedQueries[index]?.data || [];
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relatedEndpoints, ...relatedQueries.map((q) => q.data)]);
 
   const filteredItems = useMemo(() => {
-    if (!searchTerm.trim()) return items;
-    const term = searchTerm.toLowerCase();
+    if (!debouncedSearchTerm.trim()) return items;
+    const term = debouncedSearchTerm.toLowerCase();
     return items.filter((item: any) =>
       config.fields.some((f) => {
         const val = getFieldValue(item, f, relatedDataMap);
         return val.toLowerCase().includes(term);
       })
     );
-  }, [items, searchTerm, config.fields, relatedDataMap]);
+  }, [items, debouncedSearchTerm, config.fields, relatedDataMap]);
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
 
   const createMutation = useMutation({
     mutationFn: (data: any) => createItem(config.endpoint, data),
@@ -244,7 +267,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item: any) => (
+                paginatedItems.map((item: any) => (
                   <tr key={item.id}>
                     {config.fields.map((f) => (
                       <td key={f.name} className={f.type === "textarea" ? "cell-textarea" : "cell-default"}>
@@ -269,6 +292,13 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
               )}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="pagination-bar">
+              <button className="btn-secondary btn-sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Anterior</button>
+              <span>Página {page} de {totalPages}</span>
+              <button className="btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Siguiente</button>
+            </div>
+          )}
         </div>
       )}
 

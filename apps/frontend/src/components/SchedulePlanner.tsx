@@ -505,11 +505,9 @@ const deleteMutation = useMutation({
                     <h3>Vista semanal de programación</h3>
                   </div>
                   <span className="week-view-count">{activeSchedules.length} horarios</span>
-                  {activeSchedules.length > 0 && (
-                    <button className="btn-secondary" style={{ marginLeft: 12 }} onClick={() => setShowFullscreenMatrix(true)} type="button">
-                      Ampliar matriz
-                    </button>
-                  )}
+                  <button className="btn-secondary btn-expand-matrix" onClick={() => setShowFullscreenMatrix(true)} type="button" aria-label="Ampliar matriz a pantalla completa">
+                    Ampliar matriz
+                  </button>
                 </div>
                 <div className="week-grid" role="list">
                   {schedulesByWeekday.map((day) => (
@@ -879,6 +877,7 @@ const deleteMutation = useMutation({
               <div>
                 <span className="eyebrow">Matriz académica</span>
                 <h3 id="matrix-title">Matriz semanal de programación</h3>
+                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica por día, instructor, ficha, ambiente y RAP.</p>
               </div>
               <button className="btn-secondary" onClick={() => setShowFullscreenMatrix(false)} aria-label="Cerrar matriz">Cerrar</button>
             </div>

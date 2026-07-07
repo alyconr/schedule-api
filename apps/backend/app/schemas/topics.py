@@ -17,6 +17,7 @@ class TopicSelectionItem(BaseModel):
     program_scope: str | None = None
     program_scope_label: str
     trimester_number: int | None = None
+    trimester_label: str | None = None
     color_hex: str | None = None
     relation_status: str | None = None
     confidence: str | None = None

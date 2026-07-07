@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, useTransition } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getMe } from "./api/auth";
 import { apiRequest } from "./api/client";
@@ -25,7 +25,15 @@ type ValidationResponse = {
   validations: ValidationResult[];
 };
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Definitions for the 8 Master Data entities
 const resourceConfigs: Record<string, ResourceConfig> = {
@@ -191,6 +199,7 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [activeTab, setActiveTab] = useState("schedules");
+  const [, startTabTransition] = useTransition();
 
   // Validation Form state
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
@@ -238,6 +247,10 @@ function AppContent() {
   const handleLogout = () => {
     localStorage.removeItem("schedule_api_token");
     setCurrentUser(null);
+  };
+
+  const handleTabChange = (tab: string) => {
+    startTabTransition(() => setActiveTab(tab));
   };
 
   const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
@@ -314,7 +327,7 @@ function AppContent() {
       currentUser={currentUser}
       onLogout={handleLogout}
       activeTab={activeTab}
-      setActiveTab={setActiveTab}
+      setActiveTab={handleTabChange}
     >
       {activeTab === "users" ? (
         <UserManagement currentUser={currentUser} />

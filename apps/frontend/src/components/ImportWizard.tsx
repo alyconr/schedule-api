@@ -1,60 +1,16 @@
 import React, { useState } from "react";
 import { CurrentUser } from "../types/auth";
 import { previewImport, commitImport } from "../api/imports";
-import { ImportPreviewResponse, ImportCommitResponse, ImportIssue, ImportType } from "../types/imports";
+import { ImportPreviewResponse, ImportCommitResponse, ImportIssue } from "../types/imports";
 
 interface ImportWizardProps {
   currentUser: CurrentUser;
 }
 
-const importTypeHelp: Record<ImportType, string> = {
-  schedule_normalized:
-    "Usa este tipo para cargar el archivo normalizado con hojas LISTA INSTRUCTORES, AMBIENTES, FICHAS, Semaforo con RA cadena y Semaforo con RA Oferta Abierta.",
-  semaforos_sena:
-    "Usa este tipo solo para el archivo completo que contiene LISTA_INSTRUCTORES_AMBIENTES y FICHAS.",
-  semaforos_relacional:
-    "Usa este tipo para archivos normalizados RA/Tematicas o para reconstruir relaciones por trimestre y color.",
-  instructors_environments:
-    "Usa este tipo para cargar unicamente instructores y ambientes desde LISTA_INSTRUCTORES_AMBIENTES.",
-  groups: "Usa este tipo para cargar unicamente fichas/grupos desde la hoja FICHAS.",
-};
-
-function guessImportTypeFromFileName(fileName: string): ImportType {
-  const normalized = fileName
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-
-  if (
-    normalized.includes("normalizado") ||
-    normalized.includes("schedule_api") ||
-    normalized.includes("semaforos_normalizado") ||
-    normalized.includes("semaforos_normalizado_schedule_api") ||
-    normalized.includes("ra_tematic") ||
-    normalized.includes("tematica") ||
-    normalized.includes("tematicas") ||
-    normalized.includes("relacional") ||
-    normalized.includes("oferta_abierta")
-  ) {
-    return normalized.includes("normalizado") || normalized.includes("schedule_api")
-      ? "schedule_normalized"
-      : "semaforos_relacional";
-  }
-
-  if (normalized.includes("instructor") || normalized.includes("ambiente")) {
-    return "instructors_environments";
-  }
-
-  if (normalized.includes("ficha") || normalized.includes("grupo")) {
-    return "groups";
-  }
-
-  return "semaforos_sena";
-}
+const importType = "schedule_normalized";
 
 export function ImportWizard({ currentUser }: ImportWizardProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [importType, setImportType] = useState<ImportType>("schedule_normalized");
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -76,9 +32,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      setImportType(guessImportTypeFromFileName(selectedFile.name));
+      setFile(e.target.files[0]);
       setPreview(null);
       setResult(null);
       setErrorMsg(null);
@@ -145,10 +99,9 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       )
       .join("\n");
     navigator.clipboard.writeText(text);
-    alert("Observaciones copiadas al portapapeles.");
+    setSuccessMsg("Observaciones copiadas al portapapeles.");
   };
 
-  // Helper to translate entity names
   const translateEntity = (key: string): string => {
     switch (key) {
       case "instructors":
@@ -182,7 +135,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       <header className="topbar">
         <div>
           <p className="eyebrow">Administración</p>
-          <h1>Carga Masiva de Datos</h1>
+          <h1>Carga del archivo normalizado</h1>
         </div>
       </header>
 
@@ -193,20 +146,11 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         <form onSubmit={handlePreview} className="import-form">
           <div className="form-row">
             <label>
-              Tipo de Carga
-              <select value={importType} onChange={(e) => setImportType(e.target.value as ImportType)}>
-                <option value="schedule_normalized">Archivo normalizado Schedule API (recomendado)</option>
-                <option value="semaforos_sena">Semáforos Completos (.xlsx)</option>
-                <option value="semaforos_relacional">Semáforos RA / Temáticas (.xlsx)</option>
-                <option value="instructors_environments">Instructores y Ambientes (.xlsx)</option>
-                <option value="groups">Fichas / Grupos (.xlsx)</option>
-              </select>
-              <small className="field-help">{importTypeHelp[importType]}</small>
-            </label>
-
-            <label>
-              Archivo (Excel/CSV)
-              <input type="file" accept=".xlsx,.csv" onChange={handleFileChange} />
+              Archivo (.xlsx)
+              <input type="file" accept=".xlsx" onChange={handleFileChange} />
+              <small className="field-help">
+                Cargue únicamente el archivo normalizado SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx con las hojas LISTA INSTRUCTORES, AMBIENTES, FICHAS, Semaforo con RA cadena y Semaforo con RA Oferta Abierta.
+              </small>
             </label>
           </div>
 
@@ -216,7 +160,6 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         </form>
       </div>
 
-      {/* Preview Section */}
       {preview && (
         <div className="preview-results-card">
           <h2>Vista Previa del Análisis</h2>
@@ -226,9 +169,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
             <span className="section-label">Hojas detectadas:</span>
             <div className="sheets-badges-container">
               {preview.sheets_detected.map((sheet) => (
-                <span key={sheet} className="sheet-badge">
-                  {sheet}
-                </span>
+                <span key={sheet} className="sheet-badge">{sheet}</span>
               ))}
             </div>
           </div>
@@ -255,7 +196,6 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
             ))}
           </div>
 
-          {/* Warnings List */}
           {preview.warnings && preview.warnings.length > 0 && (
             <div className="issue-section warning-section">
               <div className="issue-section-header">
@@ -277,7 +217,6 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
             </div>
           )}
 
-          {/* Errors List */}
           {preview.errors && preview.errors.length > 0 && (
             <div className="issue-section error-section">
               <div className="issue-section-header">
@@ -299,7 +238,6 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
             </div>
           )}
 
-          {/* Commit trigger */}
           {(!preview.errors || preview.errors.length === 0) && !result && (
             <div className="commit-action-box text-center">
               <p>El archivo está libre de errores críticos. Puedes proceder con la importación definitiva.</p>
@@ -311,17 +249,12 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         </div>
       )}
 
-      {/* Commit Result Section */}
       {result && (
         <div className="commit-results-card">
           <h2>Resultado de la Importación</h2>
           <div className="status-indicator">
             Estado final:{" "}
-            <span
-              className={`status-badge ${
-                result.status === "completed" ? "status-success" : "status-warning"
-              }`}
-            >
+            <span className={`status-badge ${result.status === "completed" ? "status-success" : "status-warning"}`}>
               {result.status === "completed" ? "Completado" : "Completado con advertencias"}
             </span>
           </div>
@@ -331,9 +264,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
               <h3>Registros Creados</h3>
               <ul>
                 {Object.entries(result.created).map(([key, val]) => (
-                  <li key={key}>
-                    <strong>{translateEntity(key)}:</strong> {val}
-                  </li>
+                  <li key={key}><strong>{translateEntity(key)}:</strong> {val}</li>
                 ))}
               </ul>
             </div>
@@ -342,9 +273,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
               <h3>Registros Actualizados (Upsert)</h3>
               <ul>
                 {Object.entries(result.updated).map(([key, val]) => (
-                  <li key={key}>
-                    <strong>{translateEntity(key)}:</strong> {val}
-                  </li>
+                  <li key={key}><strong>{translateEntity(key)}:</strong> {val}</li>
                 ))}
               </ul>
             </div>

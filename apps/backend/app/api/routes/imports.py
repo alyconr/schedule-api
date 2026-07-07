@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
@@ -14,7 +14,7 @@ from app.services import import_service
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 SessionDep = Annotated[Session, Depends(get_session)]
-ALLOWED_IMPORT_TYPES = ["schedule_normalized", "semaforos_sena", "semaforos_relacional", "instructors_environments", "groups"]
+ALLOWED_IMPORT_TYPES = ["schedule_normalized"]
 
 
 @router.post("/preview", response_model=ImportPreviewResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])
@@ -22,27 +22,24 @@ async def preview_import(
     file: UploadFile = File(...),
     import_type: str = Form(...)
 ) -> ImportPreviewResponse:
-    # Validate extension
     filename = file.filename or ""
-    if not (filename.endswith(".xlsx") or filename.endswith(".csv")):
-        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Solo se admiten .xlsx y .csv")
-        
-    # Read file
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Solo se admite el archivo Excel normalizado .xlsx")
+
     try:
         content = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {str(e)}")
-        
+
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
-        
-    if len(content) > 10 * 1024 * 1024:  # 10 MB limit
+
+    if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="El archivo excede el tamaño límite de 10 MB.")
-        
-    # Validate import_type
+
     if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
-        
+
     try:
         preview = import_service.preview_workbook(content, filename, import_type)
         return preview
@@ -57,24 +54,21 @@ async def commit_import(
     import_type: str = Form(...),
     mode: str = Form("upsert")
 ) -> ImportCommitResponse:
-    # Validate extension
     filename = file.filename or ""
-    if not (filename.endswith(".xlsx") or filename.endswith(".csv")):
-        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Solo se admiten .xlsx y .csv")
-        
-    # Read file
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Solo se admite el archivo Excel normalizado .xlsx")
+
     try:
         content = await file.read()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {str(e)}")
-        
+
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="El archivo está vacío.")
-        
-    # Validate import_type
+
     if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
-        
+
     try:
         result = import_service.commit_workbook(session, content, import_type, filename=filename, mode=mode)
         return result
@@ -86,7 +80,7 @@ async def commit_import(
 @router.get("/template-info", response_model=TemplateInfoResponse, dependencies=[Depends(require_roles(*ROLE_READ))])
 def get_template_info() -> TemplateInfoResponse:
     return TemplateInfoResponse(
-        supported_formats=[".xlsx", ".csv"],
+        supported_formats=[".xlsx"],
         supported_import_types=ALLOWED_IMPORT_TYPES,
         required_sheets=[
             "LISTA INSTRUCTORES",
@@ -95,11 +89,5 @@ def get_template_info() -> TemplateInfoResponse:
             "Semaforo con RA cadena",
             "Semaforo con RA Oferta Abierta",
         ],
-        optional_sheets=[
-            "LISTA_INSTRUCTORES_AMBIENTES",
-            "Semaforo con RA",
-            "Semaforo Cadena",
-            "Semaforo RA - Oferta Abierta",
-            "Semaforo Oferta Abierta"
-        ]
+        optional_sheets=[]
     )

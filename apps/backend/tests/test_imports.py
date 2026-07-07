@@ -153,34 +153,11 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(len(res.items["instructors"]), 55)
         self.assertEqual(res.items["instructors"][0]["contract_type_name"], "contratista")
 
-    def test_relational_semaforo_links_by_trimester_and_fill_color(self) -> None:
-        import io
-        import openpyxl
-        from openpyxl.styles import PatternFill
-
-        fill = PatternFill(fill_type="solid", fgColor="FF92D050")
-        wb = openpyxl.Workbook()
-        ws_ra = wb.active
-        ws_ra.title = "Semaforo RA - Oferta Abierta"
-        ws_ra.append(["TRIMESTRE I", None])
-        ws_ra.append(["01. RA UNO", 6])
-        ws_ra["A2"].fill = fill
-
-        ws_topic = wb.create_sheet("Semaforo Oferta Abierta tematic")
-        ws_topic.append(["I TRIMESTRE", None])
-        ws_topic.append(["TEMA UNO", 6])
-        ws_topic["A2"].fill = fill
-
-        f_bytes = io.BytesIO()
-        wb.save(f_bytes)
-        f_bytes.seek(0)
-
-        res = preview_workbook(f_bytes.read(), "semaforo.xlsx", "semaforos_relacional")
-        self.assertEqual(res.summary["learning_results"].valid, 1)
-        self.assertEqual(res.summary["topics"].valid, 1)
-        self.assertEqual(res.summary["color_groups"].valid, 1)
-        self.assertEqual(res.summary["ra_topic_relations"].valid, 1)
-        self.assertFalse(res.items["ra_topic_relations"][0]["needs_manual_review"])
+    def test_rejects_old_import_types(self) -> None:
+        from app.api.routes.imports import ALLOWED_IMPORT_TYPES
+        self.assertEqual(ALLOWED_IMPORT_TYPES, ["schedule_normalized"])
+        self.assertNotIn("semaforos_relacional", ALLOWED_IMPORT_TYPES)
+        self.assertNotIn("semaforos_sena", ALLOWED_IMPORT_TYPES)
 
     def test_preview_schedule_normalized_workbook(self) -> None:
         res = preview_workbook(
@@ -226,9 +203,11 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertEqual(relation.confidence, "alta")
             self.assertFalse(relation.needs_manual_review)
 
-    def test_template_info_includes_relational_import_type(self) -> None:
-        self.assertIn("semaforos_relacional", get_template_info().supported_import_types)
-        self.assertIn("schedule_normalized", get_template_info().supported_import_types)
+    def test_template_info_includes_only_schedule_normalized(self) -> None:
+        info = get_template_info()
+        self.assertEqual(info.supported_import_types, ["schedule_normalized"])
+        self.assertEqual(info.supported_formats, [".xlsx"])
+        self.assertNotIn("semaforos_relacional", info.supported_import_types)
 
     def test_parser_fails_when_mandatory_sheets_missing(self) -> None:
         import io

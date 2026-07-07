@@ -7,6 +7,7 @@ import {
   updateSchedule,
   cancelSchedule,
 } from "../api/schedules";
+import { getTopicSelection } from "../api/topics";
 import {
   Instructor,
   Group,
@@ -22,6 +23,7 @@ import {
   ScheduleFilters,
   ValidationResult,
 } from "../types/schedules";
+import { TopicSelectionItem } from "../types/topics";
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -100,6 +102,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
+  const [rapTopics, setRapTopics] = useState<TopicSelectionItem[]>([]);
 
   // 1. Fetch Master Data
   const masterQueries = useQueries({
@@ -310,11 +313,15 @@ const deleteMutation = useMutation({
 
   const handleRapChange = (id: number) => {
     setLearningResultId(id);
+    setRapTopics([]);
     const r = learningResults.find((x) => x.id === id);
     if (r?.competency_id) {
       setCompetencyId(r.competency_id);
     } else {
       setCompetencyId("");
+    }
+    if (id) {
+      getTopicSelection({ learning_result_id: id }).then(setRapTopics).catch(() => {});
     }
   };
 
@@ -454,311 +461,214 @@ const deleteMutation = useMutation({
                   {instructorLabel(ins)}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Ficha / Grupo
-            <select value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
-              <option value="">Todas las fichas</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {groupLabel(g)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Ambiente
-            <select value={filterEnvironment} onChange={(e) => setFilterEnvironment(e.target.value)}>
-              <option value="">Todos los ambientes</option>
-              {environments.map((env) => (
-                <option key={env.id} value={env.id}>
-                  {environmentLabel(env)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="filter-actions">
-          <button type="submit" className="btn-primary">Filtrar</button>
-          <button type="button" className="btn-secondary" onClick={handleClearFilters}>Limpiar</button>
-        </div>
-      </form>
+</select>
+                  </label>
+                </div>
+                <div className="filter-actions">
+                  <button type="submit" className="btn-primary">Filtrar</button>
+                  <button type="button" className="btn-secondary" onClick={handleClearFilters}>Limpiar</button>
+                </div>
+              </form>
 
-      {/* 3. Main Workspace Grid */}
-      <div className={`schedule-grid ${isConsulta ? "full-grid" : ""}`}>
-        {/* Grilla de listado (Izquierda) */}
-        <div className="schedule-table-section">
-          {schedulesLoading ? (
-            <div className="loader">Cargando programación de horarios...</div>
-          ) : schedulesError ? (
-            <div className="error-panel">
-              <h3>Error al cargar horarios</h3>
-              <p>No fue posible conectar con el servidor.</p>
-            </div>
-          ) : (
-            <>
-              <section className="week-view-card" aria-label="Vista semanal de programación">
-                <div className="week-view-header">
-                  <div>
-                    <span className="eyebrow">Matriz académica</span>
-                    <h3>Vista semanal de programación</h3>
+              {/* 3. Main Workspace Grid */}
+              <div className={`schedule-grid ${isConsulta ? "full-grid" : ""}`}>
+                {/* Grilla de listado (Izquierda) */}
+<div className="schedule-table-section">
+                {schedulesLoading ? (
+                  <div className="loader">Cargando programación de horarios...</div>
+                ) : schedulesError ? (
+                  <div className="error-panel">
+                    <h3>Error al cargar horarios</h3>
+                    <p>No fue posible conectar con el servidor.</p>
                   </div>
-                  <span className="week-view-count">{activeSchedules.length} horarios</span>
-                  <button className="btn-secondary btn-expand-matrix" onClick={() => setShowFullscreenMatrix(true)} type="button" aria-label="Ampliar matriz a pantalla completa">
-                    Ampliar matriz
-                  </button>
-                </div>
-                <div className="week-grid" role="list">
-                  {schedulesByWeekday.map((day) => (
-                    <div className="week-day-column" key={day.index}>
-                      <div className="week-day-heading">
-                        <strong>{day.label}</strong>
-                        <span>{day.schedules.length}</span>
+                ) : (
+                  <>
+                    <section className="week-view-card" aria-label="Vista semanal de programación">
+                      <div className="week-view-header">
+                        <div>
+                          <span className="eyebrow">Matriz académica</span>
+                          <h3>Vista semanal de programación</h3>
+                        </div>
+                        <span className="week-view-count">{activeSchedules.length} horarios</span>
+                        <button className="btn-secondary btn-expand-matrix" onClick={() => setShowFullscreenMatrix(true)} type="button" aria-label="Ampliar matriz">
+                          Ampliar matriz
+                        </button>
                       </div>
-                      <div className="week-day-body">
-                        {day.schedules.length === 0 ? (
-                          <p className="week-empty">Sin programación</p>
-                        ) : (
-                          day.schedules.map((sch) => {
-                            const { instructor, group, environment, rap, statusClass, statusName } =
-                              getScheduleDisplayData(sch);
-                            return (
-                              <button
-                                className={`week-schedule-card ${statusClass}`}
-                                disabled={!canWrite}
-                                key={sch.id}
-                                onClick={() => handleEditInit(sch)}
-                                title={canWrite ? "Editar horario" : "Modo consulta"}
-                                type="button"
-                              >
-                                <span className="week-schedule-time">
-                                  {sch.start_time} - {sch.end_time}
-                                </span>
-                                <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
-                                <span>Ficha {group ? group.code : sch.group_id}</span>
-                                <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
-                                {rap?.code && <span className="week-rap">{rap.code}</span>}
-                                <small>{statusName}</small>
-                              </button>
-                            );
-                          })
-                        )}
+                      <div className="week-grid" role="list">
+                        {schedulesByWeekday.map((day) => (
+                          <div className="week-day-column" key={day.index}>
+                            <div className="week-day-heading">
+                              <strong>{day.label}</strong>
+                              <span>{day.schedules.length}</span>
+                            </div>
+                            <div className="week-day-body">
+                              {day.schedules.length === 0 ? (
+                                <p className="week-empty">Sin programación</p>
+                              ) : (
+                                day.schedules.map((sch) => {
+                                  const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
+                                  return (
+                                    <button className={`week-schedule-card ${statusClass}`} disabled={!canWrite} key={sch.id}
+                                      onClick={() => handleEditInit(sch)} title={canWrite ? "Editar horario" : "Modo consulta"} type="button"
+                                    >
+                                      <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
+                                      <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
+                                      <span>Ficha {group ? group.code : sch.group_id}</span>
+                                      <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
+                                      {rap?.code && <span className="week-rap">{rap.code}</span>}
+                                      <small>{statusName}</small>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+                    </section>
 
-              <div className="table-responsive">
-                <table className="crud-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Horario</th>
-                      <th>Instructor</th>
-                      <th>Ficha</th>
-                      <th>Ambiente</th>
-                      <th>RAP</th>
-                      <th>Estado</th>
-                      {!isConsulta && <th>Acciones</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeSchedules.length === 0 ? (
-                      <tr>
-                        <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
-                          <strong>No hay horarios programados</strong>
-                          <span>Ajusta los filtros o registra una nueva programación académica.</span>
-                        </td>
-                      </tr>
-                    ) : (
-                      activeSchedules.map((sch) => {
-                        const ins = instructors.find((x) => x.id === sch.instructor_id);
-                        const grp = groups.find((x) => x.id === sch.group_id);
-                        const env = environments.find((x) => x.id === sch.environment_id);
-                        const rap = learningResults.find((x) => x.id === sch.learning_result_id);
-
-                        const statusClass =
-                          sch.status === "validated" || sch.status === "valid"
-                            ? "status-validated"
-                            : sch.status === "warning"
-                            ? "status-warning"
-                            : sch.status === "blocked"
-                            ? "status-blocked"
-                            : "status-idle";
-
-                        const statusName =
-                          sch.status === "validated" || sch.status === "valid"
-                            ? "Válido"
-                            : sch.status === "warning"
-                            ? "Con Alertas"
-                            : sch.status === "blocked"
-                            ? "Bloqueado"
-                            : "Borrador";
-
-                        return (
-                          <tr key={sch.id}>
-                            <td><strong>{sch.date}</strong></td>
-                            <td>
-                              <div>{sch.start_time} - {sch.end_time}</div>
-                              <small className="text-muted">{sch.duration_hours} hrs</small>
-                            </td>
-                            <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID: ${sch.instructor_id}`}</td>
-                            <td>{grp ? grp.code : `ID: ${sch.group_id}`}</td>
-                            <td>{env ? env.code : `ID: ${sch.environment_id}`}</td>
-                            <td>
-                              <div className="text-truncate" title={rap?.description}>
-                                <strong>{rap?.code}</strong>
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`schedule-status ${statusClass}`}>{statusName}</span>
-                            </td>
-                            {!isConsulta && (
-                              <td className="actions-cell">
-                                <button className="btn-edit" onClick={() => handleEditInit(sch)}>
-                                  Editar
-                                </button>
-                                {canDelete && (
-                                  <button className="btn-delete" onClick={() => handleCancelClick(sch.id)}>
-                                    Cancelar
-                                  </button>
-                                )}
-                              </td>
-                            )}
+                    <div className="table-responsive">
+                      <table className="crud-table">
+                        <thead>
+                          <tr>
+                            <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
+                            {!isConsulta && <th>Acciones</th>}
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                          {activeSchedules.length === 0 ? (
+                            <tr>
+                              <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
+                                <strong>No hay horarios programados</strong>
+                                <span>Ajusta los filtros o registra una nueva programación académica.</span>
+                              </td>
+                            </tr>
+                          ) : (
+                            activeSchedules.map((sch) => {
+                              const ins = instructors.find((x) => x.id === sch.instructor_id);
+                              const grp = groups.find((x) => x.id === sch.group_id);
+                              const env = environments.find((x) => x.id === sch.environment_id);
+                              const rap = learningResults.find((x) => x.id === sch.learning_result_id);
+                              const { statusClass, statusName } = getScheduleDisplayData(sch);
+                              return (
+                                <tr key={sch.id}>
+                                  <td>{sch.date}</td>
+                                  <td>{sch.start_time} - {sch.end_time}</td>
+                                  <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
+                                  <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
+                                  <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
+                                  <td>{rap ? rap.code : `ID ${sch.learning_result_id}`}</td>
+                                  <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
+                                  {!isConsulta && (
+                                    <td className="actions-cell">
+                                      <button className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
+                                      {canDelete && sch.status !== "cancelled" && (
+                                        <button className="btn-delete" onClick={() => handleCancelClick(sch.id)}>Cancelar</button>
+                                      )}
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
-            </>
-          )}
-        </div>
 
-        {/* Formulario e Info de Validación (Derecha - Oculto para consulta) */}
-        {!isConsulta && (
-          <div className="schedule-form-section">
-            <div className="form-card">
-              <div className="form-card-header">
-                <span className="eyebrow">Panel de programación</span>
-                <h3>{editingSchedule ? "Editar Programación" : "Programar Horario"}</h3>
-              </div>
-              <form onSubmit={handleFormSubmit} className="schedule-form">
-                <div className="schedule-form-group">
-                  <p className="form-group-title">Horario</p>
-                <label className="form-label">
-                  Fecha <span className="req">*</span>
-                  <input
-                    type="date"
-                    value={dateVal}
-                    onChange={(e) => setDateVal(e.target.value)}
-                    required
-                  />
-                </label>
-                </div>
+              {!isConsulta && (
+                <div className="schedule-form-section">
+                  <div className="form-card">
+                    <div className="form-card-header">
+                      <span className="eyebrow">Panel de programación</span>
+                      <h3>{editingSchedule ? "Editar Programación" : "Programar Horario"}</h3>
+                    </div>
+                    <form onSubmit={handleFormSubmit} className="schedule-form">
+                      <div className="schedule-form-group">
+                        <p className="form-group-title">Horario</p>
+                        <label className="form-label">
+                          Fecha <span className="req">*</span>
+                          <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
+                        </label>
+                      </div>
 
-                <div className="schedule-form-group">
-                  <p className="form-group-title">Datos académicos</p>
-                <label className="form-label">
-                  Ficha / Grupo <span className="req">*</span>
-                  <select
-                    value={groupId}
-                    onChange={(e) => handleFichaChange(Number(e.target.value))}
-                    required
-                  >
-                    <option value="">Seleccione ficha...</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {groupLabel(g)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                      <div className="schedule-form-group">
+                        <p className="form-group-title">Datos académicos</p>
+                        <label className="form-label">
+                          Ficha / Grupo <span className="req">*</span>
+                          <select value={groupId} onChange={(e) => handleFichaChange(Number(e.target.value))} required>
+                            <option value="">Seleccione ficha...</option>
+                            {groups.map((g) => (<option key={g.id} value={g.id}>{groupLabel(g)}</option>))}
+                          </select>
+                        </label>
+                        <label className="form-label">
+                          Programa de Formación
+                          <select value={programId} onChange={(e) => setProgramId(e.target.value ? Number(e.target.value) : "")}>
+                            <option value="">Auto-detectado por ficha</option>
+                            {programs.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                          </select>
+                        </label>
+                        <label className="form-label">
+                          Resultado de Aprendizaje (RAP) <span className="req">*</span>
+                          <select value={learningResultId} onChange={(e) => handleRapChange(Number(e.target.value))} required>
+                            <option value="">Seleccione RAP...</option>
+                            {learningResults.map((lr) => (<option key={lr.id} value={lr.id}>{rapLabel(lr)}</option>))}
+                          </select>
+                        </label>
 
-                <label className="form-label">
-                  Programa de Formación
-                  <select
-                    value={programId}
-                    onChange={(e) => setProgramId(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">Auto-detectado por ficha</option>
-                    {programs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                        {learningResultId && rapTopics.length > 0 && (
+                          <div className="rap-info-card">
+                            <p className="form-group-title">Información del RAP seleccionado</p>
+                            <div className="rap-info-row"><span className="rap-info-label">Trimestre:</span><span className="rap-info-value">{rapTopics[0]?.trimester_label || `Trimestre ${rapTopics[0]?.trimester_number || ""}`}</span></div>
+                            <div className="rap-info-row"><span className="rap-info-label">Tipo de oferta:</span><span className="rap-info-value">{rapTopics[0]?.program_scope_label || ""}</span></div>
+                            <div className="rap-info-topics">
+                              <span className="rap-info-label">Temáticas asociadas:</span>
+                              {rapTopics.map((t, i) => (
+                                <div key={t.relation_id || i} className="rap-topic-item">
+                                  <span className="rap-topic-name">{t.topic_name}</span>
+                                  {t.topic_hours != null && <span className="rap-topic-hours">{t.topic_hours}h</span>}
+                                  {t.relation_status && <span className="rap-topic-status">{t.relation_status}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
-                <label className="form-label">
-                  Resultado de Aprendizaje (RAP) <span className="req">*</span>
-                  <select
-                    value={learningResultId}
-                    onChange={(e) => handleRapChange(Number(e.target.value))}
-                    required
-                  >
-                    <option value="">Seleccione RAP...</option>
-                    {learningResults.map((lr) => (
-                      <option key={lr.id} value={lr.id}>
-                        {rapLabel(lr)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                        {learningResultId && rapTopics.length === 0 && (
+                          <div className="rap-info-card rap-info-empty">
+                            <p className="form-group-title">Información del RAP seleccionado</p>
+                            <p className="rap-empty-msg">Este RAP no tiene temáticas asociadas. Revise el archivo normalizado o vuelva a cargarlo desde Carga Masiva.</p>
+                          </div>
+                        )}
 
-                <label className="form-label">
-                  Competencia Asociada
-                  <select
-                    value={competencyId}
-                    onChange={(e) => setCompetencyId(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">Auto-detectado por RAP</option>
-                    {competencies.map((comp) => (
-                      <option key={comp.id} value={comp.id}>
-                        {comp.code} - {comp.name.slice(0, 50)}...
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                </div>
+                        <label className="form-label">
+                          Competencia Asociada
+                          <select value={competencyId} onChange={(e) => setCompetencyId(e.target.value ? Number(e.target.value) : "")}>
+                            <option value="">Auto-detectado por RAP</option>
+                            {competencies.map((comp) => (<option key={comp.id} value={comp.id}>{comp.code} - {comp.name.slice(0, 50)}...</option>))}
+                          </select>
+                        </label>
+                      </div>
 
-                <div className="schedule-form-group">
-                  <p className="form-group-title">Asignación</p>
-                <label className="form-label">
-                  Instructor <span className="req">*</span>
-                  <select
-                    value={instructorId}
-                    onChange={(e) => setInstructorId(Number(e.target.value))}
-                    required
-                  >
-                    <option value="">Seleccione instructor...</option>
-                    {instructors.map((ins) => (
-                      <option key={ins.id} value={ins.id}>
-                        {instructorLabel(ins)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="form-label">
-                  Ambiente <span className="req">*</span>
-                  <select
-                    value={environmentId}
-                    onChange={(e) => setEnvironmentId(Number(e.target.value))}
-                    required
-                  >
-                    <option value="">Seleccione ambiente...</option>
-                    {environments.map((env) => (
-                      <option key={env.id} value={env.id}>
-                        {environmentLabel(env)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                </div>
+                      <div className="schedule-form-group">
+                        <p className="form-group-title">Asignación</p>
+                        <label className="form-label">
+                          Instructor <span className="req">*</span>
+                          <select value={instructorId} onChange={(e) => setInstructorId(Number(e.target.value))} required>
+                            <option value="">Seleccione instructor...</option>
+                            {instructors.map((ins) => (<option key={ins.id} value={ins.id}>{instructorLabel(ins)}</option>))}
+                          </select>
+                        </label>
+                        <label className="form-label">
+                          Ambiente <span className="req">*</span>
+                          <select value={environmentId} onChange={(e) => setEnvironmentId(Number(e.target.value))} required>
+                            <option value="">Seleccione ambiente...</option>
+                            {environments.map((env) => (<option key={env.id} value={env.id}>{environmentLabel(env)}</option>))}
+                          </select>
+                        </label>
+                      </div>
 
                 <div className="schedule-form-group">
                   <p className="form-group-title">Bloque y duración</p>

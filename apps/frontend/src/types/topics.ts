@@ -10,6 +10,7 @@ export type TopicSelectionItem = {
   program_scope?: string | null;
   program_scope_label: string;
   trimester_number?: number | null;
+  trimester_label?: string | null;
   color_hex?: string | null;
   relation_status?: string | null;
   confidence?: string | null;

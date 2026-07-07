@@ -30,8 +30,8 @@ def _scope_values(program_scope: str | None) -> list[str] | None:
 def _scope_label(program_scope: str | None) -> str:
     labels = {
         "oferta_abierta": "Oferta abierta",
-        "cadena": "Oferta cerrada / cadena de formacion",
-        "oferta_cerrada": "Oferta cerrada",
+        "cadena": "Cadena de formación",
+        "oferta_cerrada": "Cadena de formación",
     }
     return labels.get(program_scope or "", "Sin contexto")
 
@@ -89,6 +89,7 @@ def _to_selection_item(
         program_scope=relation.program_scope,
         program_scope_label=_scope_label(relation.program_scope),
         trimester_number=relation.trimester_number,
+        trimester_label=topic.trimester,
         color_hex=relation.color_hex or topic.color_hex,
         relation_status=relation.relation_status,
         confidence=relation.confidence,

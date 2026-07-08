@@ -33,6 +33,7 @@ from app.services.schedule_validation import validate_schedule
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 SessionDep = Annotated[Session, Depends(get_session)]
+INACTIVE_SCHEDULE_STATUSES = ["cancelled", "deleted"]
 
 
 def _build_validation_payload(
@@ -57,7 +58,7 @@ def _build_validation_payload(
         Schedule.instructor_id == payload.instructor_id,
         Schedule.date >= monday,
         Schedule.date <= sunday,
-        Schedule.status != "cancelled",
+        ~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES),
     )
     if exclude_id is not None:
         stmt = stmt.where(Schedule.id != exclude_id)
@@ -169,7 +170,7 @@ def _existing_for_date(
 ) -> list[Schedule]:
     stmt = select(Schedule).where(
         Schedule.date == payload.date,
-        Schedule.status != "cancelled",
+        ~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES),
     )
     if exclude_id is not None:
         stmt = stmt.where(Schedule.id != exclude_id)
@@ -214,12 +215,13 @@ def list_schedules(
     date: date_type | None = Query(default=None),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> list[Schedule]:
     stmt = select(Schedule)
-    if not include_cancelled:
-        stmt = stmt.where(Schedule.status != "cancelled")
+    if not (include_inactive or include_cancelled):
+        stmt = stmt.where(~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES))
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -427,15 +429,24 @@ def update_schedule(
     )
 
 
-@router.delete("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
-def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
+def _mark_schedule_status(schedule_id: int, status: str, session: SessionDep) -> dict:
     obj = session.get(Schedule, schedule_id)
     if not obj:
         raise HTTPException(404, detail="Schedule not found")
-    obj.status = "cancelled"
+    obj.status = status
     session.add(obj)
     session.commit()
     return {"ok": True}
+
+
+@router.post("/{schedule_id}/cancel", dependencies=[Depends(require_roles(*ROLE_WRITE))])
+def cancel_schedule(schedule_id: int, session: SessionDep) -> dict:
+    return _mark_schedule_status(schedule_id, "cancelled", session)
+
+
+@router.delete("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
+def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
+    return _mark_schedule_status(schedule_id, "deleted", session)
 
 
 @router.post("/validate", response_model=ScheduleValidationResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])

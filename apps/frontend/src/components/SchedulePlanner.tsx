@@ -6,6 +6,7 @@ import {
   createSchedule,
   updateSchedule,
   cancelSchedule,
+  deleteSchedule,
 } from "../api/schedules";
 import { getTopicSelection } from "../api/topics";
 import {
@@ -165,6 +166,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
@@ -366,7 +368,7 @@ const {
   isFetching: schedulesFetching,
 } = useQuery<Schedule[]>({
   queryKey: ["schedules", activeFilters],
-  queryFn: () => fetchSchedules({ ...activeFilters, include_cancelled: true }),
+  queryFn: () => fetchSchedules({ ...activeFilters, include_inactive: true }),
   staleTime: 60 * 1000,
   refetchOnWindowFocus: false,
   placeholderData: (previousData) => previousData,
@@ -374,7 +376,7 @@ const {
 
 // Keep deleted rows visible in the table, but out of the active weekly matrix.
   const activeSchedules = useMemo(
-    () => schedules.filter((s) => s.status !== "cancelled"),
+    () => schedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
     [schedules]
   );
   const visibleSchedules = useMemo(() => schedules.slice(0, 100), [schedules]);
@@ -409,6 +411,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         ? "status-blocked"
         : schedule.status === "cancelled"
         ? "status-cancelled"
+        : schedule.status === "deleted"
+        ? "status-deleted"
         : "status-idle";
     const statusName =
       schedule.status === "validated" || schedule.status === "valid"
@@ -418,6 +422,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         : schedule.status === "blocked"
         ? "Bloqueado"
         : schedule.status === "cancelled"
+        ? "Cancelado"
+        : schedule.status === "deleted"
         ? "Eliminado"
         : "Borrador";
 
@@ -542,8 +548,19 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     },
   });
 
-const deleteMutation = useMutation({
+const cancelMutation = useMutation({
     mutationFn: cancelSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      addToast("success", "Horario cancelado correctamente.");
+    },
+    onError: (err: any) => {
+      addToast("error", err.message || "Error al cancelar el horario.");
+    },
+  });
+
+const deleteMutation = useMutation({
+    mutationFn: deleteSchedule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
       addToast("success", "Horario eliminado correctamente.");
@@ -642,6 +659,10 @@ const deleteMutation = useMutation({
 
   const handleCancelClick = (id: number) => {
     setConfirmCancelId(id);
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setConfirmDeleteId(id);
   };
 
   const toggleWeekday = (weekdayIndex: number) => {
@@ -909,6 +930,8 @@ const deleteMutation = useMutation({
                               const env = environmentsById.get(sch.environment_id);
                               const rap = learningResultsById.get(sch.learning_result_id);
                               const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
+                              const isCancelled = sch.status === "cancelled";
+                              const isDeleted = sch.status === "deleted";
                               return (
                                 <tr key={sch.id}>
                                   <td>{sch.date}</td>
@@ -923,13 +946,25 @@ const deleteMutation = useMutation({
                                   <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
                                   {!isConsulta && (
                                     <td className="actions-cell">
-                                      {sch.status === "cancelled" ? (
+                                      {isDeleted ? (
                                         <span className="row-action-state">Eliminado</span>
+                                      ) : isCancelled ? (
+                                        <>
+                                          <span className="row-action-state">Cancelado</span>
+                                          {canDelete && (
+                                            <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
+                                          )}
+                                        </>
                                       ) : (
                                         <>
-                                          <button type="button" className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
+                                          {canWrite && (
+                                            <button type="button" className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
+                                          )}
+                                          {canWrite && (
+                                            <button type="button" className="btn-cancel" onClick={() => handleCancelClick(sch.id)}>Cancelar</button>
+                                          )}
                                           {canDelete && (
-                                            <button type="button" className="btn-delete" onClick={() => handleCancelClick(sch.id)}>Eliminar</button>
+                                            <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
                                           )}
                                         </>
                                       )}
@@ -1368,12 +1403,21 @@ const deleteMutation = useMutation({
 
       <ConfirmDialog
         open={confirmCancelId !== null}
+        title="Cancelar horario"
+        message="¿Seguro que deseas marcar este horario como cancelado?"
+        confirmLabel="Cancelar horario"
+        confirmDanger
+        onConfirm={() => { if (confirmCancelId) { cancelMutation.mutate(confirmCancelId); setConfirmCancelId(null); } }}
+        onCancel={() => setConfirmCancelId(null)}
+      />
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
         title="Eliminar horario"
         message="¿Seguro que deseas marcar este horario como eliminado?"
         confirmLabel="Eliminar horario"
         confirmDanger
-        onConfirm={() => { if (confirmCancelId) { deleteMutation.mutate(confirmCancelId); setConfirmCancelId(null); } }}
-        onCancel={() => setConfirmCancelId(null)}
+        onConfirm={() => { if (confirmDeleteId) { deleteMutation.mutate(confirmDeleteId); setConfirmDeleteId(null); } }}
+        onCancel={() => setConfirmDeleteId(null)}
       />
     </div>
   );

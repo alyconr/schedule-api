@@ -14,6 +14,7 @@ class ScheduleStatusEnum(str, PyEnum):
     approved = "approved"
     published = "published"
     cancelled = "cancelled"
+    deleted = "deleted"
 
 
 class ExceptionStatusEnum(str, PyEnum):

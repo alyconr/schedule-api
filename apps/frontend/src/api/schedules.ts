@@ -16,6 +16,7 @@ export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedul
   if (filters?.date) params.set("date", filters.date);
   if (filters?.date_from) params.set("date_from", filters.date_from);
   if (filters?.date_to) params.set("date_to", filters.date_to);
+  if (filters?.include_inactive) params.set("include_inactive", "true");
   if (filters?.include_cancelled) params.set("include_cancelled", "true");
   if (filters?.limit) params.set("limit", String(filters.limit));
 
@@ -38,6 +39,12 @@ export async function updateSchedule(id: number, payload: ScheduleUpdate): Promi
 }
 
 export async function cancelSchedule(id: number): Promise<{ ok: boolean }> {
+  return apiRequest<{ ok: boolean }>(`/schedules/${id}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function deleteSchedule(id: number): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>(`/schedules/${id}`, {
     method: "DELETE",
   });

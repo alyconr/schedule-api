@@ -546,6 +546,22 @@ textarea:focus:not(:focus-visible) {
   background: #fca5a5;
 }
 
+.btn-cancel {
+  background: #fef3c7;
+  color: #92400e;
+  border: none;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-cancel:hover {
+  background: #fde68a;
+}
+
 /* --- TOASTS / ALERTS --- */
 .toast {
   padding: 16px;
@@ -1727,9 +1743,16 @@ textarea:focus:not(:focus-visible) {
 }
 
 .status-cancelled {
+  background: #ffedd5;
+  color: #c2410c;
+  text-decoration: line-through;
+}
+
+.status-deleted {
   background: #f1f5f9;
   color: #475569;
   text-decoration: line-through;
+  opacity: 0.75;
 }
 
 /* --- VALIDATION FEEDBACK PANEL --- */

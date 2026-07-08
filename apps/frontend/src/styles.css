@@ -1500,23 +1500,32 @@ textarea:focus:not(:focus-visible) {
   color: #52665a;
   font-size: 0.76rem;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.week-schedule-card span strong {
+  color: #102319;
+  font-size: inherit;
+  font-weight: 850;
 }
 
 .week-schedule-card .week-rap {
-  width: fit-content;
-  padding: 2px 7px;
-  border-radius: 999px;
+  width: 100%;
+  padding: 4px 7px;
+  border-radius: var(--radius-sm);
   background: rgba(35, 130, 71, 0.12);
   color: var(--color-primary-hover);
-  font-weight: 850;
+  font-weight: 750;
 }
 
 .week-schedule-card .week-topic,
 .schedule-topic-note {
   display: block;
-  color: var(--muted-text, #64748b);
+  color: #334155;
   font-size: 0.74rem;
   line-height: 1.25;
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .schedule-table-section .table-responsive {
@@ -1599,6 +1608,54 @@ textarea:focus:not(:focus-visible) {
   border: 1px solid #e2ece4;
   border-radius: var(--radius-md);
   background: #fbfdfb;
+}
+
+.weekday-selector {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.weekday-selector legend {
+  padding: 0;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.weekday-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekday-option {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d7e5da;
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.weekday-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.weekday-option.selected {
+  border-color: var(--color-primary);
+  background: rgba(35, 130, 71, 0.12);
+  color: var(--color-primary-hover);
 }
 
 .form-group-title {

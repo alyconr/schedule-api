@@ -64,7 +64,15 @@ function trimesterFromRapCode(code: string): string {
 }
 
 function includesSearch(value: string, search: string): boolean {
-  return value.toLowerCase().includes(search.trim().toLowerCase());
+  return normalizeSearchText(value).includes(normalizeSearchText(search.trim()));
+}
+
+function normalizeSearchText(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function normalizeRapDescription(value: string): string {
+  return normalizeSearchText(value).replace(/^\s*\d+\s*[\.\-:]?\s*/, "");
 }
 
 function toLocalIsoDate(date: Date): string {
@@ -178,18 +186,65 @@ const contractTypes = contractTypesQuery.data || [];
   const environmentsById = useMemo(() => new Map(environments.map((e) => [e.id, e])), [environments]);
   const learningResultsById = useMemo(() => new Map(learningResults.map((lr) => [lr.id, lr])), [learningResults]);
   const contractTypesById = useMemo(() => new Map(contractTypes.map((ct) => [ct.id, ct])), [contractTypes]);
+  const programIdsWithGroups = useMemo(
+    () => new Set(groups.map((group) => group.training_program_id).filter((id): id is number => typeof id === "number")),
+    [groups]
+  );
 
   // rap search autocomplete
-  const selectedRap = selectedLearningResultId ? learningResultsById.get(selectedLearningResultId) : undefined;
   const selectedProgram = selectedProgramId ? programsById.get(selectedProgramId) : undefined;
 
+  const programTopicsQuery = useQuery({
+    queryKey: ["program-topics", selectedProgramId],
+    queryFn: () => getTopicSelection({ training_program_id: selectedProgramId }),
+    enabled: Boolean(selectedProgramId),
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const programTopics = programTopicsQuery.data ?? [];
+  const linkedLearningResults = useMemo<LearningResult[]>(() => {
+    const byId = new Map<number, LearningResult>();
+    programTopics.forEach((topic) => {
+      if (!byId.has(topic.learning_result_id)) {
+        byId.set(topic.learning_result_id, {
+          id: topic.learning_result_id,
+          code: topic.learning_result_code,
+          description: topic.learning_result_description,
+        });
+      }
+    });
+    return Array.from(byId.values());
+  }, [programTopics]);
+  const rapSource =
+    selectedProgramId && (programTopicsQuery.isLoading || linkedLearningResults.length > 0)
+      ? linkedLearningResults
+      : learningResults;
+  const rapSourceById = useMemo(() => new Map(rapSource.map((lr) => [lr.id, lr])), [rapSource]);
+  const selectedRapOption = selectedLearningResultId
+    ? rapSourceById.get(selectedLearningResultId) || learningResultsById.get(selectedLearningResultId)
+    : undefined;
+
+  const rapAliasDescriptions = useMemo(() => {
+    const term = normalizeSearchText(deferredRapSearch.trim());
+    if (!term || rapSource === learningResults) return new Set<string>();
+    return new Set(
+      learningResults
+        .filter((lr) => normalizeSearchText(`${lr.code} ${lr.description}`).includes(term))
+        .map((lr) => normalizeRapDescription(lr.description))
+    );
+  }, [learningResults, rapSource, deferredRapSearch]);
+
   const rapOptions = useMemo(() => {
-    const term = deferredRapSearch.trim().toLowerCase();
-    if (!term) return learningResults.slice(0, 20);
-    return learningResults
-      .filter((lr) => lr.code.toLowerCase().includes(term) || lr.description.toLowerCase().includes(term))
+    const term = normalizeSearchText(deferredRapSearch.trim());
+    if (!term) return rapSource.slice(0, 20);
+    return rapSource
+      .filter(
+        (lr) =>
+          normalizeSearchText(`${lr.code} ${lr.description}`).includes(term) ||
+          rapAliasDescriptions.has(normalizeRapDescription(lr.description))
+      )
       .slice(0, 20);
-  }, [learningResults, deferredRapSearch]);
+  }, [rapSource, deferredRapSearch, rapAliasDescriptions]);
 
   // rapTopics query
   const rapTopicsQuery = useQuery({
@@ -235,8 +290,13 @@ const contractTypes = contractTypesQuery.data || [];
     [groups, groupSearch]
   );
   const filteredPrograms = useMemo(
-    () => programs.filter((p) => includesSearch(`${p.code} ${p.name}`, programSearch)),
-    [programs, programSearch]
+    () =>
+      programs.filter(
+        (p) =>
+          (programIdsWithGroups.size === 0 || programIdsWithGroups.has(p.id)) &&
+          includesSearch(`${p.code} ${p.name}`, programSearch)
+      ),
+    [programs, programIdsWithGroups, programSearch]
   );
   const filteredCompetencies = useMemo(
     () => competencies.filter((comp) => includesSearch(`${comp.code} ${comp.name}`, competencySearch)),
@@ -445,6 +505,9 @@ const deleteMutation = useMutation({
 
   // Event handlers
   const handleFichaChange = (id: number | "") => {
+    setLearningResultId("");
+    setCompetencyId("");
+    setRapSearch("");
     if (id === "") {
       setGroupId("");
       setProgramId("");
@@ -471,7 +534,7 @@ const deleteMutation = useMutation({
 
   const handleRapChange = (id: number) => {
     setLearningResultId(id);
-    const r = learningResultsById.get(id);
+    const r = rapSourceById.get(id) || learningResultsById.get(id);
     setCompetencyId(r?.competency_id || "");
     setLearningResultTopicId("");
     setManualTopicName("");
@@ -826,6 +889,9 @@ const deleteMutation = useMutation({
                               setProgramId(nextProgramId);
                               const program = typeof nextProgramId === "number" ? programsById.get(nextProgramId) : undefined;
                               setProgramSearch(program ? `${program.code} - ${program.name}` : "");
+                              setLearningResultId("");
+                              setCompetencyId("");
+                              setRapSearch("");
                               setLearningResultTopicId("");
                               setManualTopicName("");
                             }}
@@ -843,7 +909,7 @@ const deleteMutation = useMutation({
                             onChange={(e) => {
                               const nextSearch = e.target.value;
                               setRapSearch(nextSearch);
-                              const selectedLabel = selectedRap ? `${selectedRap.code} - ${selectedRap.description.slice(0, 100)}` : "";
+                              const selectedLabel = selectedRapOption ? `${selectedRapOption.code} - ${selectedRapOption.description.slice(0, 100)}` : "";
                               if (!nextSearch.trim() || nextSearch !== selectedLabel) {
                                 setLearningResultId("");
                                 setCompetencyId("");
@@ -868,13 +934,13 @@ const deleteMutation = useMutation({
                             {deferredRapSearch.trim() && rapOptions.length === 0 && (
                               <div className="rap-autocomplete-empty">No se encontraron RAP con ese criterio.</div>
                             )}
-                            {learningResults.length > 20 && !deferredRapSearch.trim() && (
+                            {rapSource.length > 20 && !deferredRapSearch.trim() && (
                               <div className="rap-autocomplete-hint">Escriba para buscar entre todos los resultados de aprendizaje.</div>
                             )}
                           </div>
-                          {selectedRap && (
+                          {selectedRapOption && (
                             <div className="selected-rap-summary">
-                              <strong>RAP seleccionado:</strong> {selectedRap.code}
+                              <strong>RAP seleccionado:</strong> {selectedRapOption.code}
                             </div>
                           )}
                         </label>

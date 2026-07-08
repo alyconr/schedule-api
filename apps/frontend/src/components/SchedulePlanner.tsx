@@ -63,6 +63,10 @@ function trimesterFromRapCode(code: string): string {
   return match ? `T${match[1].replace(/_/g, " ")}` : "";
 }
 
+function includesSearch(value: string, search: string): boolean {
+  return value.toLowerCase().includes(search.trim().toLowerCase());
+}
+
 function toLocalIsoDate(date: Date): string {
   const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return copy.toISOString().slice(0, 10);
@@ -111,6 +115,13 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [durationHours, setDurationHours] = useState<number | "">("");
   const [notes, setNotes] = useState("");
   const [rapSearch, setRapSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [programSearch, setProgramSearch] = useState("");
+  const [competencySearch, setCompetencySearch] = useState("");
+  const [instructorSearch, setInstructorSearch] = useState("");
+  const [environmentSearch, setEnvironmentSearch] = useState("");
+  const [blockSearch, setBlockSearch] = useState("");
+  const [filterInstructorSearch, setFilterInstructorSearch] = useState("");
   const [learningResultTopicId, setLearningResultTopicId] = useState<number | "">("");
   const [manualTopicName, setManualTopicName] = useState("");
   const deferredRapSearch = useDeferredValue(rapSearch);
@@ -219,6 +230,34 @@ const contractTypes = contractTypesQuery.data || [];
     return `${rap.code}${trimester ? ` - ${trimester}` : ""} - ${rap.description.slice(0, 70)}`;
   };
 
+  const filteredGroups = useMemo(
+    () => groups.filter((g) => includesSearch(groupLabel(g), groupSearch)),
+    [groups, groupSearch]
+  );
+  const filteredPrograms = useMemo(
+    () => programs.filter((p) => includesSearch(`${p.code} ${p.name}`, programSearch)),
+    [programs, programSearch]
+  );
+  const filteredCompetencies = useMemo(
+    () => competencies.filter((comp) => includesSearch(`${comp.code} ${comp.name}`, competencySearch)),
+    [competencies, competencySearch]
+  );
+  const filteredInstructors = useMemo(
+    () => instructors.filter((ins) => includesSearch(instructorLabel(ins), instructorSearch)),
+    [instructors, instructorSearch, contractTypesById]
+  );
+  const filteredEnvironments = useMemo(
+    () => environments.filter((env) => includesSearch(environmentLabel(env), environmentSearch)),
+    [environments, environmentSearch]
+  );
+  const filteredTimeBlocks = useMemo(
+    () => timeBlocks.filter((tb) => includesSearch(`${tb.name} ${tb.start_time} ${tb.end_time}`, blockSearch)),
+    [timeBlocks, blockSearch]
+  );
+  const filteredFilterInstructors = useMemo(
+    () => instructors.filter((ins) => includesSearch(instructorLabel(ins), filterInstructorSearch)),
+    [instructors, filterInstructorSearch, contractTypesById]
+  );
   // 2. Fetch Schedules
 const {
   data: schedules = [],
@@ -293,6 +332,12 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setDurationHours("");
     setNotes("");
     setRapSearch("");
+    setGroupSearch("");
+    setProgramSearch("");
+    setCompetencySearch("");
+    setInstructorSearch("");
+    setEnvironmentSearch("");
+    setBlockSearch("");
     setLearningResultTopicId("");
     setManualTopicName("");
     setErrorMsg(null);
@@ -323,6 +368,18 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setLearningResultTopicId(sch.learning_result_topic_id || "");
     setManualTopicName(sch.manual_topic_name || "");
     const rap = learningResultsById.get(sch.learning_result_id);
+    const group = groupsById.get(sch.group_id);
+    const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
+    const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
+    const instructor = instructorsById.get(sch.instructor_id);
+    const environment = environmentsById.get(sch.environment_id);
+    const block = sch.block_id ? timeBlocks.find((tb) => tb.id === sch.block_id) : undefined;
+    setGroupSearch(group ? groupLabel(group) : "");
+    setProgramSearch(program ? `${program.code} - ${program.name}` : "");
+    setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
+    setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+    setEnvironmentSearch(environment ? environmentLabel(environment) : "");
+    setBlockSearch(block ? `${block.name} ${block.start_time} - ${block.end_time}` : "");
     setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
   };
 
@@ -387,13 +444,26 @@ const deleteMutation = useMutation({
   });
 
   // Event handlers
-  const handleFichaChange = (id: number) => {
+  const handleFichaChange = (id: number | "") => {
+    if (id === "") {
+      setGroupId("");
+      setProgramId("");
+      setGroupSearch("");
+      setProgramSearch("");
+      setLearningResultTopicId("");
+      setManualTopicName("");
+      return;
+    }
     setGroupId(id);
     const g = groups.find((x) => x.id === id);
+    setGroupSearch(g ? groupLabel(g) : "");
     if (g?.training_program_id) {
       setProgramId(g.training_program_id);
+      const program = programsById.get(g.training_program_id);
+      setProgramSearch(program ? `${program.code} - ${program.name}` : "");
     } else {
       setProgramId("");
+      setProgramSearch("");
     }
     setLearningResultTopicId("");
     setManualTopicName("");
@@ -410,9 +480,13 @@ const deleteMutation = useMutation({
 
   const handleBlockChange = (id: number | "") => {
     setBlockId(id);
-    if (id === "") return;
+    if (id === "") {
+      setBlockSearch("");
+      return;
+    }
     const b = timeBlocks.find((x) => x.id === id);
     if (b) {
+      setBlockSearch(`${b.name} ${b.start_time} - ${b.end_time}`);
       setStartTime(b.start_time);
       setEndTime(b.end_time);
       setDurationHours(b.duration_minutes / 60);
@@ -449,6 +523,7 @@ const deleteMutation = useMutation({
     setFilterGroup("");
     setFilterEnvironment("");
     setFilterDate("");
+    setFilterInstructorSearch("");
     setActiveFilters(getCurrentWeekRange());
   };
 
@@ -558,9 +633,15 @@ const deleteMutation = useMutation({
           </label>
           <label>
             Instructor
+            <input
+              type="search"
+              value={filterInstructorSearch}
+              onChange={(e) => setFilterInstructorSearch(e.target.value)}
+              placeholder="Buscar instructor..."
+            />
             <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)}>
               <option value="">Todos los instructores</option>
-              {instructors.map((ins) => (
+              {filteredFilterInstructors.map((ins) => (
                 <option key={ins.id} value={ins.id}>
                   {instructorLabel(ins)}
                 </option>
@@ -719,23 +800,38 @@ const deleteMutation = useMutation({
                         <p className="form-group-title">Datos académicos</p>
                         <label className="form-label">
                           Ficha / Grupo <span className="req">*</span>
-                          <select value={groupId} onChange={(e) => handleFichaChange(Number(e.target.value))} required>
+                          <input
+                            type="search"
+                            value={groupSearch}
+                            onChange={(e) => setGroupSearch(e.target.value)}
+                            placeholder="Buscar ficha..."
+                          />
+                          <select value={groupId} onChange={(e) => handleFichaChange(e.target.value ? Number(e.target.value) : "")} required>
                             <option value="">Seleccione ficha...</option>
-                            {groups.map((g) => (<option key={g.id} value={g.id}>{groupLabel(g)}</option>))}
+                            {filteredGroups.map((g) => (<option key={g.id} value={g.id}>{groupLabel(g)}</option>))}
                           </select>
                         </label>
                         <label className="form-label">
                           Programa de Formación
+                          <input
+                            type="search"
+                            value={programSearch}
+                            onChange={(e) => setProgramSearch(e.target.value)}
+                            placeholder="Buscar programa..."
+                          />
                           <select
                             value={programId}
                             onChange={(e) => {
-                              setProgramId(e.target.value ? Number(e.target.value) : "");
+                              const nextProgramId = e.target.value ? Number(e.target.value) : "";
+                              setProgramId(nextProgramId);
+                              const program = typeof nextProgramId === "number" ? programsById.get(nextProgramId) : undefined;
+                              setProgramSearch(program ? `${program.code} - ${program.name}` : "");
                               setLearningResultTopicId("");
                               setManualTopicName("");
                             }}
                           >
                             <option value="">Auto-detectado por ficha</option>
-                            {programs.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                            {filteredPrograms.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
                           </select>
                         </label>
                         <label className="form-label rap-search-field">
@@ -743,9 +839,12 @@ const deleteMutation = useMutation({
                           <input
                             type="text"
                             value={rapSearch}
+                            onFocus={(e) => e.currentTarget.select()}
                             onChange={(e) => {
-                              setRapSearch(e.target.value);
-                              if (!e.target.value.trim()) {
+                              const nextSearch = e.target.value;
+                              setRapSearch(nextSearch);
+                              const selectedLabel = selectedRap ? `${selectedRap.code} - ${selectedRap.description.slice(0, 100)}` : "";
+                              if (!nextSearch.trim() || nextSearch !== selectedLabel) {
                                 setLearningResultId("");
                                 setCompetencyId("");
                                 setLearningResultTopicId("");
@@ -842,9 +941,22 @@ const deleteMutation = useMutation({
 
                         <label className="form-label">
                           Competencia Asociada
-                          <select value={competencyId} onChange={(e) => setCompetencyId(e.target.value ? Number(e.target.value) : "")}>
+                          <input
+                            type="search"
+                            value={competencySearch}
+                            onChange={(e) => setCompetencySearch(e.target.value)}
+                            placeholder="Buscar competencia..."
+                          />
+                          <select value={competencyId} onChange={(e) => {
+                            const nextCompetencyId = e.target.value ? Number(e.target.value) : "";
+                            setCompetencyId(nextCompetencyId);
+                            const competency = typeof nextCompetencyId === "number"
+                              ? competencies.find((comp) => comp.id === nextCompetencyId)
+                              : undefined;
+                            setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
+                          }}>
                             <option value="">Auto-detectado por RAP</option>
-                            {competencies.map((comp) => (<option key={comp.id} value={comp.id}>{comp.code} - {comp.name.slice(0, 50)}...</option>))}
+                            {filteredCompetencies.map((comp) => (<option key={comp.id} value={comp.id}>{comp.code} - {comp.name.slice(0, 50)}...</option>))}
                           </select>
                         </label>
                       </div>
@@ -853,16 +965,38 @@ const deleteMutation = useMutation({
                         <p className="form-group-title">Asignación</p>
                         <label className="form-label">
                           Instructor <span className="req">*</span>
-                          <select value={instructorId} onChange={(e) => setInstructorId(Number(e.target.value))} required>
+                          <input
+                            type="search"
+                            value={instructorSearch}
+                            onChange={(e) => setInstructorSearch(e.target.value)}
+                            placeholder="Buscar instructor..."
+                          />
+                          <select value={instructorId} onChange={(e) => {
+                            const nextInstructorId = e.target.value ? Number(e.target.value) : "";
+                            setInstructorId(nextInstructorId);
+                            const instructor = typeof nextInstructorId === "number" ? instructorsById.get(nextInstructorId) : undefined;
+                            setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+                          }} required>
                             <option value="">Seleccione instructor...</option>
-                            {instructors.map((ins) => (<option key={ins.id} value={ins.id}>{instructorLabel(ins)}</option>))}
+                            {filteredInstructors.map((ins) => (<option key={ins.id} value={ins.id}>{instructorLabel(ins)}</option>))}
                           </select>
                         </label>
                         <label className="form-label">
                           Ambiente <span className="req">*</span>
-                          <select value={environmentId} onChange={(e) => setEnvironmentId(Number(e.target.value))} required>
+                          <input
+                            type="search"
+                            value={environmentSearch}
+                            onChange={(e) => setEnvironmentSearch(e.target.value)}
+                            placeholder="Buscar ambiente..."
+                          />
+                          <select value={environmentId} onChange={(e) => {
+                            const nextEnvironmentId = e.target.value ? Number(e.target.value) : "";
+                            setEnvironmentId(nextEnvironmentId);
+                            const environment = typeof nextEnvironmentId === "number" ? environmentsById.get(nextEnvironmentId) : undefined;
+                            setEnvironmentSearch(environment ? environmentLabel(environment) : "");
+                          }} required>
                             <option value="">Seleccione ambiente...</option>
-                            {environments.map((env) => (<option key={env.id} value={env.id}>{environmentLabel(env)}</option>))}
+                            {filteredEnvironments.map((env) => (<option key={env.id} value={env.id}>{environmentLabel(env)}</option>))}
                           </select>
                         </label>
                       </div>
@@ -871,12 +1005,18 @@ const deleteMutation = useMutation({
                   <p className="form-group-title">Bloque y duración</p>
                 <label className="form-label">
                   Bloque Horario Institucional
+                  <input
+                    type="search"
+                    value={blockSearch}
+                    onChange={(e) => setBlockSearch(e.target.value)}
+                    placeholder="Buscar bloque..."
+                  />
                   <select
                     value={blockId}
                     onChange={(e) => handleBlockChange(e.target.value ? Number(e.target.value) : "")}
                   >
                     <option value="">Carga manual / Sin bloque</option>
-                    {timeBlocks.map((tb) => (
+                    {filteredTimeBlocks.map((tb) => (
                       <option key={tb.id} value={tb.id}>
                         {tb.name} ({tb.start_time} - {tb.end_time})
                       </option>

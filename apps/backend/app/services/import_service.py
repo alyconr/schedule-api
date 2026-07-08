@@ -684,7 +684,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             if not raw_ra_code or not ra_description:
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="error", message="CODIGO_RA y RESULTADO_APRENDIZAJE son obligatorios."))
                 continue
-            ra_code = f"{program_code}-{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(ra_description)}"[:50]
+            ra_code = f"{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(ra_description)}"[:50]
             ra_hours = parse_decimal(row_cell(row, ra_trim_idx)) or parse_decimal(row_cell(row, ra_week_idx))
             if ra_code not in seen["learning_results"]:
                 items["learning_results"].append({

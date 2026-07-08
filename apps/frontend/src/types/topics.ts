@@ -1,6 +1,6 @@
 export type TopicSelectionItem = {
   relation_id: string;
-  learning_result_topic_id: number;
+  learning_result_topic_id?: number | null;
   training_program_id?: number | null;
   training_program_code?: string | null;
   training_program_name?: string | null;

@@ -197,7 +197,7 @@ const contractTypes = contractTypesQuery.data || [];
       return;
     }
     if (rapTopicsQuery.isLoading) return;
-    if (rapTopics.length === 1) {
+    if (rapTopics.length === 1 && rapTopics[0].learning_result_topic_id) {
       setLearningResultTopicId(rapTopics[0].learning_result_topic_id);
       setManualTopicName("");
     } else if (!rapTopics.some((topic) => topic.learning_result_topic_id === learningResultTopicId)) {
@@ -471,6 +471,10 @@ const deleteMutation = useMutation({
       return;
     }
     const cleanedManualTopic = manualTopicName.trim();
+    if (!selectedProgramId) {
+      setErrorMsg("Seleccione primero una ficha o programa de formación para consultar la temática del RAP.");
+      return;
+    }
     if (rapTopics.length > 0 && !learningResultTopicId) {
       setErrorMsg("Seleccione la temática asociada al RAP.");
       return;
@@ -805,7 +809,7 @@ const deleteMutation = useMutation({
                                     name="learning_result_topic_id"
                                     checked={learningResultTopicId === t.learning_result_topic_id}
                                     onChange={() => {
-                                      setLearningResultTopicId(t.learning_result_topic_id);
+                                      setLearningResultTopicId(t.learning_result_topic_id || "");
                                       setManualTopicName("");
                                     }}
                                   />

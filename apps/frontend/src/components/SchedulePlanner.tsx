@@ -169,6 +169,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
+  const [showFullscreenTable, setShowFullscreenTable] = useState(false);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
@@ -907,81 +908,94 @@ const deleteMutation = useMutation({
                       </div>
                     </section>
 
-                    <div className="table-responsive">
-                      <table className="crud-table">
-                        <thead>
-                          <tr>
-                            <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
-                            {!isConsulta && <th>Acciones</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {schedules.length === 0 ? (
+                    <section className="week-view-card" style={{ marginTop: "24px" }} aria-label="Listado de horarios programados">
+                      <div className="week-view-header">
+                        <div>
+                          <span className="eyebrow">Programación detallada</span>
+                          <h3>Listado de horarios</h3>
+                        </div>
+                        <span className="week-view-count">{schedules.length} registros</span>
+                        <button className="btn-secondary" onClick={() => setShowFullscreenTable(true)} type="button" aria-label="Ampliar listado">
+                          Ampliar listado
+                        </button>
+                      </div>
+
+                      <div className="table-responsive">
+                        <table className="crud-table">
+                          <thead>
                             <tr>
-                              <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
-                                <strong>No hay horarios programados</strong>
-                                <span>Ajusta los filtros o registra una nueva programación académica.</span>
-                              </td>
+                              <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
+                              {!isConsulta && <th>Acciones</th>}
                             </tr>
-                          ) : (
-                            visibleSchedules.map((sch) => {
-                              const ins = instructorsById.get(sch.instructor_id);
-                              const grp = groupsById.get(sch.group_id);
-                              const env = environmentsById.get(sch.environment_id);
-                              const rap = learningResultsById.get(sch.learning_result_id);
-                              const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
-                              const isCancelled = sch.status === "cancelled";
-                              const isDeleted = sch.status === "deleted";
-                              return (
-                                <tr key={sch.id}>
-                                  <td>{sch.date}</td>
-                                  <td>{sch.start_time} - {sch.end_time}</td>
-                                  <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
-                                  <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
-                                  <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
-                                  <td>
-                                    {rap ? rap.code : `ID ${sch.learning_result_id}`}
-                                    {topicName && <small className="schedule-topic-note">{topicName}</small>}
-                                  </td>
-                                  <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
-                                  {!isConsulta && (
-                                    <td className="actions-cell">
-                                      {isDeleted ? (
-                                        <span className="row-action-state">Eliminado</span>
-                                      ) : isCancelled ? (
-                                        <>
-                                          <span className="row-action-state">Cancelado</span>
-                                          {canDelete && (
-                                            <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
-                                          )}
-                                        </>
-                                      ) : (
-                                        <>
-                                          {canWrite && (
-                                            <button type="button" className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
-                                          )}
-                                          {canWrite && (
-                                            <button type="button" className="btn-cancel" onClick={() => handleCancelClick(sch.id)}>Cancelar</button>
-                                          )}
-                                          {canDelete && (
-                                            <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
-                                          )}
-                                        </>
-                                      )}
+                          </thead>
+                          <tbody>
+                            {schedules.length === 0 ? (
+                              <tr>
+                                <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
+                                  <strong>No hay horarios programados</strong>
+                                  <span>Ajusta los filtros o registra una nueva programación académica.</span>
+                                </td>
+                              </tr>
+                            ) : (
+                              visibleSchedules.map((sch) => {
+                                const ins = instructorsById.get(sch.instructor_id);
+                                const grp = groupsById.get(sch.group_id);
+                                const env = environmentsById.get(sch.environment_id);
+                                const rap = learningResultsById.get(sch.learning_result_id);
+                                const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
+                                const isCancelled = sch.status === "cancelled";
+                                const isDeleted = sch.status === "deleted";
+                                return (
+                                  <tr key={sch.id}>
+                                    <td>{sch.date}</td>
+                                    <td>{sch.start_time} - {sch.end_time}</td>
+                                    <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
+                                    <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
+                                    <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
+                                    <td>
+                                      {rap ? rap.code : `ID ${sch.learning_result_id}`}
+                                      {topicName && <small className="schedule-topic-note">{topicName}</small>}
                                     </td>
-                                  )}
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    {schedules.length > 100 && (
-                      <p className="text-muted" style={{ padding: "8px 0 0", fontSize: "0.85rem" }}>
-                        Mostrando los primeros 100 horarios. Usa filtros para reducir los resultados.
-                      </p>
-                    )}
+                                    <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
+                                    {!isConsulta && (
+                                      <td className="actions-cell">
+                                        {isDeleted ? (
+                                          <span className="row-action-state">Eliminado</span>
+                                        ) : isCancelled ? (
+                                          <>
+                                            <span className="row-action-state">Cancelado</span>
+                                            {canDelete && (
+                                              <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            {canWrite && (
+                                              <button type="button" className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
+                                            )}
+                                            {canWrite && (
+                                              <button type="button" className="btn-cancel" onClick={() => handleCancelClick(sch.id)}>Cancelar</button>
+                                            )}
+                                            {canDelete && (
+                                              <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
+                                            )}
+                                          </>
+                                        )}
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {schedules.length > 100 && (
+                        <p className="text-muted" style={{ padding: "8px 0 0", fontSize: "0.85rem" }}>
+                          Mostrando los primeros 100 horarios. Usa filtros para reducir los resultados.
+                        </p>
+                      )}
+                    </section>
                   </>
                 )}
               </div>
@@ -1396,6 +1410,92 @@ const deleteMutation = useMutation({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen table modal */}
+      {showFullscreenTable && (
+        <div className="modal-overlay fullscreen-matrix" role="dialog" aria-modal="true" aria-labelledby="table-modal-title">
+          <div className="fullscreen-matrix-content">
+            <div className="fullscreen-matrix-header">
+              <div>
+                <span className="eyebrow">Programación detallada</span>
+                <h3 id="table-modal-title">Listado de horarios programados</h3>
+                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica en formato tabla.</p>
+              </div>
+              <button className="btn-secondary" onClick={() => setShowFullscreenTable(false)} aria-label="Cerrar listado">Cerrar</button>
+            </div>
+            
+            <div className="table-responsive" style={{ maxHeight: "calc(100vh - 180px)", overflowY: "auto" }}>
+              <table className="crud-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
+                    {!isConsulta && <th>Acciones</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.length === 0 ? (
+                    <tr>
+                      <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
+                        <strong>No hay horarios programados</strong>
+                      </td>
+                    </tr>
+                  ) : (
+                    schedules.map((sch) => {
+                      const ins = instructorsById.get(sch.instructor_id);
+                      const grp = groupsById.get(sch.group_id);
+                      const env = environmentsById.get(sch.environment_id);
+                      const rap = learningResultsById.get(sch.learning_result_id);
+                      const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
+                      const isCancelled = sch.status === "cancelled";
+                      const isDeleted = sch.status === "deleted";
+                      return (
+                        <tr key={sch.id}>
+                          <td>{sch.date}</td>
+                          <td>{sch.start_time} - {sch.end_time}</td>
+                          <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
+                          <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
+                          <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
+                          <td>
+                            {rap ? rap.code : `ID ${sch.learning_result_id}`}
+                            {topicName && <small className="schedule-topic-note">{topicName}</small>}
+                          </td>
+                          <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
+                          {!isConsulta && (
+                            <td className="actions-cell">
+                              {isDeleted ? (
+                                <span className="row-action-state">Eliminado</span>
+                              ) : isCancelled ? (
+                                <>
+                                  <span className="row-action-state">Cancelado</span>
+                                  {canDelete && (
+                                    <button type="button" className="btn-delete" onClick={() => { setShowFullscreenTable(false); handleDeleteClick(sch.id); }}>Eliminar</button>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {canWrite && (
+                                    <button type="button" className="btn-edit" onClick={() => { setShowFullscreenTable(false); handleEditInit(sch); }}>Editar</button>
+                                  )}
+                                  {canWrite && (
+                                    <button type="button" className="btn-cancel" onClick={() => { setShowFullscreenTable(false); handleCancelClick(sch.id); }}>Cancelar</button>
+                                  )}
+                                  {canDelete && (
+                                    <button type="button" className="btn-delete" onClick={() => { setShowFullscreenTable(false); handleDeleteClick(sch.id); }}>Eliminar</button>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

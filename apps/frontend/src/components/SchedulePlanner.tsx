@@ -640,7 +640,7 @@ const deleteMutation = useMutation({
     if (filterEnvironment) newFilters.environment_id = Number(filterEnvironment);
     if (filterDate) {
       newFilters.date = filterDate;
-    } else {
+    } else if (!filterInstructor) {
       const weekRange = getCurrentWeekRange();
       newFilters.date_from = weekRange.date_from;
       newFilters.date_to = weekRange.date_to;

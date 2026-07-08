@@ -40,6 +40,10 @@ def normalize_header(value: Any) -> str:
     return s
 
 
+def normalize_program_name(value: Any) -> str:
+    return " ".join(str(value or "").strip().upper().split())
+
+
 def parse_excel_date(value: Any) -> Optional[date]:
     if value is None:
         return None
@@ -598,7 +602,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="group", severity="error", message="No. FICHA es obligatorio."))
                 continue
             name = str(row_cell(row, name_idx) or f"Ficha {code}").strip()
-            program_name = name.split("_")[-1].strip() if "_" in name else name
+            program_name = normalize_program_name(name.split("_")[-1] if "_" in name else name)
             program_code = f"PROG-{get_stable_hash(program_name)}"
             level = str(row_cell(row, level_idx) or "").strip()
             if program_code not in seen["programs"]:
@@ -637,6 +641,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
         ("Semaforo con RA Oferta Abierta", "oferta_abierta", "OA"),
     )
     sem_required = {
+        "PROGRAMA DE FORMACION": ("programa_de_formacion", "programa_formacion", "programa"),
         "TRIMESTRE": ("trimestre",),
         "CODIGO_RA": ("codigo_ra",),
         "RESULTADO_APRENDIZAJE": ("resultado_aprendizaje",),
@@ -649,6 +654,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
         headers = [normalize_header(c) for c in rows[0]] if rows else []
         if not rows or add_missing_columns_errors(sheet.title, headers, sem_required, errors):
             continue
+        program_idx = find_col_idx(headers, "programa_de_formacion", "programa_formacion", "programa")
         tri_idx = find_col_idx(headers, "trimestre")
         ra_code_idx = find_col_idx(headers, "codigo_ra")
         ra_desc_idx = find_col_idx(headers, "resultado_aprendizaje")
@@ -665,12 +671,20 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 continue
             trimester, trimester_number = parse_trimester_label(row_cell(row, tri_idx))
             tri_code = normalize_header(trimester or "sin_trimestre").upper()
+            program_name = normalize_program_name(row_cell(row, program_idx))
+            if not program_name:
+                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="program", severity="error", message="PROGRAMA DE FORMACION es obligatorio."))
+                continue
+            program_code = f"PROG-{get_stable_hash(program_name)}"
+            if program_code not in seen["programs"]:
+                items["programs"].append({"code": program_code, "name": program_name[:300], "level": None})
+                seen["programs"].add(program_code)
             raw_ra_code = str(row_cell(row, ra_code_idx) or "").strip()
             ra_description = str(row_cell(row, ra_desc_idx) or "").strip()
             if not raw_ra_code or not ra_description:
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="error", message="CODIGO_RA y RESULTADO_APRENDIZAJE son obligatorios."))
                 continue
-            ra_code = f"{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(ra_description)}"[:50]
+            ra_code = f"{program_code}-{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(ra_description)}"[:50]
             ra_hours = parse_decimal(row_cell(row, ra_trim_idx)) or parse_decimal(row_cell(row, ra_week_idx))
             if ra_code not in seen["learning_results"]:
                 items["learning_results"].append({
@@ -685,7 +699,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             if not topic_name:
                 warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="warning", message="RA sin tematica relacionada.", raw_value=raw_ra_code))
                 continue
-            topic_code = f"{prefix}-{tri_code}-TEM-{get_stable_hash(topic_name)}"[:50]
+            topic_code = f"{program_code}-{prefix}-{tri_code}-TEM-{get_stable_hash(topic_name)}"[:50]
             if topic_code not in seen["topics"]:
                 items["topics"].append({
                     "code": topic_code,
@@ -703,18 +717,20 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                     "color_hex": None,
                 })
                 seen["topics"].add(topic_code)
-            relation_id = f"{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(topic_name)}-{color_key}"[:120]
+            relation_id = f"{program_code}-{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(topic_name)}-{color_key}"[:120]
             if relation_id not in seen["ra_topic_relations"]:
                 items["ra_topic_relations"].append({
                     "relation_id": relation_id,
                     "group_id": color_key[:80] if color_key else relation_id[:80],
+                    "training_program_code": program_code,
+                    "training_program_name": program_name[:300],
                     "learning_result_code": ra_code,
                     "topic_code": topic_code,
                     "program_scope": scope,
                     "trimester_number": trimester_number,
                     "color_key": color_key or None,
                     "color_hex": None,
-                    "relation_method": "normalized_excel_explicit_relation",
+                    "relation_method": "normalized_excel_program_rap_topic_relation",
                     "relation_status": "OK",
                     "confidence": "alta",
                     "needs_manual_review": False,
@@ -1520,8 +1536,16 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             topic_id = topic_id_map.get(relation["topic_code"])
             if learning_result_id is None or topic_id is None:
                 continue
+            training_program_code = relation.get("training_program_code")
+            training_program_id = program_id_map.get(training_program_code)
+            if training_program_id is None and training_program_code:
+                program = session.exec(select(TrainingProgram).where(TrainingProgram.code == training_program_code)).first()
+                training_program_id = program.id if program else None
             payload = {
                 "relation_id": relation["relation_id"],
+                "training_program_id": training_program_id,
+                "training_program_code": training_program_code,
+                "training_program_name": relation.get("training_program_name"),
                 "learning_result_id": learning_result_id,
                 "topic_id": topic_id,
                 "group_id": relation["group_id"],

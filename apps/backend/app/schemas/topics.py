@@ -7,6 +7,10 @@ class TopicSelectionItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     relation_id: str
+    learning_result_topic_id: int
+    training_program_id: int | None = None
+    training_program_code: str | None = None
+    training_program_name: str | None = None
     learning_result_id: int
     learning_result_code: str
     learning_result_description: str

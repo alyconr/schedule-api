@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
 import {
@@ -23,7 +23,6 @@ import {
   ScheduleFilters,
   ValidationResult,
 } from "../types/schedules";
-import { TopicSelectionItem } from "../types/topics";
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -64,6 +63,23 @@ function trimesterFromRapCode(code: string): string {
   return match ? `T${match[1].replace(/_/g, " ")}` : "";
 }
 
+function toLocalIsoDate(date: Date): string {
+  const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return copy.toISOString().slice(0, 10);
+}
+
+function getCurrentWeekRange(): ScheduleFilters {
+  const today = new Date();
+  const weekday = today.getDay() || 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - weekday + 1);
+  const saturday = new Date(monday);
+  saturday.setDate(monday.getDate() + 5);
+  return { date_from: toLocalIsoDate(monday), date_to: toLocalIsoDate(saturday), limit: 200 };
+}
+
+const MAX_WEEKDAY_CARDS = 30;
+
 export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
 
@@ -78,7 +94,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [filterGroup, setFilterGroup] = useState<string>("");
   const [filterEnvironment, setFilterEnvironment] = useState<string>("");
   const [filterDate, setFilterDate] = useState<string>("");
-  const [activeFilters, setActiveFilters] = useState<ScheduleFilters>({});
+  const [activeFilters, setActiveFilters] = useState<ScheduleFilters>(() => getCurrentWeekRange());
 
   // Form states
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -94,6 +110,10 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [endTime, setEndTime] = useState("");
   const [durationHours, setDurationHours] = useState<number | "">("");
   const [notes, setNotes] = useState("");
+  const [rapSearch, setRapSearch] = useState("");
+  const [learningResultTopicId, setLearningResultTopicId] = useState<number | "">("");
+  const [manualTopicName, setManualTopicName] = useState("");
+  const deferredRapSearch = useDeferredValue(rapSearch);
 
   // Feedback states
   const { addToast } = useToast();
@@ -103,6 +123,7 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
+  const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
   // 1. Fetch Master Data
   const masterQueries = useQueries({
@@ -142,19 +163,47 @@ const contractTypes = contractTypesQuery.data || [];
   // useMemo maps for fast lookups
   const instructorsById = useMemo(() => new Map(instructors.map((i) => [i.id, i])), [instructors]);
   const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
+  const programsById = useMemo(() => new Map(programs.map((p) => [p.id, p])), [programs]);
   const environmentsById = useMemo(() => new Map(environments.map((e) => [e.id, e])), [environments]);
   const learningResultsById = useMemo(() => new Map(learningResults.map((lr) => [lr.id, lr])), [learningResults]);
   const contractTypesById = useMemo(() => new Map(contractTypes.map((ct) => [ct.id, ct])), [contractTypes]);
 
+  // rap search autocomplete
+  const selectedRap = selectedLearningResultId ? learningResultsById.get(selectedLearningResultId) : undefined;
+  const selectedProgram = selectedProgramId ? programsById.get(selectedProgramId) : undefined;
+
+  const rapOptions = useMemo(() => {
+    const term = deferredRapSearch.trim().toLowerCase();
+    if (!term) return learningResults.slice(0, 20);
+    return learningResults
+      .filter((lr) => lr.code.toLowerCase().includes(term) || lr.description.toLowerCase().includes(term))
+      .slice(0, 20);
+  }, [learningResults, deferredRapSearch]);
+
   // rapTopics query
   const rapTopicsQuery = useQuery({
-    queryKey: ["rap-topics", selectedLearningResultId],
-    queryFn: () => getTopicSelection({ learning_result_id: selectedLearningResultId }),
-    enabled: Boolean(selectedLearningResultId),
+    queryKey: ["rap-topics", selectedLearningResultId, selectedProgramId],
+    queryFn: () => getTopicSelection({ learning_result_id: selectedLearningResultId, training_program_id: selectedProgramId }),
+    enabled: Boolean(selectedLearningResultId && selectedProgramId),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   const rapTopics = rapTopicsQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedLearningResultId || !selectedProgramId) {
+      setLearningResultTopicId("");
+      setManualTopicName("");
+      return;
+    }
+    if (rapTopicsQuery.isLoading) return;
+    if (rapTopics.length === 1) {
+      setLearningResultTopicId(rapTopics[0].learning_result_topic_id);
+      setManualTopicName("");
+    } else if (!rapTopics.some((topic) => topic.learning_result_topic_id === learningResultTopicId)) {
+      setLearningResultTopicId("");
+    }
+  }, [selectedLearningResultId, selectedProgramId, rapTopics, rapTopicsQuery.isLoading, learningResultTopicId]);
 
   const instructorLabel = (ins: Instructor) => {
     const contract = contractTypesById.get(ins.contract_type_id ?? -1)?.name || "sin contrato";
@@ -171,10 +220,18 @@ const contractTypes = contractTypesQuery.data || [];
   };
 
   // 2. Fetch Schedules
-  const { data: schedules = [], isLoading: schedulesLoading, isError: schedulesError } = useQuery<Schedule[]>({
-    queryKey: ["schedules", activeFilters],
-    queryFn: () => fetchSchedules(activeFilters),
-  });
+const {
+  data: schedules = [],
+  isLoading: schedulesLoading,
+  isError: schedulesError,
+  isFetching: schedulesFetching,
+} = useQuery<Schedule[]>({
+  queryKey: ["schedules", activeFilters],
+  queryFn: () => fetchSchedules(activeFilters),
+  staleTime: 60 * 1000,
+  refetchOnWindowFocus: false,
+  placeholderData: (previousData) => previousData,
+});
 
 // Filter out logically deleted schedules
   const activeSchedules = useMemo(
@@ -188,12 +245,12 @@ const contractTypes = contractTypesQuery.data || [];
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
     environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
   }), [activeSchedules]);
-  const schedulesByWeekday = useMemo(() => weekDays.map((day) => ({
-    ...day,
-    schedules: activeSchedules
-      .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
-      .sort((a, b) => a.start_time.localeCompare(b.start_time)),
-  })), [activeSchedules]);
+const schedulesByWeekday = useMemo(() => weekDays.map((day) => {
+  const allDaySchedules = activeSchedules
+    .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
+}), [activeSchedules]);
 
 const getScheduleDisplayData = (schedule: Schedule) => {
     const instructor = instructorsById.get(schedule.instructor_id);
@@ -235,6 +292,9 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setEndTime("");
     setDurationHours("");
     setNotes("");
+    setRapSearch("");
+    setLearningResultTopicId("");
+    setManualTopicName("");
     setErrorMsg(null);
     if (!keepValidation) {
       setValidationStatus(null);
@@ -260,6 +320,10 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setEndTime(sch.end_time);
     setDurationHours(sch.duration_hours);
     setNotes(sch.notes || "");
+    setLearningResultTopicId(sch.learning_result_topic_id || "");
+    setManualTopicName(sch.manual_topic_name || "");
+    const rap = learningResultsById.get(sch.learning_result_id);
+    setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
   };
 
 // Mutations
@@ -331,12 +395,17 @@ const deleteMutation = useMutation({
     } else {
       setProgramId("");
     }
+    setLearningResultTopicId("");
+    setManualTopicName("");
   };
 
   const handleRapChange = (id: number) => {
     setLearningResultId(id);
     const r = learningResultsById.get(id);
     setCompetencyId(r?.competency_id || "");
+    setLearningResultTopicId("");
+    setManualTopicName("");
+    if (r) setRapSearch(`${r.code} - ${r.description.slice(0, 100)}`);
   };
 
   const handleBlockChange = (id: number | "") => {
@@ -361,11 +430,17 @@ const deleteMutation = useMutation({
 
   const handleApplyFilters = (e: FormEvent) => {
     e.preventDefault();
-    const newFilters: ScheduleFilters = {};
+    const newFilters: ScheduleFilters = { limit: 200 };
     if (filterInstructor) newFilters.instructor_id = Number(filterInstructor);
     if (filterGroup) newFilters.group_id = Number(filterGroup);
     if (filterEnvironment) newFilters.environment_id = Number(filterEnvironment);
-    if (filterDate) newFilters.date = filterDate;
+    if (filterDate) {
+      newFilters.date = filterDate;
+    } else {
+      const weekRange = getCurrentWeekRange();
+      newFilters.date_from = weekRange.date_from;
+      newFilters.date_to = weekRange.date_to;
+    }
     setActiveFilters(newFilters);
   };
 
@@ -374,7 +449,7 @@ const deleteMutation = useMutation({
     setFilterGroup("");
     setFilterEnvironment("");
     setFilterDate("");
-    setActiveFilters({});
+    setActiveFilters(getCurrentWeekRange());
   };
 
   const handleCancelClick = (id: number) => {
@@ -395,6 +470,15 @@ const deleteMutation = useMutation({
       setErrorMsg("Error: La hora final debe ser posterior a la de inicio.");
       return;
     }
+    const cleanedManualTopic = manualTopicName.trim();
+    if (rapTopics.length > 0 && !learningResultTopicId) {
+      setErrorMsg("Seleccione la temática asociada al RAP.");
+      return;
+    }
+    if (rapTopics.length === 0 && !cleanedManualTopic) {
+      setErrorMsg("Registre una temática manual para este RAP.");
+      return;
+    }
 
     const payload: any = {
       instructor_id: Number(instructorId),
@@ -402,6 +486,8 @@ const deleteMutation = useMutation({
       training_program_id: programId ? Number(programId) : null,
       competency_id: competencyId ? Number(competencyId) : null,
       learning_result_id: Number(learningResultId),
+      learning_result_topic_id: learningResultTopicId ? Number(learningResultTopicId) : null,
+      manual_topic_name: learningResultTopicId ? null : cleanedManualTopic,
       environment_id: Number(environmentId),
       date: dateVal,
       start_time: startTime,
@@ -497,6 +583,9 @@ const deleteMutation = useMutation({
                   </div>
                 ) : (
                   <>
+                    {schedulesFetching && !schedulesLoading && (
+                      <div className="soft-loading-indicator">Actualizando programación...</div>
+                    )}
                     <section className="week-view-card" aria-label="Vista semanal de programación">
                       <div className="week-view-header">
                         <div>
@@ -513,28 +602,34 @@ const deleteMutation = useMutation({
                           <div className="week-day-column" key={day.index}>
                             <div className="week-day-heading">
                               <strong>{day.label}</strong>
-                              <span>{day.schedules.length}</span>
+                              <span>{day.total}</span>
                             </div>
                             <div className="week-day-body">
                               {day.schedules.length === 0 ? (
-                                <p className="week-empty">Sin programación</p>
-                              ) : (
-                                day.schedules.map((sch) => {
-                                  const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
-                                  return (
-                                    <button className={`week-schedule-card ${statusClass}`} disabled={!canWrite} key={sch.id}
-                                      onClick={() => handleEditInit(sch)} title={canWrite ? "Editar horario" : "Modo consulta"} type="button"
-                                    >
-                                      <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
-                                      <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
-                                      <span>Ficha {group ? group.code : sch.group_id}</span>
-                                      <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
-                                      {rap?.code && <span className="week-rap">{rap.code}</span>}
-                                      <small>{statusName}</small>
-                                    </button>
-                                  );
-                                })
-                              )}
+  <p className="week-empty">Sin programación</p>
+) : (
+  <>
+    {day.schedules.map((sch) => {
+      const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
+      return (
+        <button className={`week-schedule-card ${statusClass}`} disabled={!canWrite} key={sch.id}
+          onClick={() => handleEditInit(sch)} title={canWrite ? "Editar horario" : "Modo consulta"} type="button"
+        >
+          <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
+          <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
+          <span>Ficha {group ? group.code : sch.group_id}</span>
+          <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
+          {rap?.code && <span className="week-rap">{rap.code}</span>}
+          {sch.manual_topic_name && <span className="week-topic">{sch.manual_topic_name}</span>}
+          <small>{statusName}</small>
+        </button>
+      );
+    })}
+    {day.total > MAX_WEEKDAY_CARDS && (
+      <p className="week-empty">Mostrando {MAX_WEEKDAY_CARDS} de {day.total}. Usa filtros para reducir resultados.</p>
+    )}
+  </>
+)}
                             </div>
                           </div>
                         ))}
@@ -559,10 +654,10 @@ const deleteMutation = useMutation({
                             </tr>
                           ) : (
                             visibleSchedules.map((sch) => {
-                              const ins = instructors.find((x) => x.id === sch.instructor_id);
-                              const grp = groups.find((x) => x.id === sch.group_id);
-                              const env = environments.find((x) => x.id === sch.environment_id);
-                              const rap = learningResults.find((x) => x.id === sch.learning_result_id);
+                              const ins = instructorsById.get(sch.instructor_id);
+                              const grp = groupsById.get(sch.group_id);
+                              const env = environmentsById.get(sch.environment_id);
+                              const rap = learningResultsById.get(sch.learning_result_id);
                               const { statusClass, statusName } = getScheduleDisplayData(sch);
                               return (
                                 <tr key={sch.id}>
@@ -571,7 +666,10 @@ const deleteMutation = useMutation({
                                   <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
                                   <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
                                   <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
-                                  <td>{rap ? rap.code : `ID ${sch.learning_result_id}`}</td>
+                                  <td>
+                                    {rap ? rap.code : `ID ${sch.learning_result_id}`}
+                                    {sch.manual_topic_name && <small className="schedule-topic-note">{sch.manual_topic_name}</small>}
+                                  </td>
                                   <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
                                   {!isConsulta && (
                                     <td className="actions-cell">
@@ -624,41 +722,117 @@ const deleteMutation = useMutation({
                         </label>
                         <label className="form-label">
                           Programa de Formación
-                          <select value={programId} onChange={(e) => setProgramId(e.target.value ? Number(e.target.value) : "")}>
+                          <select
+                            value={programId}
+                            onChange={(e) => {
+                              setProgramId(e.target.value ? Number(e.target.value) : "");
+                              setLearningResultTopicId("");
+                              setManualTopicName("");
+                            }}
+                          >
                             <option value="">Auto-detectado por ficha</option>
                             {programs.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
                           </select>
                         </label>
-                        <label className="form-label">
+                        <label className="form-label rap-search-field">
                           Resultado de Aprendizaje (RAP) <span className="req">*</span>
-                          <select value={learningResultId} onChange={(e) => handleRapChange(Number(e.target.value))} required>
-                            <option value="">Seleccione RAP...</option>
-                            {learningResults.map((lr) => (<option key={lr.id} value={lr.id}>{rapLabel(lr)}</option>))}
-                          </select>
+                          <input
+                            type="text"
+                            value={rapSearch}
+                            onChange={(e) => {
+                              setRapSearch(e.target.value);
+                              if (!e.target.value.trim()) {
+                                setLearningResultId("");
+                                setCompetencyId("");
+                                setLearningResultTopicId("");
+                                setManualTopicName("");
+                              }
+                            }}
+                            placeholder="Buscar RAP por código o descripción..."
+                            autoComplete="off"
+                          />
+                          <input type="hidden" value={learningResultId} required readOnly />
+                          <div className="rap-autocomplete-list">
+                            {rapOptions.map((lr) => (
+                              <button type="button" key={lr.id}
+                                className={`rap-autocomplete-item ${learningResultId === lr.id ? "selected" : ""}`}
+                                onClick={() => handleRapChange(lr.id)}
+                              >
+                                <strong>{lr.code}</strong>
+                                <span>{lr.description.slice(0, 140)}</span>
+                              </button>
+                            ))}
+                            {deferredRapSearch.trim() && rapOptions.length === 0 && (
+                              <div className="rap-autocomplete-empty">No se encontraron RAP con ese criterio.</div>
+                            )}
+                            {learningResults.length > 20 && !deferredRapSearch.trim() && (
+                              <div className="rap-autocomplete-hint">Escriba para buscar entre todos los resultados de aprendizaje.</div>
+                            )}
+                          </div>
+                          {selectedRap && (
+                            <div className="selected-rap-summary">
+                              <strong>RAP seleccionado:</strong> {selectedRap.code}
+                            </div>
+                          )}
                         </label>
 
-                        {learningResultId && rapTopics.length > 0 && (
+                        {learningResultId && !selectedProgramId && (
+                          <div className="rap-info-card rap-info-empty">
+                            <p className="form-group-title">InformaciÃ³n del RAP seleccionado</p>
+                            <p className="rap-empty-msg">Seleccione una ficha o programa para consultar las temáticas del RAP.</p>
+                          </div>
+                        )}
+
+                        {learningResultId && selectedProgramId && rapTopicsQuery.isLoading && (
                           <div className="rap-info-card">
                             <p className="form-group-title">Información del RAP seleccionado</p>
+                            <p className="rap-empty-msg">Cargando temáticas del RAP...</p>
+                          </div>
+                        )}
+
+                        {learningResultId && selectedProgramId && !rapTopicsQuery.isLoading && rapTopics.length > 0 && (
+                          <div className="rap-info-card">
+                            <p className="form-group-title">Información del RAP seleccionado</p>
+                            <div className="rap-info-row"><span className="rap-info-label">Programa:</span><span className="rap-info-value">{selectedProgram?.name || rapTopics[0]?.training_program_name || ""}</span></div>
                             <div className="rap-info-row"><span className="rap-info-label">Trimestre:</span><span className="rap-info-value">{rapTopics[0]?.trimester_label || `Trimestre ${rapTopics[0]?.trimester_number || ""}`}</span></div>
                             <div className="rap-info-row"><span className="rap-info-label">Tipo de oferta:</span><span className="rap-info-value">{rapTopics[0]?.program_scope_label || ""}</span></div>
                             <div className="rap-info-topics">
                               <span className="rap-info-label">Temáticas asociadas:</span>
                               {rapTopics.map((t, i) => (
-                                <div key={t.relation_id || i} className="rap-topic-item">
-                                  <span className="rap-topic-name">{t.topic_name}</span>
-                                  {t.topic_hours != null && <span className="rap-topic-hours">{t.topic_hours}h</span>}
-                                  {t.relation_status && <span className="rap-topic-status">{t.relation_status}</span>}
-                                </div>
+                                <label key={t.relation_id || i} className="rap-topic-choice">
+                                  <input
+                                    type="radio"
+                                    name="learning_result_topic_id"
+                                    checked={learningResultTopicId === t.learning_result_topic_id}
+                                    onChange={() => {
+                                      setLearningResultTopicId(t.learning_result_topic_id);
+                                      setManualTopicName("");
+                                    }}
+                                  />
+                                  <span className="rap-topic-item">
+                                    <span className="rap-topic-name">{t.topic_name}</span>
+                                    {t.topic_hours != null && <span className="rap-topic-hours">{t.topic_hours}h</span>}
+                                    {t.relation_status && <span className="rap-topic-status">{t.relation_status}</span>}
+                                  </span>
+                                </label>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {learningResultId && rapTopics.length === 0 && (
+                        {learningResultId && selectedProgramId && !rapTopicsQuery.isLoading && rapTopics.length === 0 && (
                           <div className="rap-info-card rap-info-empty">
                             <p className="form-group-title">Información del RAP seleccionado</p>
-                            <p className="rap-empty-msg">Este RAP no tiene temáticas asociadas. Revise el archivo normalizado o vuelva a cargarlo desde Carga Masiva.</p>
+                            <p className="rap-empty-msg">Este RAP no tiene temáticas importadas para el programa seleccionado.</p>
+                            <label className="form-label">
+                              Temática manual <span className="req">*</span>
+                              <input
+                                type="text"
+                                value={manualTopicName}
+                                onChange={(e) => setManualTopicName(e.target.value)}
+                                placeholder="Nombre de la temática a programar"
+                              />
+                            </label>
                           </div>
                         )}
 
@@ -815,32 +989,38 @@ const deleteMutation = useMutation({
                 <div className="week-day-column" key={day.index}>
                   <div className="week-day-heading">
                     <strong>{day.label}</strong>
-                    <span>{day.schedules.length}</span>
+                    <span>{day.total}</span>
                   </div>
                   <div className="week-day-body">
                     {day.schedules.length === 0 ? (
                       <p className="week-empty">Sin programación</p>
                     ) : (
-                      day.schedules.map((sch) => {
-                        const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
-                        return (
-                          <button
-                            className={`week-schedule-card ${statusClass}`}
-                            disabled={!canWrite}
-                            key={sch.id}
-                            onClick={() => { setShowFullscreenMatrix(false); handleEditInit(sch); }}
-                            title={canWrite ? "Editar horario" : "Modo consulta"}
-                            type="button"
-                          >
-                            <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
-                            <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
-                            <span>Ficha {group ? group.code : sch.group_id}</span>
-                            <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
-                            {rap?.code && <span className="week-rap">{rap.code}</span>}
-                            <small>{statusName}</small>
-                          </button>
-                        );
-                      })
+                      <>
+                        {day.schedules.map((sch) => {
+                          const { instructor, group, environment, rap, statusClass, statusName } = getScheduleDisplayData(sch);
+                          return (
+                            <button
+                              className={`week-schedule-card ${statusClass}`}
+                              disabled={!canWrite}
+                              key={sch.id}
+                              onClick={() => { setShowFullscreenMatrix(false); handleEditInit(sch); }}
+                              title={canWrite ? "Editar horario" : "Modo consulta"}
+                              type="button"
+                            >
+                              <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
+                              <strong>{instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID: ${sch.instructor_id}`}</strong>
+                              <span>Ficha {group ? group.code : sch.group_id}</span>
+                              <span>{environment ? environment.code : `Ambiente ${sch.environment_id}`}</span>
+                              {rap?.code && <span className="week-rap">{rap.code}</span>}
+                              {sch.manual_topic_name && <span className="week-topic">{sch.manual_topic_name}</span>}
+                              <small>{statusName}</small>
+                            </button>
+                          );
+                        })}
+                        {day.total > MAX_WEEKDAY_CARDS && (
+                          <p className="week-empty">Mostrando {MAX_WEEKDAY_CARDS} de {day.total}. Usa filtros para reducir resultados.</p>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

@@ -32,6 +32,8 @@ class Schedule(SQLModel, table=True):
     training_program_id: Optional[int] = Field(default=None, foreign_key="training_programs.id")
     competency_id: Optional[int] = Field(default=None, foreign_key="competencies.id")
     learning_result_id: Optional[int] = Field(default=None, foreign_key="learning_results.id")
+    learning_result_topic_id: Optional[int] = Field(default=None, foreign_key="learning_result_topics.id")
+    manual_topic_name: Optional[str] = Field(default=None, max_length=500)
     environment_id: int = Field(foreign_key="environments.id")
     date: date
     weekday: Optional[int] = Field(default=None)

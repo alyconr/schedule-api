@@ -14,6 +14,9 @@ export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedul
   if (filters?.group_id) params.set("group_id", String(filters.group_id));
   if (filters?.environment_id) params.set("environment_id", String(filters.environment_id));
   if (filters?.date) params.set("date", filters.date);
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  if (filters?.limit) params.set("limit", String(filters.limit));
 
   const query = params.toString();
   return apiRequest<Schedule[]>(`/schedules${query ? `?${query}` : ""}`);

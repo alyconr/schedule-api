@@ -17,6 +17,7 @@ from app.services.import_service import (
     commit_workbook
 )
 from app.api.routes.imports import get_template_info
+from app.api.routes.topics import _selection_statement, _to_selection_item
 
 
 def build_schedule_normalized_workbook_bytes() -> bytes:
@@ -60,6 +61,7 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
     ])
 
     headers = [
+        "PROGRAMA DE FORMACION",
         "TRIMESTRE",
         "ORDEN_RA",
         "CODIGO_RA",
@@ -78,7 +80,20 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
     ):
         ws = wb.create_sheet(sheet_name)
         ws.append(headers)
-        ws.append(["TRIMESTRE I", 1, code, f"Resultado {code}", "especifico", 4, 48, topic, "tematica", 4, color])
+        ws.append([
+            "DESARROLLO DE PROCESOS DE MERCADEO",
+            "TRIMESTRE I",
+            1,
+            code,
+            f"Resultado {code}",
+            "especifico",
+            4,
+            48,
+            topic,
+            "tematica",
+            4,
+            color,
+        ])
 
     data = io.BytesIO()
     wb.save(data)
@@ -197,11 +212,24 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertIsNotNone(session.exec(select(Topic)).first())
             relation = session.exec(select(LearningResultTopic)).first()
             self.assertIsNotNone(relation)
+            self.assertIsNotNone(relation.training_program_id)
+            self.assertEqual(relation.training_program_code, session.exec(select(TrainingProgram)).first().code)
+            self.assertEqual(relation.training_program_name, "DESARROLLO DE PROCESOS DE MERCADEO")
             self.assertIn(relation.program_scope, ("cadena", "oferta_abierta"))
-            self.assertEqual(relation.relation_method, "normalized_excel_explicit_relation")
+            self.assertEqual(relation.relation_method, "normalized_excel_program_rap_topic_relation")
             self.assertEqual(relation.relation_status, "OK")
             self.assertEqual(relation.confidence, "alta")
             self.assertFalse(relation.needs_manual_review)
+            row = session.exec(
+                _selection_statement(
+                    training_program_id=relation.training_program_id,
+                    learning_result_id=relation.learning_result_id,
+                )
+            ).first()
+            self.assertIsNotNone(row)
+            topic_item = _to_selection_item(*row)
+            self.assertEqual(topic_item.learning_result_topic_id, relation.id)
+            self.assertEqual(topic_item.training_program_id, relation.training_program_id)
 
     def test_template_info_includes_only_schedule_normalized(self) -> None:
         info = get_template_info()

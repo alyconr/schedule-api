@@ -6,6 +6,7 @@ import {
 
 type TopicSelectionParams = {
   program_scope?: string;
+  training_program_id?: number;
   trimester_number?: number;
   learning_result_id?: number;
   search?: string;

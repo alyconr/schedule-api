@@ -72,6 +72,8 @@ class ScheduleCreate(BaseModel):
     training_program_id: int | None = None
     competency_id: int | None = None
     learning_result_id: int
+    learning_result_topic_id: int | None = None
+    manual_topic_name: str | None = Field(default=None, max_length=500)
     environment_id: int
     date: date_type
     weekday: int | None = None
@@ -91,6 +93,8 @@ class ScheduleUpdate(BaseModel):
     training_program_id: int | None = None
     competency_id: int | None = None
     learning_result_id: int | None = None
+    learning_result_topic_id: int | None = None
+    manual_topic_name: str | None = Field(default=None, max_length=500)
     environment_id: int | None = None
     date: date_type | None = None
     weekday: int | None = None

@@ -23,6 +23,8 @@ export type Schedule = {
   training_program_id?: number | null;
   competency_id?: number | null;
   learning_result_id: number;
+  learning_result_topic_id?: number | null;
+  manual_topic_name?: string | null;
   environment_id: number;
   date: string;
   weekday?: number | null;
@@ -41,6 +43,8 @@ export type ScheduleCreate = {
   training_program_id?: number | null;
   competency_id?: number | null;
   learning_result_id: number;
+  learning_result_topic_id?: number | null;
+  manual_topic_name?: string | null;
   environment_id: number;
   date: string;
   weekday?: number | null;
@@ -67,4 +71,7 @@ export type ScheduleFilters = {
   group_id?: number;
   environment_id?: number;
   date?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
 };

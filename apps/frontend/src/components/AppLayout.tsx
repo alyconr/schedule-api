@@ -28,7 +28,6 @@ export function AppLayout({
       title: "Operación",
       items: [
         { id: "schedules", label: "Programación de Horarios" },
-        { id: "topic-selection", label: "Selección de Temáticas" },
         ...(canWrite ? [{ id: "validation", label: "Validación Manual" }] : []),
         ...(canWrite ? [{ id: "imports", label: "Carga Masiva" }] : []),
       ],

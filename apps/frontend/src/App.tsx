@@ -9,7 +9,6 @@ import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
 import { ImportWizard } from "./components/ImportWizard";
-import { TopicSelectionPage } from "./components/TopicSelectionPage";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -205,6 +204,12 @@ function AppContent() {
     startTabTransition(() => setActiveTab(tab));
   };
 
+  useEffect(() => {
+    if (activeTab === "topic-selection") {
+      setActiveTab("schedules");
+    }
+  }, [activeTab]);
+
   // Validation Form state
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
   const [validationError, setValidationError] = useState("");
@@ -321,24 +326,23 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
 
   const roles = currentUser?.roles || [];
   const canValidate = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
+  const visibleTab = activeTab === "topic-selection" ? "schedules" : activeTab;
 
   return (
 <AppLayout
       currentUser={currentUser}
       onLogout={handleLogout}
-      activeTab={activeTab}
+      activeTab={visibleTab}
       setActiveTab={handleTabChange}
       isNavigating={isTabPending}
     >
-      {activeTab === "users" ? (
+      {visibleTab === "users" ? (
         <UserManagement currentUser={currentUser} />
-      ) : activeTab === "imports" ? (
+      ) : visibleTab === "imports" ? (
         <ImportWizard currentUser={currentUser} />
-      ) : activeTab === "schedules" ? (
+      ) : visibleTab === "schedules" ? (
         <SchedulePlanner currentUser={currentUser} />
-      ) : activeTab === "topic-selection" ? (
-        <TopicSelectionPage currentUser={currentUser} />
-      ) : activeTab === "validation" ? (
+      ) : visibleTab === "validation" ? (
         !canValidate ? (
           <div className="error-panel">
             <h3>Acceso Denegado</h3>
@@ -462,7 +466,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
         </section>
       )
       ) : (
-        <ResourceCrud config={resourceConfigs[activeTab]} currentUser={currentUser} />
+        <ResourceCrud config={resourceConfigs[visibleTab]} currentUser={currentUser} />
       )}
     </AppLayout>
   );

@@ -119,10 +119,13 @@ class Topic(SQLModel, table=True):
 
 class LearningResultTopic(SQLModel, table=True):
     __tablename__ = "learning_result_topics"
-    __table_args__ = (UniqueConstraint("learning_result_id", "topic_id", "group_id"),)
+    __table_args__ = (UniqueConstraint("training_program_id", "learning_result_id", "topic_id", "group_id"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     relation_id: str = Field(unique=True, max_length=120)
+    training_program_id: Optional[int] = Field(default=None, foreign_key="training_programs.id")
+    training_program_code: Optional[str] = Field(default=None, max_length=50)
+    training_program_name: Optional[str] = Field(default=None, max_length=300)
     learning_result_id: int = Field(foreign_key="learning_results.id")
     topic_id: int = Field(foreign_key="topics.id")
     group_id: str = Field(max_length=80)

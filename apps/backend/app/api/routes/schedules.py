@@ -14,6 +14,7 @@ from app.models import (
     Group,
     Instructor,
     LearningResult,
+    LearningResultTopic,
     Schedule,
     ScheduleValidation,
     TrainingProgram,
@@ -175,6 +176,35 @@ def _existing_for_date(
     return list(session.exec(stmt).all())
 
 
+def _clean_manual_topic(value: str | None) -> str | None:
+    cleaned = value.strip() if value else ""
+    return cleaned or None
+
+
+def _validate_topic_assignment(
+    session: Session,
+    learning_result_id: int,
+    training_program_id: int | None,
+    learning_result_topic_id: int | None,
+    manual_topic_name: str | None,
+) -> None:
+    manual_topic_name = _clean_manual_topic(manual_topic_name)
+    if learning_result_topic_id and manual_topic_name:
+        raise HTTPException(422, detail="Use learning_result_topic_id or manual_topic_name, not both")
+    if not learning_result_topic_id and not manual_topic_name:
+        raise HTTPException(422, detail="Topic selection is required")
+    if not learning_result_topic_id:
+        return
+
+    relation = session.get(LearningResultTopic, learning_result_topic_id)
+    if not relation:
+        raise HTTPException(404, detail="Learning result topic not found")
+    if relation.learning_result_id != learning_result_id:
+        raise HTTPException(422, detail="learning_result_topic_id does not match learning_result_id")
+    if training_program_id is not None and relation.training_program_id != training_program_id:
+        raise HTTPException(422, detail="learning_result_topic_id does not match training_program_id")
+
+
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_schedules(
     session: SessionDep,
@@ -182,8 +212,11 @@ def list_schedules(
     group_id: int | None = Query(default=None),
     environment_id: int | None = Query(default=None),
     date: date_type | None = Query(default=None),
+    date_from: date_type | None = Query(default=None),
+    date_to: date_type | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
 ) -> list[Schedule]:
-    stmt = select(Schedule)
+    stmt = select(Schedule).where(Schedule.status != "cancelled")
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -192,6 +225,12 @@ def list_schedules(
         stmt = stmt.where(Schedule.environment_id == environment_id)
     if date is not None:
         stmt = stmt.where(Schedule.date == date)
+    else:
+        if date_from is not None:
+            stmt = stmt.where(Schedule.date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(Schedule.date <= date_to)
+    stmt = stmt.order_by(Schedule.date, Schedule.start_time).limit(limit)
     return list(session.exec(stmt).all())
 
 
@@ -226,6 +265,14 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
     competency_id = payload.competency_id
     if competency_id is None and competency is not None:
         competency_id = competency.id
+    manual_topic_name = _clean_manual_topic(payload.manual_topic_name)
+    _validate_topic_assignment(
+        session,
+        payload.learning_result_id,
+        training_program_id,
+        payload.learning_result_topic_id,
+        manual_topic_name,
+    )
 
     if result["status"] == "warning":
         db_status = "warning"
@@ -238,6 +285,8 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
         training_program_id=training_program_id,
         competency_id=competency_id,
         learning_result_id=payload.learning_result_id,
+        learning_result_topic_id=payload.learning_result_topic_id,
+        manual_topic_name=manual_topic_name,
         environment_id=payload.environment_id,
         date=payload.date,
         weekday=payload.weekday or payload.date.isoweekday(),
@@ -279,6 +328,16 @@ def update_schedule(
     merged_group_id = payload.group_id if payload.group_id is not None else sch.group_id
     merged_environment_id = payload.environment_id if payload.environment_id is not None else sch.environment_id
     merged_learning_result_id = payload.learning_result_id if payload.learning_result_id is not None else sch.learning_result_id
+    merged_learning_result_topic_id = (
+        payload.learning_result_topic_id
+        if "learning_result_topic_id" in payload.model_fields_set
+        else sch.learning_result_topic_id
+    )
+    merged_manual_topic_name = (
+        payload.manual_topic_name
+        if "manual_topic_name" in payload.model_fields_set
+        else sch.manual_topic_name
+    )
     merged_training_program_id = payload.training_program_id if payload.training_program_id is not None else sch.training_program_id
     merged_competency_id = payload.competency_id if payload.competency_id is not None else sch.competency_id
     merged_date = payload.date if payload.date is not None else sch.date
@@ -291,6 +350,8 @@ def update_schedule(
         group_id = merged_group_id
         environment_id = merged_environment_id
         learning_result_id = merged_learning_result_id
+        learning_result_topic_id = merged_learning_result_topic_id
+        manual_topic_name = merged_manual_topic_name
         training_program_id = merged_training_program_id
         competency_id = merged_competency_id
         date = merged_date
@@ -322,8 +383,20 @@ def update_schedule(
         sch.status = "validated"
 
     update_data = payload.model_dump(exclude_unset=True, exclude={"status"})
+    merged_training_program_id = MergedPayload().training_program_id
+    if merged_training_program_id is None and program is not None:
+        merged_training_program_id = program.id
+    _validate_topic_assignment(
+        session,
+        MergedPayload().learning_result_id,
+        merged_training_program_id,
+        MergedPayload().learning_result_topic_id,
+        _clean_manual_topic(MergedPayload().manual_topic_name),
+    )
     for key, value in update_data.items():
-        if value is not None:
+        if key in ("learning_result_topic_id", "manual_topic_name"):
+            setattr(sch, key, _clean_manual_topic(value) if key == "manual_topic_name" else value)
+        elif value is not None:
             if key == "duration_hours":
                 setattr(sch, key, Decimal(str(value)))
             else:

@@ -1363,6 +1363,81 @@ textarea:focus:not(:focus-visible) {
   text-align: center;
 }
 
+.rap-search-field {
+  position: relative;
+}
+
+.rap-autocomplete-list {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color, #d9dee8);
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+  background: var(--surface-color, #fff);
+}
+
+.rap-autocomplete-item {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.rap-autocomplete-item:hover,
+.rap-autocomplete-item.selected {
+  border-color: var(--primary-color, #0f766e);
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.rap-autocomplete-item strong {
+  font-size: 0.85rem;
+}
+
+.rap-autocomplete-item span {
+  font-size: 0.78rem;
+  color: var(--muted-text, #64748b);
+}
+
+.rap-autocomplete-empty,
+.rap-autocomplete-hint,
+.selected-rap-summary,
+.soft-loading-indicator {
+  font-size: 0.82rem;
+  color: var(--muted-text, #64748b);
+}
+
+.selected-rap-summary {
+  margin-top: 0.45rem;
+}
+
+.rap-topic-choice {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  width: 100%;
+  cursor: pointer;
+}
+
+.rap-topic-choice input {
+  margin-top: 0.35rem;
+}
+
+.rap-topic-choice .rap-topic-item {
+  flex: 1;
+}
+
+.soft-loading-indicator {
+  padding: 0.5rem 0;
+}
+
 .week-schedule-card {
   width: 100%;
   display: grid;
@@ -1434,6 +1509,14 @@ textarea:focus:not(:focus-visible) {
   background: rgba(35, 130, 71, 0.12);
   color: var(--color-primary-hover);
   font-weight: 850;
+}
+
+.week-schedule-card .week-topic,
+.schedule-topic-note {
+  display: block;
+  color: var(--muted-text, #64748b);
+  font-size: 0.74rem;
+  line-height: 1.25;
 }
 
 .schedule-table-section .table-responsive {

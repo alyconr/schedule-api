@@ -38,6 +38,7 @@ def _scope_label(program_scope: str | None) -> str:
 
 def _selection_statement(
     program_scope: str | None = None,
+    training_program_id: int | None = None,
     trimester_number: int | None = None,
     learning_result_id: int | None = None,
     search: str | None = None,
@@ -50,6 +51,8 @@ def _selection_statement(
     scope_values = _scope_values(program_scope)
     if scope_values:
         stmt = stmt.where(LearningResultTopic.program_scope.in_(scope_values))
+    if training_program_id is not None:
+        stmt = stmt.where(LearningResultTopic.training_program_id == training_program_id)
     if trimester_number is not None:
         stmt = stmt.where(LearningResultTopic.trimester_number == trimester_number)
     if learning_result_id is not None:
@@ -79,6 +82,10 @@ def _to_selection_item(
 ) -> TopicSelectionItem:
     return TopicSelectionItem(
         relation_id=relation.relation_id,
+        learning_result_topic_id=relation.id or 0,
+        training_program_id=relation.training_program_id,
+        training_program_code=relation.training_program_code,
+        training_program_name=relation.training_program_name,
         learning_result_id=learning_result.id or 0,
         learning_result_code=learning_result.code,
         learning_result_description=learning_result.description,
@@ -105,6 +112,7 @@ def _to_selection_item(
 def list_topic_selection(
     session: SessionDep,
     program_scope: Annotated[str | None, Query(max_length=50)] = None,
+    training_program_id: Annotated[int | None, Query(ge=1)] = None,
     trimester_number: Annotated[int | None, Query(ge=1)] = None,
     learning_result_id: Annotated[int | None, Query(ge=1)] = None,
     search: Annotated[str | None, Query(max_length=100)] = None,
@@ -112,6 +120,7 @@ def list_topic_selection(
     rows = session.exec(
         _selection_statement(
             program_scope=program_scope,
+            training_program_id=training_program_id,
             trimester_number=trimester_number,
             learning_result_id=learning_result_id,
             search=search,

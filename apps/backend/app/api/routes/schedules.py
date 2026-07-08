@@ -220,9 +220,9 @@ def list_schedules(
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> list[Schedule]:
-    stmt = select(Schedule)
+    stmt = select(Schedule).where(Schedule.status != "deleted")
     if not (include_inactive or include_cancelled):
-        stmt = stmt.where(~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES))
+        stmt = stmt.where(Schedule.status != "cancelled")
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:

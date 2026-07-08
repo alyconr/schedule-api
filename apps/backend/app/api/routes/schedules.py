@@ -11,6 +11,7 @@ from app.db import get_session
 from app.models import (
     Competency,
     Environment,
+    ExceptionRequest,
     Group,
     Instructor,
     LearningResult,
@@ -446,7 +447,28 @@ def cancel_schedule(schedule_id: int, session: SessionDep) -> dict:
 
 @router.delete("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
 def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
-    return _mark_schedule_status(schedule_id, "deleted", session)
+    obj = session.get(Schedule, schedule_id)
+    if not obj:
+        raise HTTPException(404, detail="Schedule not found")
+
+    # Cascade delete validation records
+    validations = session.exec(
+        select(ScheduleValidation).where(ScheduleValidation.schedule_id == schedule_id)
+    ).all()
+    for v in validations:
+        session.delete(v)
+
+    # Cascade delete exception requests
+    exceptions = session.exec(
+        select(ExceptionRequest).where(ExceptionRequest.schedule_id == schedule_id)
+    ).all()
+    for e in exceptions:
+        session.delete(e)
+
+    # Physically delete the schedule
+    session.delete(obj)
+    session.commit()
+    return {"ok": True}
 
 
 @router.post("/validate", response_model=ScheduleValidationResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])

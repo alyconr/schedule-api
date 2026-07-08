@@ -41,7 +41,17 @@ def normalize_header(value: Any) -> str:
 
 
 def normalize_program_name(value: Any) -> str:
-    return " ".join(str(value or "").strip().upper().split())
+    return " ".join(str(value or "").strip().upper().strip(" .;:,").split())
+
+
+def program_code_from_name(value: Any) -> str:
+    text = normalize_program_name(value)
+    text = "".join(
+        c for c in unicodedata.normalize("NFD", text)
+        if unicodedata.category(c) != "Mn"
+    )
+    text = re.sub(r"[^A-Z0-9]+", " ", text)
+    return f"PROG-{get_stable_hash(' '.join(text.split()))}"
 
 
 def parse_excel_date(value: Any) -> Optional[date]:
@@ -603,7 +613,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 continue
             name = str(row_cell(row, name_idx) or f"Ficha {code}").strip()
             program_name = normalize_program_name(name.split("_")[-1] if "_" in name else name)
-            program_code = f"PROG-{get_stable_hash(program_name)}"
+            program_code = program_code_from_name(program_name)
             level = str(row_cell(row, level_idx) or "").strip()
             if program_code not in seen["programs"]:
                 items["programs"].append({"code": program_code, "name": program_name[:300], "level": level[:100] or None})
@@ -675,7 +685,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             if not program_name:
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="program", severity="error", message="PROGRAMA DE FORMACION es obligatorio."))
                 continue
-            program_code = f"PROG-{get_stable_hash(program_name)}"
+            program_code = program_code_from_name(program_name)
             if program_code not in seen["programs"]:
                 items["programs"].append({"code": program_code, "name": program_name[:300], "level": None})
                 seen["programs"].add(program_code)

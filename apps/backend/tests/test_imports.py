@@ -12,6 +12,7 @@ from app.services.import_service import (
     normalize_contract_type,
     parse_excel_date,
     get_stable_hash,
+    program_code_from_name,
     find_col_idx,
     preview_workbook,
     commit_workbook
@@ -135,6 +136,12 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         h2 = get_stable_hash("CRISTIAN BUITRAGO")
         self.assertEqual(h1, h2)
         self.assertEqual(len(h1), 8)
+
+    def test_program_code_ignores_accents_and_trailing_punctuation(self) -> None:
+        self.assertEqual(
+            program_code_from_name("ANÁLISIS Y DESARROLLO DE SOFTWARE."),
+            program_code_from_name("ANALISIS Y DESARROLLO DE SOFTWARE"),
+        )
 
     def test_find_col_idx(self) -> None:
         headers = ["no_fichas", "ficha", "horasfromacion", "horas"]

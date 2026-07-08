@@ -609,6 +609,13 @@ textarea:focus:not(:focus-visible) {
 .actions-cell {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.row-action-state {
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .empty-cell {

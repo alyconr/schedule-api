@@ -16,6 +16,7 @@ export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedul
   if (filters?.date) params.set("date", filters.date);
   if (filters?.date_from) params.set("date_from", filters.date_from);
   if (filters?.date_to) params.set("date_to", filters.date_to);
+  if (filters?.include_cancelled) params.set("include_cancelled", "true");
   if (filters?.limit) params.set("limit", String(filters.limit));
 
   const query = params.toString();

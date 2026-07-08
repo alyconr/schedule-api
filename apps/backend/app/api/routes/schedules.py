@@ -214,9 +214,12 @@ def list_schedules(
     date: date_type | None = Query(default=None),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
+    include_cancelled: bool = Query(default=False),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> list[Schedule]:
-    stmt = select(Schedule).where(Schedule.status != "cancelled")
+    stmt = select(Schedule)
+    if not include_cancelled:
+        stmt = stmt.where(Schedule.status != "cancelled")
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:

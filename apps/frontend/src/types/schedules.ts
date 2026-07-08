@@ -73,5 +73,6 @@ export type ScheduleFilters = {
   date?: string;
   date_from?: string;
   date_to?: string;
+  include_cancelled?: boolean;
   limit?: number;
 };

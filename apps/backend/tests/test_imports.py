@@ -12,6 +12,7 @@ from app.services.import_service import (
     normalize_contract_type,
     parse_excel_date,
     get_stable_hash,
+    build_program_code,
     program_code_from_name,
     find_col_idx,
     preview_workbook,
@@ -28,8 +29,8 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "LISTA INSTRUCTORES"
-    ws.append(["NOMBRE COMPLETO", "TIPO CONTRATO", "HORAS FORMACION", "HORAS ADICIONALES", "COORDINACION"])
-    ws.append(["ANA MARIA PEREZ", "PLANTA", 30, 2, "Teleinformatica"])
+    ws.append(["NOMBRE COMPLETO", "TIPO DE VINCULACION", "HORAS FORMACION MES", "HORAS ADICIONALES", "COORDINACION"])
+    ws.append(["ANA MARIA PEREZ", "CARRERA ADMINISTRATIVA", 170, 2, "Teleinformatica"])
 
     ws = wb.create_sheet("AMBIENTES")
     ws.append(["NUMERO", "AMBIENTE O UBICACION"])
@@ -47,10 +48,11 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
         "FECHA INICIO PRODUCTIVA",
         "FECHA FIN PRODUCTIVA",
         "JORNADA",
+        "SEDE",
     ])
     ws.append([
         "3068352",
-        "7_TRM_3068352_(MM)_DESARROLLO DE PROCESOS DE MERCADEO",
+        "DESARROLLO DE PROCESOS DE MERCADEO",
         "Tecnologo",
         "Mercadeo",
         "TRIMESTRE I - II",
@@ -59,13 +61,12 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
         "2027-01-01",
         "2027-06-01",
         "Diurna",
+        "Sede Colombia",
     ])
 
     headers = [
         "PROGRAMA DE FORMACION",
         "TRIMESTRE",
-        "ORDEN_RA",
-        "CODIGO_RA",
         "RESULTADO_APRENDIZAJE",
         "TIPO_RESULTADO_RA",
         "HORAS_SEMANA_RA",
@@ -73,19 +74,16 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
         "TEMATICA",
         "TIPO_RESULTADO_TEMATICA",
         "HORAS_SEMANA_TEMATICA",
-        "COLOR_RELACION",
     ]
-    for sheet_name, code, topic, color in (
-        ("Semaforo con RA cadena", "RA1", "Investigacion de mercados", "VERDE"),
-        ("Semaforo con RA Oferta Abierta", "RA2", "Segmentacion de clientes", "AZUL"),
+    for sheet_name, code, topic in (
+        ("Semaforo con RA cadena", "RA1", "Investigacion de mercados"),
+        ("Semaforo con RA Oferta Abierta", "RA2", "Segmentacion de clientes"),
     ):
         ws = wb.create_sheet(sheet_name)
         ws.append(headers)
         ws.append([
             "DESARROLLO DE PROCESOS DE MERCADEO",
             "TRIMESTRE I",
-            1,
-            code,
             f"Resultado {code}",
             "especifico",
             4,
@@ -93,7 +91,6 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
             topic,
             "tematica",
             4,
-            color,
         ])
 
     data = io.BytesIO()
@@ -142,6 +139,10 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             program_code_from_name("ANÁLISIS Y DESARROLLO DE SOFTWARE."),
             program_code_from_name("ANALISIS Y DESARROLLO DE SOFTWARE"),
         )
+        self.assertEqual(
+            build_program_code("ANÁLISIS Y DESARROLLO DE SOFTWARE."),
+            program_code_from_name("ANALISIS Y DESARROLLO DE SOFTWARE"),
+        )
 
     def test_find_col_idx(self) -> None:
         headers = ["no_fichas", "ficha", "horasfromacion", "horas"]
@@ -153,6 +154,8 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(normalize_contract_type("CONTRATO")["name"], "contratista")
         self.assertEqual(normalize_contract_type("CONTRATISTA")["name"], "contratista")
         self.assertEqual(normalize_contract_type("CONTRATO SENA")["name"], "contratista")
+        self.assertEqual(normalize_contract_type("PRESTACION DE SERVICIOS")["name"], "contratista")
+        self.assertEqual(normalize_contract_type("CARRERA ADMINISTRATIVA")["name"], "planta")
         self.assertEqual(normalize_contract_type("PLANTA")["name"], "planta")
         self.assertEqual(normalize_contract_type("SIN DATO")["name"], "otro")
 
@@ -196,6 +199,17 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertGreater(res.summary["learning_results"].valid, 0)
         self.assertGreater(res.summary["topics"].valid, 0)
         self.assertGreater(res.summary["ra_topic_relations"].valid, 0)
+        instructor = res.items["instructors"][0]
+        self.assertEqual(instructor["weekly_base_hours"], Decimal("40.0"))
+        self.assertEqual(instructor["weekly_max_hours"], Decimal("42.0"))
+        self.assertEqual(res.items["programs"][0]["code"], build_program_code("DESARROLLO DE PROCESOS DE MERCADEO"))
+        self.assertIn("Sede: Sede Colombia", res.items["groups"][0]["notes"])
+        relation = res.items["ra_topic_relations"][0]
+        self.assertTrue(relation["learning_result_code"].startswith("CAD-TRIMESTRE_I-RAP-"))
+        self.assertTrue(relation["topic_code"].startswith("TEM-CAD-"))
+        self.assertTrue(relation["relation_id"].startswith("REL-CAD-"))
+        self.assertIsNone(relation["color_key"])
+        self.assertIsNone(relation["color_hex"])
 
     def test_commit_schedule_normalized_workbook(self) -> None:
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
@@ -214,7 +228,9 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertIsNotNone(session.exec(select(Instructor)).first())
             self.assertIsNotNone(session.exec(select(Environment)).first())
             self.assertIsNotNone(session.exec(select(TrainingProgram)).first())
-            self.assertIsNotNone(session.exec(select(Group)).first())
+            group = session.exec(select(Group)).first()
+            self.assertIsNotNone(group)
+            self.assertIn("Sede: Sede Colombia", group.notes)
             self.assertIsNotNone(session.exec(select(LearningResult)).first())
             self.assertIsNotNone(session.exec(select(Topic)).first())
             relation = session.exec(select(LearningResultTopic)).first()
@@ -223,7 +239,7 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertEqual(relation.training_program_code, session.exec(select(TrainingProgram)).first().code)
             self.assertEqual(relation.training_program_name, "DESARROLLO DE PROCESOS DE MERCADEO")
             self.assertIn(relation.program_scope, ("cadena", "oferta_abierta"))
-            self.assertEqual(relation.relation_method, "normalized_excel_program_rap_topic_relation")
+            self.assertEqual(relation.relation_method, "normalized_excel_program_rap_topic_relation_without_color")
             self.assertEqual(relation.relation_status, "OK")
             self.assertEqual(relation.confidence, "alta")
             self.assertFalse(relation.needs_manual_review)
@@ -243,6 +259,8 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(info.supported_import_types, ["schedule_normalized"])
         self.assertEqual(info.supported_formats, [".xlsx"])
         self.assertNotIn("semaforos_relacional", info.supported_import_types)
+        self.assertNotIn("Semaforo con RA", info.required_sheets)
+        self.assertNotIn("LISTA_INSTRUCTORES_AMBIENTES", info.required_sheets)
 
     def test_parser_fails_when_mandatory_sheets_missing(self) -> None:
         import io

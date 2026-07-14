@@ -54,6 +54,10 @@ def program_code_from_name(value: Any) -> str:
     return f"PROG-{get_stable_hash(' '.join(text.split()))}"
 
 
+def build_program_code(program_name: str) -> str:
+    return program_code_from_name(program_name)
+
+
 def parse_excel_date(value: Any) -> Optional[date]:
     if value is None:
         return None
@@ -106,11 +110,13 @@ NORMALIZED_SCHEDULE_SHEETS = {
 
 
 def normalize_contract_type(value: Any) -> dict[str, Any]:
-    text = normalize_header(value).replace("_", " ")
-    if "planta" in text:
-        return {"name": "planta", "base_hours": Decimal("30"), "max_hours": Decimal("32"), "known": True}
-    if any(token in text for token in ("contratista", "contrato", "contrato sena")):
-        return {"name": "contratista", "base_hours": Decimal("40"), "max_hours": Decimal("40"), "known": True}
+    raw = normalize_header(value)
+    if raw in ("carrera_administrativa", "planta", "nombramiento", "empleado_publico"):
+        return {"name": "planta", "base_hours": Decimal("40"), "max_hours": Decimal("40"), "known": True}
+    if raw in ("contrato", "contratista", "prestacion_de_servicios", "prestacion_servicios", "contrato_sena"):
+        return {"name": "contratista", "base_hours": Decimal("40"), "max_hours": Decimal("48"), "known": True}
+    if raw == "otro":
+        return {"name": "otro", "base_hours": Decimal("0"), "max_hours": Decimal("0"), "known": True}
     return {"name": "otro", "base_hours": Decimal("0"), "max_hours": Decimal("0"), "known": False}
 
 
@@ -508,16 +514,17 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
     headers = [normalize_header(c) for c in rows[0]] if rows else []
     required = {
         "NOMBRE COMPLETO": ("nombre_completo", "nombre"),
-        "TIPO CONTRATO": ("tipo_contrato", "contrato"),
-        "HORAS FORMACION": ("horas_formacion", "horasfromacion"),
+        "TIPO DE VINCULACION": ("tipo_de_vinculacion", "tipo_vinculacion", "tipo_contrato", "contrato"),
+        "HORAS FORMACION MES": ("horas_formacion_mes", "horas_formacion", "horasfromacion", "horas_mes"),
         "COORDINACION": ("coordinacion",),
     }
     if rows and not add_missing_columns_errors(sheet.title, headers, required, errors):
         nombre_idx = find_col_idx(headers, "nombre_completo", "nombre")
-        tipo_idx = find_col_idx(headers, "tipo_contrato", "contrato")
-        base_idx = find_col_idx(headers, "horas_formacion", "horasfromacion")
+        tipo_idx = find_col_idx(headers, "tipo_de_vinculacion", "tipo_vinculacion", "tipo_contrato", "contrato")
+        base_idx = find_col_idx(headers, "horas_formacion_mes", "horas_formacion", "horasfromacion", "horas_mes")
         add_idx = find_col_idx(headers, "horas_adicionales")
         area_idx = find_col_idx(headers, "coordinacion")
+        monthly_hours_source = base_idx is not None and headers[base_idx] in ("horas_formacion_mes", "horas_mes")
         if add_idx is None:
             warnings.append(ImportIssue(sheet=sheet.title, entity="instructor", severity="warning", message="No se encontro HORAS ADICIONALES; se usara 0."))
 
@@ -534,11 +541,14 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             doc_num = f"TEMP-{get_stable_hash(name)}"
             email_prefix = normalized_text(name).strip(".") or doc_num.lower()
             contract_info = normalize_contract_type(row_cell(row, tipo_idx))
-            base_h = parse_decimal(row_cell(row, base_idx)) or Decimal("0")
+            monthly_h = parse_decimal(row_cell(row, base_idx)) or Decimal("0")
+            base_h = (monthly_h / Decimal("4.25")).quantize(Decimal("0.1")) if monthly_hours_source else monthly_h
             add_h = parse_decimal(row_cell(row, add_idx)) or Decimal("0")
             area = str(row_cell(row, area_idx) or "").strip()
             if not area:
                 warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Instructor sin coordinacion.", raw_value=name))
+            if not contract_info["known"]:
+                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Tipo de vinculacion no reconocido; se usara OTRO.", raw_value=row_cell(row, tipo_idx)))
             if doc_num not in seen["instructors"]:
                 items["instructors"].append({
                     "document_type": "CC",
@@ -604,6 +614,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
         prod_start_idx = find_col_idx(headers, "fecha_inicio_productiva")
         prod_end_idx = find_col_idx(headers, "fecha_fin_productiva")
         jornada_idx = find_col_idx(headers, "jornada")
+        sede_idx = find_col_idx(headers, "sede")
         for row_num, row in enumerate(rows[1:], start=2):
             if not any(cell is not None and str(cell).strip() for cell in row):
                 continue
@@ -612,8 +623,8 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="group", severity="error", message="No. FICHA es obligatorio."))
                 continue
             name = str(row_cell(row, name_idx) or f"Ficha {code}").strip()
-            program_name = normalize_program_name(name.split("_")[-1] if "_" in name else name)
-            program_code = program_code_from_name(program_name)
+            program_name = normalize_program_name(name)
+            program_code = build_program_code(program_name)
             level = str(row_cell(row, level_idx) or "").strip()
             if program_code not in seen["programs"]:
                 items["programs"].append({"code": program_code, "name": program_name[:300], "level": level[:100] or None})
@@ -627,6 +638,9 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 notes.append(f"Coordinacion: {row_cell(row, area_idx)}")
             if trimester:
                 notes.append(f"Trimestre: {trimester}")
+            sede = str(row_cell(row, sede_idx) or "").strip()
+            if sede:
+                notes.append(f"Sede: {sede}")
             prod_start = parse_excel_date(row_cell(row, prod_start_idx))
             prod_end = parse_excel_date(row_cell(row, prod_end_idx))
             if prod_start:
@@ -653,10 +667,8 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
     sem_required = {
         "PROGRAMA DE FORMACION": ("programa_de_formacion", "programa_formacion", "programa"),
         "TRIMESTRE": ("trimestre",),
-        "CODIGO_RA": ("codigo_ra",),
         "RESULTADO_APRENDIZAJE": ("resultado_aprendizaje",),
         "TEMATICA": ("tematica",),
-        "COLOR_RELACION": ("color_relacion",),
     }
     for expected_name, scope, prefix in semaforo_configs:
         sheet = sheets[expected_name]
@@ -666,14 +678,12 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             continue
         program_idx = find_col_idx(headers, "programa_de_formacion", "programa_formacion", "programa")
         tri_idx = find_col_idx(headers, "trimestre")
-        ra_code_idx = find_col_idx(headers, "codigo_ra")
         ra_desc_idx = find_col_idx(headers, "resultado_aprendizaje")
         ra_type_idx = find_col_idx(headers, "tipo_resultado_ra")
         ra_week_idx = find_col_idx(headers, "horas_semana_ra")
         ra_trim_idx = find_col_idx(headers, "horas_trimestre_ra")
         topic_idx = find_col_idx(headers, "tematica")
         topic_week_idx = find_col_idx(headers, "horas_semana_tematica")
-        color_idx = find_col_idx(headers, "color_relacion")
         if ra_week_idx is None or ra_trim_idx is None or topic_week_idx is None:
             warnings.append(ImportIssue(sheet=sheet.title, entity="learning_result", severity="warning", message="Faltan columnas de horas opcionales; se importaran como nulas cuando aplique."))
         for row_num, row in enumerate(rows[1:], start=2):
@@ -685,16 +695,15 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             if not program_name:
                 errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="program", severity="error", message="PROGRAMA DE FORMACION es obligatorio."))
                 continue
-            program_code = program_code_from_name(program_name)
+            program_code = build_program_code(program_name)
             if program_code not in seen["programs"]:
                 items["programs"].append({"code": program_code, "name": program_name[:300], "level": None})
                 seen["programs"].add(program_code)
-            raw_ra_code = str(row_cell(row, ra_code_idx) or "").strip()
             ra_description = str(row_cell(row, ra_desc_idx) or "").strip()
-            if not raw_ra_code or not ra_description:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="error", message="CODIGO_RA y RESULTADO_APRENDIZAJE son obligatorios."))
+            if not ra_description:
+                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="error", message="RESULTADO_APRENDIZAJE es obligatorio."))
                 continue
-            ra_code = f"{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(ra_description)}"[:50]
+            ra_code = f"{prefix}-{tri_code}-RAP-{get_stable_hash(ra_description)}"[:50]
             ra_hours = parse_decimal(row_cell(row, ra_trim_idx)) or parse_decimal(row_cell(row, ra_week_idx))
             if ra_code not in seen["learning_results"]:
                 items["learning_results"].append({
@@ -705,11 +714,11 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 })
                 seen["learning_results"].add(ra_code)
             topic_name = str(row_cell(row, topic_idx) or "").strip()
-            color_key = str(row_cell(row, color_idx) or "").strip()
             if not topic_name:
-                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="warning", message="RA sin tematica relacionada.", raw_value=raw_ra_code))
+                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="warning", message="RA sin tematica relacionada.", raw_value=ra_description))
                 continue
-            topic_code = f"{program_code}-{prefix}-{tri_code}-TEM-{get_stable_hash(topic_name)}"[:50]
+            topic_hash_source = f"{program_code}|{scope}|{trimester}|{topic_name}"
+            topic_code = f"TEM-{prefix}-{get_stable_hash(topic_hash_source)}"[:50]
             if topic_code not in seen["topics"]:
                 items["topics"].append({
                     "code": topic_code,
@@ -722,25 +731,26 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                     "source_sheet": sheet.title,
                     "source_address": f"{row_num}",
                     "source_row": row_num,
-                    "source_col": None,
-                    "color_key": color_key or None,
+                    "source_col": topic_idx + 1 if topic_idx is not None else None,
+                    "color_key": None,
                     "color_hex": None,
                 })
                 seen["topics"].add(topic_code)
-            relation_id = f"{program_code}-{prefix}-{tri_code}-{raw_ra_code}-{get_stable_hash(topic_name)}-{color_key}"[:120]
+            relation_hash_source = f"{program_code}|{scope}|{trimester}|{ra_description}|{topic_name}"
+            relation_id = f"REL-{prefix}-{get_stable_hash(relation_hash_source)}"[:120]
             if relation_id not in seen["ra_topic_relations"]:
                 items["ra_topic_relations"].append({
                     "relation_id": relation_id,
-                    "group_id": color_key[:80] if color_key else relation_id[:80],
+                    "group_id": f"{program_code}-{prefix}-{tri_code}"[:80],
                     "training_program_code": program_code,
                     "training_program_name": program_name[:300],
                     "learning_result_code": ra_code,
                     "topic_code": topic_code,
                     "program_scope": scope,
                     "trimester_number": trimester_number,
-                    "color_key": color_key or None,
+                    "color_key": None,
                     "color_hex": None,
-                    "relation_method": "normalized_excel_program_rap_topic_relation",
+                    "relation_method": "normalized_excel_program_rap_topic_relation_without_color",
                     "relation_status": "OK",
                     "confidence": "alta",
                     "needs_manual_review": False,

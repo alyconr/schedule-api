@@ -10,16 +10,24 @@ class ContractTypeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=50)
     description: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=50)
+    monthly_training_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
+    monthly_additional_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
     weekly_base_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     weekly_max_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
+    source_label: Optional[str] = Field(default=None, max_length=100)
 
 
 class ContractTypeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Optional[str] = Field(default=None, min_length=1, max_length=50)
     description: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=50)
+    monthly_training_hours: Optional[Decimal] = Field(default=None, max_digits=7, decimal_places=1)
+    monthly_additional_hours: Optional[Decimal] = Field(default=None, max_digits=7, decimal_places=1)
     weekly_base_hours: Optional[Decimal] = Field(default=None, max_digits=5, decimal_places=1)
     weekly_max_hours: Optional[Decimal] = Field(default=None, max_digits=5, decimal_places=1)
+    source_label: Optional[str] = Field(default=None, max_length=100)
     is_active: Optional[bool] = None
 
 
@@ -35,6 +43,8 @@ class InstructorCreate(BaseModel):
     contract_type_id: Optional[int] = None
     area: Optional[str] = Field(default=None, max_length=100)
     specialty: Optional[str] = Field(default=None, max_length=200)
+    monthly_training_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
+    monthly_additional_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
     weekly_base_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     weekly_max_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     notes: Optional[str] = None
@@ -51,6 +61,8 @@ class InstructorUpdate(BaseModel):
     contract_type_id: Optional[int] = None
     area: Optional[str] = Field(default=None, max_length=100)
     specialty: Optional[str] = Field(default=None, max_length=200)
+    monthly_training_hours: Optional[Decimal] = Field(default=None, max_digits=7, decimal_places=1)
+    monthly_additional_hours: Optional[Decimal] = Field(default=None, max_digits=7, decimal_places=1)
     weekly_base_hours: Optional[Decimal] = Field(default=None, max_digits=5, decimal_places=1)
     weekly_max_hours: Optional[Decimal] = Field(default=None, max_digits=5, decimal_places=1)
     is_active: Optional[bool] = None
@@ -125,6 +137,8 @@ class GroupCreate(BaseModel):
     modality: Optional[str] = Field(default=None, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    productive_stage_start_date: Optional[date] = None
+    productive_stage_end_date: Optional[date] = None
     learners_count: int = Field(default=0, ge=0)
     notes: Optional[str] = None
 
@@ -138,6 +152,8 @@ class GroupUpdate(BaseModel):
     modality: Optional[str] = Field(default=None, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    productive_stage_start_date: Optional[date] = None
+    productive_stage_end_date: Optional[date] = None
     learners_count: Optional[int] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     notes: Optional[str] = None

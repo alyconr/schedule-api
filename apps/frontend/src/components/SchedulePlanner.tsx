@@ -27,6 +27,8 @@ import {
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DetailDialog } from "./DetailDialog";
+import { ValidationAlertDialog, validationRuleLabel } from "./ValidationAlertDialog";
 
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
@@ -170,6 +172,8 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
   const [showFullscreenTable, setShowFullscreenTable] = useState(false);
+  const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
+  const [showBlockingAlert, setShowBlockingAlert] = useState(false);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
@@ -315,8 +319,8 @@ const contractTypes = contractTypesQuery.data || [];
   }, [selectedLearningResultId, selectedProgramId, rapTopics, rapTopicsQuery.isLoading, learningResultTopicId]);
 
   const instructorLabel = (ins: Instructor) => {
-    const contract = contractTypesById.get(ins.contract_type_id ?? -1)?.name || "sin contrato";
-    return `${ins.first_name} ${ins.last_name} - ${contract} - max ${ins.weekly_max_hours} h`;
+    const vinculation = contractTypesById.get(ins.contract_type_id ?? -1)?.name || "sin vinculación";
+    return `${ins.first_name} ${ins.last_name} - ${vinculation} - max ${ins.weekly_max_hours} h`;
   };
   const groupLabel = (group: Group) => {
     const trimester = noteValue(group.notes, "Trimestre");
@@ -506,6 +510,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     onSuccess: (res) => {
       setValidationStatus(res.status);
       setValidations(res.validations || []);
+      setShowBlockingAlert((res.validations || []).some((item) => item.is_blocking || item.severity === "BLOCKING"));
 
       if (res.status === "blocked") {
         setErrorMsg("Error: La programación está bloqueada por reglas del negocio.");
@@ -530,6 +535,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     onSuccess: (res) => {
       setValidationStatus(res.status);
       setValidations(res.validations || []);
+      setShowBlockingAlert((res.validations || []).some((item) => item.is_blocking || item.severity === "BLOCKING"));
 
       if (res.status === "blocked") {
         setErrorMsg("Error: La actualización está bloqueada por reglas de negocio.");
@@ -756,6 +762,7 @@ const deleteMutation = useMutation({
         }
         setValidationStatus(blockedDays.length ? "blocked" : warnings.length ? "warning" : "validated");
         setValidations(warnings);
+        setShowBlockingAlert(blockedDays.length > 0);
         queryClient.invalidateQueries({ queryKey: ["schedules"] });
         setActiveFilters(weekRangeFromDate(dateVal));
         if (blockedDays.length) {
@@ -946,7 +953,21 @@ const deleteMutation = useMutation({
                                 const isCancelled = sch.status === "cancelled";
                                 const isDeleted = sch.status === "deleted";
                                 return (
-                                  <tr key={sch.id}>
+                                  <tr
+                                    key={sch.id}
+                                    className="clickable-row"
+                                    tabIndex={0}
+                                    onClick={(event) => {
+                                      if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailSchedule(sch);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                                        event.preventDefault();
+                                        setDetailSchedule(sch);
+                                      }
+                                    }}
+                                    aria-label={`Ver detalle del horario ${sch.id}`}
+                                  >
                                     <td>{sch.date}</td>
                                     <td>{sch.start_time} - {sch.end_time}</td>
                                     <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
@@ -1348,7 +1369,7 @@ const deleteMutation = useMutation({
                   ) : (
                     validations.map((v, i) => (
                       <div key={i} className={`validation-item val-${v.severity.toLowerCase()}`}>
-                        <strong>[{v.rule_code}]</strong> {v.message}
+                        <strong>{validationRuleLabel(v.rule_code)}:</strong> {v.message}
                       </div>
                     ))
                   )}
@@ -1453,7 +1474,21 @@ const deleteMutation = useMutation({
                       const isCancelled = sch.status === "cancelled";
                       const isDeleted = sch.status === "deleted";
                       return (
-                        <tr key={sch.id}>
+                        <tr
+                          key={sch.id}
+                          className="clickable-row"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailSchedule(sch);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                              event.preventDefault();
+                              setDetailSchedule(sch);
+                            }
+                          }}
+                          aria-label={`Ver detalle del horario ${sch.id}`}
+                        >
                           <td>{sch.date}</td>
                           <td>{sch.start_time} - {sch.end_time}</td>
                           <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
@@ -1500,6 +1535,33 @@ const deleteMutation = useMutation({
           </div>
         </div>
       )}
+
+      <ValidationAlertDialog
+        open={showBlockingAlert}
+        validations={validations}
+        onClose={() => setShowBlockingAlert(false)}
+      />
+
+      <DetailDialog
+        open={detailSchedule !== null}
+        title={detailSchedule ? `Horario #${detailSchedule.id}` : "Horario"}
+        fields={detailSchedule ? (() => {
+          const detail = getScheduleDisplayData(detailSchedule);
+          return [
+            { label: "Fecha", value: detailSchedule.date },
+            { label: "Horario", value: `${detailSchedule.start_time} - ${detailSchedule.end_time}` },
+            { label: "Duración", value: `${detailSchedule.duration_hours} horas` },
+            { label: "Instructor", value: detail.instructor ? `${detail.instructor.first_name} ${detail.instructor.last_name}` : detailSchedule.instructor_id },
+            { label: "Ficha", value: detail.group ? groupLabel(detail.group) : detailSchedule.group_id },
+            { label: "Ambiente", value: detail.environment ? environmentLabel(detail.environment) : detailSchedule.environment_id },
+            { label: "RAP", value: detail.rap ? rapLabel(detail.rap) : detailSchedule.learning_result_id },
+            { label: "Temática", value: detail.topicName },
+            { label: "Estado", value: detail.statusName },
+            { label: "Notas", value: detailSchedule.notes },
+          ];
+        })() : []}
+        onClose={() => setDetailSchedule(null)}
+      />
 
       <ConfirmDialog
         open={confirmCancelId !== null}

@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "cmd",
+      "args": ["/c", "codegraph", "serve", "--mcp"]
+    },
+    "stitch": {
+      "type": "http",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "${STITCH_API_KEY}"
+      }
+    },
+    "chrome-devtools": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "chrome-devtools-mcp@latest"]
+    },
+    "dokploy-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "dokploy-mcp@latest"],
+      "env": {
+        "DOKPLOY_URL": "${DOKPLOY_URL}",
+        "DOKPLOY_API_KEY": "${DOKPLOY_API_KEY}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    },
+    "postgres": {
+      "command": "cmd",
+      "args": ["/c", "C:/Users/alyco/.local/bin/uv.exe", "run", "postgres-mcp", "--access-mode=unrestricted"],
+      "env": {
+        "DATABASE_URI_SCHEDULE_API": "${DATABASE_URI_SCHEDULE_API}"
+      }
+    }
+  }
+}

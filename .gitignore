@@ -21,8 +21,9 @@ coverage/
 .agents/
 .codegraph/
 .codex/
+.claude/
 .rapid-os/
 mcp_config.json
 skills-lock.json
-
+mcp.json
 opencode.jsonc

@@ -9,6 +9,7 @@ import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
 import { ImportWizard } from "./components/ImportWizard";
+import { ValidationAlertDialog, validationRuleLabel } from "./components/ValidationAlertDialog";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -38,13 +39,27 @@ const queryClient = new QueryClient({
 const resourceConfigs: Record<string, ResourceConfig> = {
   "contract-types": {
     key: "contract-types",
-    label: "Tipos de Contrato",
+    label: "Tipos de Vinculación",
     endpoint: "contract-types",
     fields: [
-      { name: "name", label: "Nombre", type: "text", required: true },
+      { name: "name", label: "Tipo de vinculación", type: "text", required: true },
+      {
+        name: "category",
+        label: "Categoría",
+        type: "select",
+        required: true,
+        options: [
+          { label: "Planta / Carrera administrativa", value: "planta" },
+          { label: "Contratista", value: "contratista" },
+          { label: "Otro", value: "otro" },
+        ],
+      },
+      { name: "monthly_training_hours", label: "Horas formación mes", type: "number" },
+      { name: "monthly_additional_hours", label: "Horas adicionales mes", type: "number" },
+      { name: "weekly_base_hours", label: "Regla semanal base", type: "number", required: true },
+      { name: "weekly_max_hours", label: "Regla semanal máxima", type: "number", required: true },
+      { name: "source_label", label: "Etiqueta origen", type: "text" },
       { name: "description", label: "Descripción", type: "textarea" },
-      { name: "weekly_base_hours", label: "Horas Base Semanales", type: "number", required: true },
-      { name: "weekly_max_hours", label: "Horas Máximas Semanales", type: "number", required: true },
     ],
   },
   instructors: {
@@ -60,15 +75,17 @@ const resourceConfigs: Record<string, ResourceConfig> = {
       { name: "phone", label: "Teléfono", type: "text" },
       {
         name: "contract_type_id",
-        label: "Tipo de Contrato",
+        label: "Tipo de Vinculación",
         type: "select",
         relatedEndpoint: "contract-types",
         relatedDisplayField: "name",
       },
       { name: "area", label: "Área", type: "text" },
       { name: "specialty", label: "Especialidad", type: "text" },
-      { name: "weekly_base_hours", label: "Horas Base Semanales", type: "number", required: true },
-      { name: "weekly_max_hours", label: "Horas Máximas Semanales", type: "number", required: true },
+      { name: "monthly_training_hours", label: "Horas formación mes", type: "number" },
+      { name: "monthly_additional_hours", label: "Horas adicionales mes", type: "number" },
+      { name: "weekly_base_hours", label: "Regla semanal base", type: "number", required: true },
+      { name: "weekly_max_hours", label: "Regla semanal máxima", type: "number", required: true },
       { name: "notes", label: "Notas / Observaciones", type: "textarea" },
     ],
   },
@@ -137,6 +154,8 @@ const resourceConfigs: Record<string, ResourceConfig> = {
       { name: "modality", label: "Modalidad", type: "text" },
       { name: "start_date", label: "Fecha Inicio", type: "date" },
       { name: "end_date", label: "Fecha Fin", type: "date" },
+      { name: "productive_stage_start_date", label: "Fecha inicio etapa productiva", type: "date" },
+      { name: "productive_stage_end_date", label: "Fecha fin etapa productiva", type: "date" },
       { name: "learners_count", label: "Número de Aprendices", type: "number", required: true },
       { name: "notes", label: "Observaciones", type: "textarea" },
     ],
@@ -214,6 +233,7 @@ function AppContent() {
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null);
   const [validationError, setValidationError] = useState("");
   const [validating, setValidating] = useState(false);
+  const [showValidationAlert, setShowValidationAlert] = useState(false);
 
   const checkUserSession = async () => {
     const token = localStorage.getItem("schedule_api_token");
@@ -294,6 +314,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
         body: JSON.stringify(payload),
       });
       setValidationResult(data);
+      setShowValidationAlert(data.validations.some((item) => item.is_blocking || item.severity === "BLOCKING"));
     } catch (caught: any) {
       setValidationError(caught.message || "Error inesperado.");
       setValidationResult(null);
@@ -403,7 +424,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
                 <input name="duration_hours" type="number" min="0.5" step="0.5" defaultValue="2" required />
               </label>
               <label>
-                Contrato
+                Vinculación
                 <select name="instructor_contract_type" defaultValue="planta">
                   <option value="planta">Planta</option>
                   <option value="contratista">Contratista</option>
@@ -455,7 +476,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
             {validationResult?.validations.length ? (
               validationResult.validations.map((item) => (
                 <article className={`finding finding-${item.severity.toLowerCase()}`} key={item.rule_code}>
-                  <strong>{item.rule_code}</strong>
+                  <strong>{validationRuleLabel(item.rule_code)}</strong>
                   <span>{item.message}</span>
                 </article>
               ))
@@ -463,6 +484,11 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
               <p className="empty">La franja queda lista para programación cuando la API responde sin bloqueos.</p>
             )}
           </section>
+          <ValidationAlertDialog
+            open={showValidationAlert}
+            validations={validationResult?.validations || []}
+            onClose={() => setShowValidationAlert(false)}
+          />
         </section>
       )
       ) : (

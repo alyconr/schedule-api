@@ -25,8 +25,12 @@ class ContractType(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True, max_length=50)
     description: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=50)
+    monthly_training_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
+    monthly_additional_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
     weekly_base_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     weekly_max_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
+    source_label: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
 
     instructors: list["Instructor"] = Relationship(back_populates="contract_type")
@@ -45,6 +49,8 @@ class Instructor(SQLModel, table=True):
     contract_type_id: Optional[int] = Field(default=None, foreign_key="contract_types.id")
     area: Optional[str] = Field(default=None, max_length=100)
     specialty: Optional[str] = Field(default=None, max_length=200)
+    monthly_training_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
+    monthly_additional_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
     weekly_base_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     weekly_max_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     is_active: bool = Field(default=True)
@@ -150,6 +156,8 @@ class Group(SQLModel, table=True):
     modality: Optional[str] = Field(default=None, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    productive_stage_start_date: Optional[date] = None
+    productive_stage_end_date: Optional[date] = None
     learners_count: int = Field(default=0)
     is_active: bool = Field(default=True)
     notes: Optional[str] = None

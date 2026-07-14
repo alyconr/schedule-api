@@ -59,6 +59,24 @@ class ScheduleValidationTest(unittest.TestCase):
         self.assertEqual(result["status"], "warning")
         self.assertFalse(any(item["is_blocking"] for item in result["validations"]))
 
+    def test_planta_blocks_over_32_weekly_hours(self) -> None:
+        payload = base_payload()
+        payload["instructor_contract_type"] = "planta"
+        payload["instructor_weekly_hours"] = 31
+        payload["duration_hours"] = 2
+        result = validate_schedule(payload)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("PLANT_INSTRUCTOR_MAX_HOURS", {item["rule_code"] for item in result["validations"]})
+
+    def test_contratista_rule_uses_40_weekly_hours(self) -> None:
+        payload = base_payload()
+        payload["instructor_contract_type"] = "contratista"
+        payload["instructor_weekly_hours"] = 38
+        payload["duration_hours"] = 2
+        result = validate_schedule(payload)
+        self.assertEqual(result["status"], "valid")
+        self.assertNotIn("CONTRACTOR_MISSING_HOURS", {item["rule_code"] for item in result["validations"]})
+
 
 if __name__ == "__main__":
     unittest.main()

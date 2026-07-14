@@ -35,7 +35,7 @@ export function AppLayout({
     {
       title: "Datos maestros",
       items: [
-        { id: "contract-types", label: "Tipos de Contrato" },
+        { id: "contract-types", label: "Tipos de Vinculación" },
         { id: "instructors", label: "Instructores" },
         { id: "training-programs", label: "Programas de Formación" },
         { id: "competencies", label: "Competencias" },

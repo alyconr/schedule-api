@@ -1,6 +1,9 @@
 import unittest
 
+from sqlmodel import Session, SQLModel, create_engine
+
 from app.main import app
+from app.models import ContractType
 
 
 class MasterDataRoutesTest(unittest.TestCase):
@@ -83,6 +86,65 @@ class MasterDataRoutesTest(unittest.TestCase):
             EnvironmentCreate(code="X", name="Test", environment_type="invalido")
         valid = EnvironmentCreate(code="X", name="Test", environment_type="virtual")
         self.assertEqual(valid.environment_type, "virtual")
+
+    def test_delete_contract_type_inactivates_and_hides_row_from_list(self) -> None:
+        from app.api.routes.contract_types import delete_contract_type, list_contract_types
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            obj = ContractType(name="TEST_DELETE")
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+
+            delete_contract_type(obj.id, session)
+
+            saved = session.get(ContractType, obj.id)
+            self.assertIsNotNone(saved)
+            self.assertFalse(saved.is_active)
+            self.assertEqual(list_contract_types(session), [])
+
+    def test_delete_contract_type_preserves_instructor_relationship(self) -> None:
+        from app.api.routes.contract_types import delete_contract_type
+        from app.models import Instructor
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            obj = ContractType(name="TEST_DELETE_REFERENCED")
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+            instructor = Instructor(
+                document_type="CC",
+                document_number="123",
+                first_name="Ada",
+                last_name="Lovelace",
+                email="ada@example.com",
+                contract_type_id=obj.id,
+            )
+            session.add(instructor)
+            session.commit()
+
+            delete_contract_type(obj.id, session)
+
+            saved_instructor = session.get(Instructor, instructor.id)
+            self.assertEqual(saved_instructor.contract_type_id, obj.id)
+
+    def test_contract_type_list_hides_inactive_rows(self) -> None:
+        from app.api.routes.contract_types import list_contract_types
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(ContractType(name="ACTIVE", is_active=True))
+            session.add(ContractType(name="INACTIVE", is_active=False))
+            session.commit()
+
+            rows = list_contract_types(session)
+
+            self.assertEqual([row.name for row in rows], ["ACTIVE"])
 
 
 if __name__ == "__main__":

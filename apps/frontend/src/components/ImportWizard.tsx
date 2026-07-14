@@ -120,7 +120,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       case "learning_result_topics":
         return "Relaciones RA-Temática";
       case "contract_types":
-        return "Tipos de Contrato";
+        return "Tipos de Vinculación";
       case "programs":
         return "Programas de Formación";
       case "competencies":

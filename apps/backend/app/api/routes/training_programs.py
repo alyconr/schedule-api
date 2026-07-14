@@ -16,7 +16,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_training_programs(session: SessionDep) -> list[TrainingProgram]:
-    return list(session.exec(select(TrainingProgram)).all())
+    return list(session.exec(select(TrainingProgram).where(TrainingProgram.is_active == True)).all())
 
 
 @router.get("/{program_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

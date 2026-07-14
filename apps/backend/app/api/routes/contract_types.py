@@ -16,7 +16,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_contract_types(session: SessionDep) -> list[ContractType]:
-    return list(session.exec(select(ContractType)).all())
+    return list(session.exec(select(ContractType).where(ContractType.is_active == True)).all())
 
 
 @router.get("/{contract_type_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
@@ -64,10 +64,7 @@ def delete_contract_type(contract_type_id: int, session: SessionDep) -> dict:
     obj = session.get(ContractType, contract_type_id)
     if not obj:
         raise HTTPException(404, detail="Contract type not found")
-    if hasattr(obj, "is_active"):
-        obj.is_active = False
-        session.add(obj)
-    else:
-        session.delete(obj)
+    obj.is_active = False
+    session.add(obj)
     session.commit()
     return {"ok": True}

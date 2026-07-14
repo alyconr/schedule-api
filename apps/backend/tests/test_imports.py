@@ -10,6 +10,8 @@ from app.models import ContractType, Environment, Group, Instructor, LearningRes
 from app.services.import_service import (
     normalize_header,
     normalize_contract_type,
+    vinculation_category,
+    weekly_rule_hours_for_vinculation,
     parse_excel_date,
     get_stable_hash,
     build_program_code,
@@ -30,7 +32,10 @@ def build_schedule_normalized_workbook_bytes() -> bytes:
     ws = wb.active
     ws.title = "LISTA INSTRUCTORES"
     ws.append(["NOMBRE COMPLETO", "TIPO DE VINCULACION", "HORAS FORMACION MES", "HORAS ADICIONALES", "COORDINACION"])
-    ws.append(["ANA MARIA PEREZ", "CARRERA ADMINISTRATIVA", 170, 2, "Teleinformatica"])
+    ws.append(["ANA MARIA PEREZ", "CARRERA ADMINISTRATIVA", 170, 0, "Teleinformatica"])
+    ws.append(["LUIS CARLOS RUIZ", "NOMBRAMIENTO ORDINARIO", 170, 4, "Teleinformatica"])
+    ws.append(["MARTA SOFIA DIAZ", "NOMBRAMIENTO PROVISIONAL", 170, 0, "Teleinformatica"])
+    ws.append(["JUAN PABLO GOMEZ", "CONTRATISTA SENA", 170, 0, "Teleinformatica"])
 
     ws = wb.create_sheet("AMBIENTES")
     ws.append(["NUMERO", "AMBIENTE O UBICACION"])
@@ -156,8 +161,18 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(normalize_contract_type("CONTRATO SENA")["name"], "contratista")
         self.assertEqual(normalize_contract_type("PRESTACION DE SERVICIOS")["name"], "contratista")
         self.assertEqual(normalize_contract_type("CARRERA ADMINISTRATIVA")["name"], "planta")
+        self.assertEqual(normalize_contract_type("NOMBRAMIENTO ORDINARIO")["name"], "planta")
+        self.assertEqual(normalize_contract_type("NOMBRAMIENTO PROVISIONAL")["name"], "planta")
         self.assertEqual(normalize_contract_type("PLANTA")["name"], "planta")
         self.assertEqual(normalize_contract_type("SIN DATO")["name"], "otro")
+
+    def test_vinculation_rules(self) -> None:
+        self.assertEqual(vinculation_category("CARRERA ADMINISTRATIVA"), "planta")
+        self.assertEqual(vinculation_category("NOMBRAMIENTO ORDINARIO"), "planta")
+        self.assertEqual(vinculation_category("NOMBRAMIENTO PROVISIONAL"), "planta")
+        self.assertEqual(vinculation_category("CONTRATISTA SENA"), "contratista")
+        self.assertEqual(weekly_rule_hours_for_vinculation("CARRERA ADMINISTRATIVA"), Decimal("32"))
+        self.assertEqual(weekly_rule_hours_for_vinculation("CONTRATISTA SENA"), Decimal("40"))
 
     def test_preview_does_not_truncate_items(self) -> None:
         import io
@@ -196,12 +211,23 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertGreater(res.summary["environments"].valid, 0)
         self.assertGreater(res.summary["groups"].valid, 0)
         self.assertGreater(res.summary["programs"].valid, 0)
+        self.assertEqual(res.summary["contract_types"].valid, 4)
         self.assertGreater(res.summary["learning_results"].valid, 0)
         self.assertGreater(res.summary["topics"].valid, 0)
         self.assertGreater(res.summary["ra_topic_relations"].valid, 0)
         instructor = res.items["instructors"][0]
-        self.assertEqual(instructor["weekly_base_hours"], Decimal("40.0"))
-        self.assertEqual(instructor["weekly_max_hours"], Decimal("42.0"))
+        self.assertEqual(instructor["monthly_training_hours"], Decimal("170"))
+        self.assertEqual(instructor["monthly_additional_hours"], Decimal("0"))
+        self.assertEqual(instructor["weekly_base_hours"], Decimal("32"))
+        self.assertEqual(instructor["weekly_max_hours"], Decimal("32"))
+        contract_types = {item["name"]: item for item in res.items["contract_types"]}
+        self.assertEqual(contract_types["CARRERA ADMINISTRATIVA"]["category"], "planta")
+        self.assertEqual(contract_types["CARRERA ADMINISTRATIVA"]["weekly_base_hours"], Decimal("32"))
+        self.assertEqual(contract_types["NOMBRAMIENTO ORDINARIO"]["weekly_max_hours"], Decimal("32"))
+        self.assertEqual(contract_types["NOMBRAMIENTO PROVISIONAL"]["weekly_max_hours"], Decimal("32"))
+        self.assertEqual(contract_types["CONTRATISTA SENA"]["category"], "contratista")
+        self.assertEqual(contract_types["CONTRATISTA SENA"]["weekly_base_hours"], Decimal("40"))
+        self.assertEqual(contract_types["CONTRATISTA SENA"]["monthly_training_hours"], Decimal("170"))
         self.assertEqual(res.items["programs"][0]["code"], build_program_code("DESARROLLO DE PROCESOS DE MERCADEO"))
         self.assertIn("Sede: Sede Colombia", res.items["groups"][0]["notes"])
         relation = res.items["ra_topic_relations"][0]
@@ -224,13 +250,39 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             )
 
             self.assertEqual(result.errors, [])
-            self.assertGreaterEqual(session.exec(select(ContractType)).first().id, 1)
-            self.assertIsNotNone(session.exec(select(Instructor)).first())
+            contract_types = {ct.name: ct for ct in session.exec(select(ContractType)).all()}
+            self.assertEqual(contract_types["CARRERA ADMINISTRATIVA"].category, "planta")
+            self.assertEqual(contract_types["CARRERA ADMINISTRATIVA"].weekly_base_hours, Decimal("32.0"))
+            self.assertEqual(contract_types["CONTRATISTA SENA"].category, "contratista")
+            self.assertEqual(contract_types["CONTRATISTA SENA"].weekly_max_hours, Decimal("40.0"))
+            self.assertEqual(contract_types["CONTRATISTA SENA"].monthly_training_hours, Decimal("170.0"))
+            instructor = session.exec(select(Instructor).where(Instructor.document_number == f"TEMP-{get_stable_hash('ANA MARIA PEREZ')}")).first()
+            self.assertIsNotNone(instructor)
+            self.assertEqual(instructor.weekly_base_hours, Decimal("32.0"))
+            self.assertEqual(instructor.monthly_training_hours, Decimal("170.0"))
+            self.assertEqual(instructor.contract_type_id, contract_types["CARRERA ADMINISTRATIVA"].id)
             self.assertIsNotNone(session.exec(select(Environment)).first())
             self.assertIsNotNone(session.exec(select(TrainingProgram)).first())
             group = session.exec(select(Group)).first()
             self.assertIsNotNone(group)
             self.assertIn("Sede: Sede Colombia", group.notes)
+            self.assertIsNotNone(group.productive_stage_start_date)
+            self.assertIsNotNone(group.productive_stage_end_date)
+
+            group.productive_stage_start_date = None
+            group.productive_stage_end_date = None
+            session.add(group)
+            session.commit()
+            second_result = commit_workbook(
+                session,
+                build_schedule_normalized_workbook_bytes(),
+                "schedule_normalized",
+                filename="SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx",
+            )
+            session.refresh(group)
+            self.assertGreater(second_result.updated["groups"], 0)
+            self.assertIsNotNone(group.productive_stage_start_date)
+            self.assertIsNotNone(group.productive_stage_end_date)
             self.assertIsNotNone(session.exec(select(LearningResult)).first())
             self.assertIsNotNone(session.exec(select(Topic)).first())
             relation = session.exec(select(LearningResultTopic)).first()

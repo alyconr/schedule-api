@@ -4,6 +4,7 @@ import { fetchUsers, createUser, updateUser, deactivateUser, fetchRoles } from "
 import { User, UserCreate, UserUpdate, Role, CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DetailDialog } from "./DetailDialog";
 
 interface UserManagementProps {
   currentUser: CurrentUser;
@@ -16,6 +17,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<User | null>(null);
+  const [detailUser, setDetailUser] = useState<User | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -202,7 +204,21 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                 </tr>
               ) : (
                 users.map((user) => (
-                  <tr key={user.id}>
+                  <tr
+                    key={user.id}
+                    className="clickable-row"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailUser(user);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        setDetailUser(user);
+                      }
+                    }}
+                    aria-label={`Ver detalle de ${user.full_name}`}
+                  >
                     <td className="cell-default"><span className="cell-text">{user.full_name}</span></td>
                     <td className="cell-default"><span className="cell-text">{user.email}</span></td>
                     <td>
@@ -300,6 +316,18 @@ export function UserManagement({ currentUser }: UserManagementProps) {
           </div>
         </div>
       )}
+
+      <DetailDialog
+        open={detailUser !== null}
+        title={detailUser?.full_name || "Usuario"}
+        fields={detailUser ? [
+          { label: "Nombre", value: detailUser.full_name },
+          { label: "Correo electrónico", value: detailUser.email },
+          { label: "Roles", value: detailUser.roles?.join(", ") },
+          { label: "Estado", value: detailUser.is_active ? "Activo" : "Inactivo" },
+        ] : []}
+        onClose={() => setDetailUser(null)}
+      />
 
       <ConfirmDialog
         open={confirmDeactivate !== null}

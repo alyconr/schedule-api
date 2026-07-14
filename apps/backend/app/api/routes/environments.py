@@ -16,7 +16,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_environments(session: SessionDep) -> list[Environment]:
-    return list(session.exec(select(Environment)).all())
+    return list(session.exec(select(Environment).where(Environment.is_active == True)).all())
 
 
 @router.get("/{environment_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

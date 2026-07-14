@@ -4,6 +4,7 @@ import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DetailDialog } from "./DetailDialog";
 
 function useDebouncedValue<T>(value: T, delay = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -59,6 +60,9 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [detailItem, setDetailItem] = useState<any | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
@@ -109,6 +113,14 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   }, [filteredItems, page]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const visibleIds = paginatedItems.map((item: any) => item.id).filter((id: any) => typeof id === "number");
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+
+  useEffect(() => {
+    const validIds = new Set(items.map((item: any) => item.id));
+    setSelectedIds((prev) => new Set([...prev].filter((id) => validIds.has(id))));
+  }, [items]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => createItem(config.endpoint, data),
@@ -145,6 +157,22 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await Promise.all(ids.map((id) => deleteItem(config.endpoint, id)));
+      return { ok: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      addToast("success", "Registros eliminados o inactivados correctamente.");
+      setSelectedIds(new Set());
+      setConfirmBulkDelete(false);
+    },
+    onError: (err: any) => {
+      addToast("error", err.message || "Error al eliminar registros.");
+    },
+  });
+
   const openCreateForm = () => {
     setEditingItem(null);
     setErrorMsg(null);
@@ -167,11 +195,43 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     setConfirmDelete(item);
   };
 
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
   const confirmDeleteAction = () => {
     if (confirmDelete) {
       deleteMutation.mutate(confirmDelete.id);
       setConfirmDelete(null);
     }
+  };
+
+  const confirmBulkDeleteAction = () => {
+    bulkDeleteMutation.mutate(Array.from(selectedIds));
   };
 
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -231,7 +291,36 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         <span className="crud-count">
           Mostrando {filteredItems.length} de {items.length} registros
         </span>
+        {canDelete && filteredItems.length > 0 && (
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => setSelectedIds(new Set(filteredItems.map((item: any) => item.id)))}
+          >
+            Seleccionar todos los filtrados
+          </button>
+        )}
       </div>
+
+      {canDelete && selectedIds.size > 0 && (
+        <div className="bulk-actions-bar">
+          <span>
+            {selectedIds.size} seleccionados
+            {selectedVisibleCount > 0 ? ` (${selectedVisibleCount} en esta página)` : ""}
+          </span>
+          <button type="button" className="btn-secondary btn-sm" onClick={clearSelection}>
+            Limpiar selección
+          </button>
+          <button
+            type="button"
+            className="btn-delete btn-sm"
+            onClick={() => setConfirmBulkDelete(true)}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            Eliminar seleccionados
+          </button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="loader">Cargando datos...</div>
@@ -245,6 +334,16 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
           <table className="crud-table">
             <thead>
               <tr>
+                {canDelete && (
+                  <th className="selection-cell">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectVisible}
+                      aria-label="Seleccionar registros visibles"
+                    />
+                  </th>
+                )}
                 {config.fields.map((f) => (
                   <th key={f.name}>{f.label}</th>
                 ))}
@@ -254,21 +353,44 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={config.fields.length + 1} className="text-center empty-cell">
+                  <td colSpan={config.fields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
                     <strong>Aún no hay registros para este módulo.</strong>
                     <span>Utilice el botón "Nuevo Registro" para agregar el primero.</span>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={config.fields.length + 1} className="text-center empty-cell">
+                  <td colSpan={config.fields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
                     <strong>No se encontraron registros con ese criterio.</strong>
                     <span>Intente con otro término de búsqueda.</span>
                   </td>
                 </tr>
               ) : (
                 paginatedItems.map((item: any) => (
-                  <tr key={item.id}>
+                  <tr
+                    key={item.id}
+                    className="clickable-row"
+                    tabIndex={0}
+                    onClick={() => setDetailItem(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setDetailItem(item);
+                      }
+                    }}
+                    aria-label={`Ver detalle de ${config.label}`}
+                  >
+                    {canDelete && (
+                      <td className="selection-cell">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => toggleSelectOne(item.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Seleccionar registro ${item.id}`}
+                        />
+                      </td>
+                    )}
                     {config.fields.map((f) => (
                       <td key={f.name} className={f.type === "textarea" ? "cell-textarea" : "cell-default"}>
                         <span className="cell-text">{renderFieldValue(item, f)}</span>
@@ -276,12 +398,12 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                     ))}
                     <td className="actions-cell">
                       {canWrite && (
-                        <button className="btn-edit" onClick={() => openEditForm(item)}>
+                        <button className="btn-edit" onClick={(event) => { event.stopPropagation(); openEditForm(item); }}>
                           Editar
                         </button>
                       )}
                       {canDelete && (
-                        <button className="btn-delete" onClick={() => handleDelete(item)}>
+                        <button className="btn-delete" onClick={(event) => { event.stopPropagation(); handleDelete(item); }}>
                           Eliminar
                         </button>
                       )}
@@ -369,6 +491,13 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         </div>
       )}
 
+      <DetailDialog
+        open={detailItem !== null}
+        title={detailItem ? String(detailItem.name || detailItem.code || `${config.label} #${detailItem.id}`) : config.label}
+        fields={detailItem ? config.fields.map((field) => ({ label: field.label, value: renderFieldValue(detailItem, field) })) : []}
+        onClose={() => setDetailItem(null)}
+      />
+
       <ConfirmDialog
         open={confirmDelete !== null}
         title="Eliminar registro"
@@ -377,6 +506,16 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         confirmDanger
         onConfirm={confirmDeleteAction}
         onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Eliminar registros seleccionados"
+        message={`¿Está seguro de eliminar o inactivar ${selectedIds.size} registros seleccionados?`}
+        confirmLabel={bulkDeleteMutation.isPending ? "Eliminando..." : "Eliminar seleccionados"}
+        confirmDanger
+        onConfirm={confirmBulkDeleteAction}
+        onCancel={() => setConfirmBulkDelete(false)}
       />
     </div>
   );

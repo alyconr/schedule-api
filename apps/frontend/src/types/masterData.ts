@@ -2,8 +2,12 @@ export interface ContractType {
   id: number;
   name: string;
   description?: string;
+  category?: "planta" | "contratista" | "otro" | null;
+  monthly_training_hours: number;
+  monthly_additional_hours: number;
   weekly_base_hours: number;
   weekly_max_hours: number;
+  source_label?: string | null;
   is_active?: boolean;
 }
 
@@ -18,6 +22,8 @@ export interface Instructor {
   contract_type_id?: number;
   area?: string;
   specialty?: string;
+  monthly_training_hours: number;
+  monthly_additional_hours: number;
   weekly_base_hours: number;
   weekly_max_hours: number;
   is_active?: boolean;
@@ -62,6 +68,8 @@ export interface Group {
   modality?: string;
   start_date?: string;
   end_date?: string;
+  productive_stage_start_date?: string;
+  productive_stage_end_date?: string;
   learners_count: number;
   is_active?: boolean;
   notes?: string;

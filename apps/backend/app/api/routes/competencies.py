@@ -21,7 +21,7 @@ def _validate_program(session: Session, program_id: int | None) -> None:
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_competencies(session: SessionDep) -> list[Competency]:
-    return list(session.exec(select(Competency)).all())
+    return list(session.exec(select(Competency).where(Competency.is_active == True)).all())
 
 
 @router.get("/{competency_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

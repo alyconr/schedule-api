@@ -111,13 +111,55 @@ NORMALIZED_SCHEDULE_SHEETS = {
 
 def normalize_contract_type(value: Any) -> dict[str, Any]:
     raw = normalize_header(value)
-    if raw in ("carrera_administrativa", "planta", "nombramiento", "empleado_publico"):
+    if raw in (
+        "carrera_administrativa",
+        "nombramiento_ordinario",
+        "nombramiento_provisional",
+        "planta",
+        "nombramiento",
+        "empleado_publico",
+    ):
         return {"name": "planta", "base_hours": Decimal("40"), "max_hours": Decimal("40"), "known": True}
-    if raw in ("contrato", "contratista", "prestacion_de_servicios", "prestacion_servicios", "contrato_sena"):
+    if raw in ("contratista_sena", "contrato", "contratista", "prestacion_de_servicios", "prestacion_servicios", "contrato_sena"):
         return {"name": "contratista", "base_hours": Decimal("40"), "max_hours": Decimal("48"), "known": True}
     if raw == "otro":
         return {"name": "otro", "base_hours": Decimal("0"), "max_hours": Decimal("0"), "known": True}
     return {"name": "otro", "base_hours": Decimal("0"), "max_hours": Decimal("0"), "known": False}
+
+
+def normalize_vinculation_label(value: Any) -> str:
+    if value is None:
+        return ""
+    return " ".join(str(value).strip().upper().split())
+
+
+def vinculation_category(value: Any) -> str:
+    raw = normalize_header(value)
+    if raw in (
+        "carrera_administrativa",
+        "nombramiento_ordinario",
+        "nombramiento_provisional",
+        "planta",
+    ):
+        return "planta"
+    if raw in (
+        "contratista_sena",
+        "contratista",
+        "contrato",
+        "prestacion_de_servicios",
+        "prestacion_servicios",
+    ):
+        return "contratista"
+    return "otro"
+
+
+def weekly_rule_hours_for_vinculation(value: Any) -> Decimal:
+    category = vinculation_category(value)
+    if category == "planta":
+        return Decimal("32")
+    if category == "contratista":
+        return Decimal("40")
+    return Decimal("0")
 
 
 def parse_decimal(value: Any) -> Optional[Decimal]:
@@ -490,6 +532,7 @@ def process_normalized_relational_workbook(wb: Any) -> dict[str, list[dict[str, 
 
 def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], errors: list[ImportIssue]) -> dict[str, list[dict[str, Any]]]:
     items = {
+        "contract_types": [],
         "instructors": [],
         "environments": [],
         "groups": [],
@@ -524,7 +567,6 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
         base_idx = find_col_idx(headers, "horas_formacion_mes", "horas_formacion", "horasfromacion", "horas_mes")
         add_idx = find_col_idx(headers, "horas_adicionales")
         area_idx = find_col_idx(headers, "coordinacion")
-        monthly_hours_source = base_idx is not None and headers[base_idx] in ("horas_formacion_mes", "horas_mes")
         if add_idx is None:
             warnings.append(ImportIssue(sheet=sheet.title, entity="instructor", severity="warning", message="No se encontro HORAS ADICIONALES; se usara 0."))
 
@@ -540,15 +582,28 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
             last_name = parts[-1] if len(parts) > 1 else "PENDIENTE"
             doc_num = f"TEMP-{get_stable_hash(name)}"
             email_prefix = normalized_text(name).strip(".") or doc_num.lower()
-            contract_info = normalize_contract_type(row_cell(row, tipo_idx))
-            monthly_h = parse_decimal(row_cell(row, base_idx)) or Decimal("0")
-            base_h = (monthly_h / Decimal("4.25")).quantize(Decimal("0.1")) if monthly_hours_source else monthly_h
-            add_h = parse_decimal(row_cell(row, add_idx)) or Decimal("0")
+            vinculation_name = normalize_vinculation_label(row_cell(row, tipo_idx)) or "OTRO"
+            category = vinculation_category(vinculation_name)
+            weekly_rule_hours = weekly_rule_hours_for_vinculation(vinculation_name)
+            monthly_training_hours = parse_decimal(row_cell(row, base_idx)) or Decimal("0")
+            monthly_additional_hours = parse_decimal(row_cell(row, add_idx)) or Decimal("0")
             area = str(row_cell(row, area_idx) or "").strip()
             if not area:
                 warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Instructor sin coordinacion.", raw_value=name))
-            if not contract_info["known"]:
+            if category == "otro":
                 warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Tipo de vinculacion no reconocido; se usara OTRO.", raw_value=row_cell(row, tipo_idx)))
+            if vinculation_name not in seen["contract_types"]:
+                items["contract_types"].append({
+                    "name": vinculation_name[:50],
+                    "description": f"Tipo de vinculacion importado desde archivo normalizado: {vinculation_name}"[:200],
+                    "category": category,
+                    "monthly_training_hours": monthly_training_hours,
+                    "monthly_additional_hours": monthly_additional_hours,
+                    "weekly_base_hours": weekly_rule_hours,
+                    "weekly_max_hours": weekly_rule_hours,
+                    "source_label": vinculation_name[:100],
+                })
+                seen["contract_types"].add(vinculation_name)
             if doc_num not in seen["instructors"]:
                 items["instructors"].append({
                     "document_type": "CC",
@@ -556,12 +611,15 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                     "first_name": first_name[:100],
                     "last_name": last_name[:100],
                     "email": f"{email_prefix}@pendiente.sena.local"[:200],
-                    "weekly_base_hours": base_h,
-                    "weekly_max_hours": base_h + add_h,
+                    "monthly_training_hours": monthly_training_hours,
+                    "monthly_additional_hours": monthly_additional_hours,
+                    "weekly_base_hours": weekly_rule_hours,
+                    "weekly_max_hours": weekly_rule_hours,
                     "area": area[:100] if area else None,
-                    "contract_type_name": contract_info["name"],
-                    "contract_type_base_hours": contract_info["base_hours"],
-                    "contract_type_max_hours": contract_info["max_hours"],
+                    "contract_type_name": vinculation_name[:50],
+                    "contract_type_category": category,
+                    "contract_type_base_hours": weekly_rule_hours,
+                    "contract_type_max_hours": weekly_rule_hours,
                 })
                 seen["instructors"].add(doc_num)
 
@@ -654,6 +712,8 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                     "jornada": jornada[:50] if jornada else None,
                     "start_date": parse_excel_date(row_cell(row, start_idx)),
                     "end_date": parse_excel_date(row_cell(row, end_idx)),
+                    "productive_stage_start_date": prod_start,
+                    "productive_stage_end_date": prod_end,
                     "learners_count": 0,
                     "notes": " | ".join(notes) if notes else None,
                     "training_program_code": program_code,
@@ -814,6 +874,7 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
     ra_topic_relations_list = []
     
     counts = {
+        "contract_types": {"valid": 0, "warnings": 0, "rejected": 0},
         "instructors": {"valid": 0, "warnings": 0, "rejected": 0},
         "environments": {"valid": 0, "warnings": 0, "rejected": 0},
         "groups": {"valid": 0, "warnings": 0, "rejected": 0},
@@ -831,6 +892,7 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
         for issue in warnings:
             entity_key = {
                 "instructor": "instructors",
+                "contract_type": "contract_types",
                 "environment": "environments",
                 "group": "groups",
                 "program": "programs",
@@ -843,6 +905,7 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
         for issue in errors:
             entity_key = {
                 "instructor": "instructors",
+                "contract_type": "contract_types",
                 "environment": "environments",
                 "group": "groups",
                 "program": "programs",
@@ -1386,6 +1449,8 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "jornada": grp["jornada"],
             "start_date": grp["start_date"],
             "end_date": grp["end_date"],
+            "productive_stage_start_date": grp.get("productive_stage_start_date"),
+            "productive_stage_end_date": grp.get("productive_stage_end_date"),
             "learners_count": grp["learners_count"],
             "notes": grp["notes"],
             "training_program_id": prog_id,
@@ -1401,15 +1466,40 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
     # 3. Save Contract Types and Instructors
     # Cache Contract Types
     contract_type_map = {}
-    
+
+    for item in res["items"].get("contract_types", []):
+        payload = {
+            "name": item["name"],
+            "description": item.get("description"),
+            "category": item.get("category"),
+            "monthly_training_hours": item.get("monthly_training_hours", Decimal("0")),
+            "monthly_additional_hours": item.get("monthly_additional_hours", Decimal("0")),
+            "weekly_base_hours": item.get("weekly_base_hours", Decimal("0")),
+            "weekly_max_hours": item.get("weekly_max_hours", Decimal("0")),
+            "source_label": item.get("source_label"),
+            "is_active": True,
+        }
+        obj, created = upsert_entity(session, ContractType, "name", item["name"], payload)
+        session.commit()
+        session.refresh(obj)
+        contract_type_map[item["name"]] = obj.id
+        if created:
+            created_counts["contract_types"] += 1
+        else:
+            updated_counts["contract_types"] += 1
+
     for inst in res["items"]["instructors"]:
         ct_name = inst["contract_type_name"]
         if ct_name not in contract_type_map:
             ct_payload = {
                 "name": ct_name,
-                "description": f"Tipo de contrato {ct_name}",
+                "description": f"Tipo de vinculacion {ct_name}",
+                "category": inst.get("contract_type_category"),
+                "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
+                "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
                 "weekly_base_hours": inst.get("contract_type_base_hours", Decimal("0")),
                 "weekly_max_hours": inst.get("contract_type_max_hours", Decimal("0")),
+                "source_label": ct_name,
                 "is_active": True
             }
             ct_obj, ct_created = upsert_entity(session, ContractType, "name", ct_name, ct_payload)
@@ -1429,6 +1519,8 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "first_name": inst["first_name"],
             "last_name": inst["last_name"],
             "email": inst["email"],
+            "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
+            "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
             "weekly_base_hours": inst["weekly_base_hours"],
             "weekly_max_hours": inst["weekly_max_hours"],
             "area": inst["area"],

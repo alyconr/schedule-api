@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { DetailDialog } from "./DetailDialog";
 import { getTopicSelection, getTopicSelectionOptions } from "../api/topics";
 import { CurrentUser } from "../types/auth";
 import { TopicSelectionItem } from "../types/topics";
@@ -23,6 +24,7 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
   const [learningResultId, setLearningResultId] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Record<string, TopicSelectionItem>>({});
+  const [detailTopic, setDetailTopic] = useState<TopicSelectionItem | null>(null);
 
   const optionsParams = {
     program_scope: programScope || undefined,
@@ -178,7 +180,21 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
                   </tr>
                 ) : (
                   topics.map((item) => (
-                    <tr key={item.relation_id}>
+                    <tr
+                      key={item.relation_id}
+                      className="clickable-row"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailTopic(item);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          setDetailTopic(item);
+                        }
+                      }}
+                      aria-label={`Ver detalle de ${item.topic_name}`}
+                    >
                       <td>
                         <input
                           aria-label={`Seleccionar ${item.topic_name}`}
@@ -250,6 +266,23 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
           </aside>
         </div>
       )}
+      <DetailDialog
+        open={detailTopic !== null}
+        title={detailTopic?.topic_name || "Temática"}
+        fields={detailTopic ? [
+          { label: "Tipo de oferta", value: detailTopic.program_scope_label },
+          { label: "Trimestre", value: detailTopic.trimester_number ? `Trimestre ${detailTopic.trimester_number}` : "Sin trimestre" },
+          { label: "Código RAP", value: detailTopic.learning_result_code },
+          { label: "Resultado de aprendizaje", value: detailTopic.learning_result_description },
+          { label: "Código temática", value: detailTopic.topic_code },
+          { label: "Temática", value: detailTopic.topic_name },
+          { label: "Horas", value: topicHours(detailTopic) },
+          { label: "Estado", value: detailTopic.relation_status },
+          { label: "Confianza", value: detailTopic.confidence },
+          { label: "Revisión manual", value: detailTopic.needs_manual_review ? "Sí" : "No" },
+        ] : []}
+        onClose={() => setDetailTopic(null)}
+      />
     </div>
   );
 }

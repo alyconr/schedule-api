@@ -21,7 +21,7 @@ def _validate_competency(session: Session, competency_id: int | None) -> None:
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_learning_results(session: SessionDep) -> list[LearningResult]:
-    return list(session.exec(select(LearningResult)).all())
+    return list(session.exec(select(LearningResult).where(LearningResult.is_active == True)).all())
 
 
 @router.get("/{lr_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

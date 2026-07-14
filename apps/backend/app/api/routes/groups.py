@@ -21,7 +21,7 @@ def _validate_program(session: Session, program_id: int | None) -> None:
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_groups(session: SessionDep) -> list[Group]:
-    return list(session.exec(select(Group)).all())
+    return list(session.exec(select(Group).where(Group.is_active == True)).all())
 
 
 @router.get("/{group_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

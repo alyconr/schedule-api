@@ -15,7 +15,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_time_blocks(session: SessionDep) -> list[TimeBlock]:
-    return list(session.exec(select(TimeBlock)).all())
+    return list(session.exec(select(TimeBlock).where(TimeBlock.is_active == True)).all())
 
 
 @router.get("/{time_block_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

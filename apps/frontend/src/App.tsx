@@ -10,6 +10,7 @@ import { SchedulePlanner } from "./components/SchedulePlanner";
 import { UserManagement } from "./components/UserManagement";
 import { ImportWizard } from "./components/ImportWizard";
 import { ValidationAlertDialog, validationRuleLabel } from "./components/ValidationAlertDialog";
+import { SearchableSelect } from "./components/SearchableSelect";
 import { CurrentUser } from "./types/auth";
 
 type ValidationResult = {
@@ -234,6 +235,8 @@ function AppContent() {
   const [validationError, setValidationError] = useState("");
   const [validating, setValidating] = useState(false);
   const [showValidationAlert, setShowValidationAlert] = useState(false);
+  const [validationContractType, setValidationContractType] = useState<string | number>("planta");
+  const [validationEnvironmentType, setValidationEnvironmentType] = useState<string | number>("fisico");
 
   const checkUserSession = async () => {
     const token = localStorage.getItem("schedule_api_token");
@@ -423,14 +426,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
                 Horas bloque
                 <input name="duration_hours" type="number" min="0.5" step="0.5" defaultValue="2" required />
               </label>
-              <label>
-                Vinculación
-                <select name="instructor_contract_type" defaultValue="planta">
-                  <option value="planta">Planta</option>
-                  <option value="contratista">Contratista</option>
-                  <option value="otro">Otro</option>
-                </select>
-              </label>
+              <SearchableSelect label="Vinculación" name="instructor_contract_type" value={validationContractType} options={[{ value: "planta", label: "Planta" }, { value: "contratista", label: "Contratista" }, { value: "otro", label: "Otro" }]} onChange={setValidationContractType} />
               <label>
                 Horas semana
                 <input name="instructor_weekly_hours" type="number" min="0" step="0.5" defaultValue="28" required />
@@ -443,14 +439,7 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
                 Capacidad
                 <input name="environment_capacity" type="number" min="0" defaultValue="30" required />
               </label>
-              <label>
-                Tipo ambiente
-                <select name="environment_type" defaultValue="fisico">
-                  <option value="fisico">Físico</option>
-                  <option value="virtual">Virtual</option>
-                  <option value="externo">Externo</option>
-                </select>
-              </label>
+              <SearchableSelect label="Tipo ambiente" name="environment_type" value={validationEnvironmentType} options={[{ value: "fisico", label: "Físico" }, { value: "virtual", label: "Virtual" }, { value: "externo", label: "Externo" }]} onChange={setValidationEnvironmentType} />
             </div>
 
             <fieldset className="checks">

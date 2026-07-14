@@ -4,6 +4,7 @@ import { DetailDialog } from "./DetailDialog";
 import { getTopicSelection, getTopicSelectionOptions } from "../api/topics";
 import { CurrentUser } from "../types/auth";
 import { TopicSelectionItem } from "../types/topics";
+import { SearchableSelect } from "./SearchableSelect";
 
 interface TopicSelectionPageProps {
   currentUser: CurrentUser;
@@ -99,36 +100,9 @@ export function TopicSelectionPage({ onSelectionChange }: TopicSelectionPageProp
       </div>
 
       <section className="topic-filters" aria-label="Filtros de tematicas">
-        <label>
-          Tipo de oferta
-          <select value={programScope} onChange={(event) => handleProgramScopeChange(event.target.value)}>
-            <option value="">Todas</option>
-            <option value="oferta_abierta">Oferta abierta</option>
-            <option value="cadena">Cadena de formacion</option>
-          </select>
-        </label>
-        <label>
-          Trimestre
-          <select value={trimesterNumber} onChange={(event) => handleTrimesterChange(event.target.value)}>
-            <option value="">Todos</option>
-            {(options?.trimesters ?? []).map((trimester) => (
-              <option key={trimester} value={trimester}>
-                Trimestre {trimester}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Resultado de Aprendizaje
-          <select value={learningResultId} onChange={(event) => setLearningResultId(event.target.value)}>
-            <option value="">Todos los RAP</option>
-            {(options?.learning_results ?? []).map((result) => (
-              <option key={`${result.id}-${result.program_scope}-${result.trimester_number}`} value={result.id}>
-                {result.code} - {compactText(result.description, 70)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SearchableSelect label="Tipo de oferta" value={programScope} placeholder="Todas" options={[{ value: "oferta_abierta", label: "Oferta abierta" }, { value: "cadena", label: "Cadena de formación" }]} onChange={(value) => handleProgramScopeChange(String(value))} />
+        <SearchableSelect label="Trimestre" value={trimesterNumber} placeholder="Todos" options={(options?.trimesters ?? []).map((trimester) => ({ value: trimester, label: `Trimestre ${trimester}` }))} onChange={(value) => handleTrimesterChange(String(value))} />
+        <SearchableSelect label="Resultado de Aprendizaje" value={learningResultId} placeholder="Todos los RAP" searchPlaceholder="Buscar RAP..." options={(options?.learning_results ?? []).map((result) => ({ value: result.id, label: result.code, description: compactText(result.description, 100) }))} onChange={(value) => setLearningResultId(String(value))} />
         <label>
           Buscar
           <input

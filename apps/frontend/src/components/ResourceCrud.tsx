@@ -5,6 +5,18 @@ import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DetailDialog } from "./DetailDialog";
+import { SearchableSelect, SearchableSelectOption } from "./SearchableSelect";
+
+function ResourceCrudSearchableField({ label, name, initialValue, options, required }: {
+  label: string;
+  name: string;
+  initialValue: string | number | "";
+  options: SearchableSelectOption[];
+  required?: boolean;
+}) {
+  const [value, setValue] = useState(initialValue);
+  return <SearchableSelect label={label} name={name} value={value} options={options} required={required} searchPlaceholder={`Buscar ${label.toLowerCase()}...`} onChange={setValue} />;
+}
 
 function useDebouncedValue<T>(value: T, delay = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -433,6 +445,14 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                 {config.fields.map((field) => {
                   const defaultValue = editingItem ? editingItem[field.name] : "";
 
+                  if (field.type === "select") {
+                    const options: SearchableSelectOption[] = field.options ?? (relatedDataMap[field.relatedEndpoint || ""] || []).map((option: any) => ({
+                      value: option.id,
+                      label: String(option[field.relatedDisplayField || "name"]),
+                    }));
+                    return <ResourceCrudSearchableField key={`${editingItem?.id ?? "new"}-${field.name}`} label={field.label} name={field.name} initialValue={defaultValue || ""} options={options} required={field.required} />;
+                  }
+
                   return (
                     <label key={field.name} className="form-label">
                       {field.label} {field.required && <span className="req">*</span>}
@@ -442,21 +462,6 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                           defaultValue={defaultValue || ""}
                           required={field.required}
                         />
-                      ) : field.type === "select" ? (
-                        <select name={field.name} defaultValue={defaultValue || ""} required={field.required}>
-                          <option value="">Seleccione una opción...</option>
-                          {field.options
-                            ? field.options.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))
-                            : (relatedDataMap[field.relatedEndpoint || ""] || []).map((opt: any) => (
-                                <option key={opt.id} value={opt.id}>
-                                  {opt[field.relatedDisplayField || "name"]}
-                                </option>
-                              ))}
-                        </select>
                       ) : field.type === "checkbox" ? (
                         <input
                           type="checkbox"

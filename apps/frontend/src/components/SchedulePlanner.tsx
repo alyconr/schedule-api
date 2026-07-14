@@ -30,6 +30,7 @@ import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DetailDialog } from "./DetailDialog";
 import { ValidationAlertDialog, validationRuleLabel } from "./ValidationAlertDialog";
+import { SearchableSelect } from "./SearchableSelect";
 
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
@@ -89,33 +90,28 @@ function dateFromIso(value: string): Date | null {
   return year && month && day ? new Date(year, month - 1, day) : null;
 }
 
-function dateForWeekday(referenceDate: string, weekdayIndex: number): string {
-  const date = dateFromIso(referenceDate);
-  if (!date) return referenceDate;
-  const currentWeekday = date.getDay() || 7;
-  date.setDate(date.getDate() - currentWeekday + weekdayIndex);
-  return toLocalIsoDate(date);
+function datesForWeekdays(startValue: string, endValue: string, weekdays: number[]): string[] {
+  const current = dateFromIso(startValue);
+  const end = dateFromIso(endValue);
+  if (!current || !end) return [];
+  const dates: string[] = [];
+  while (current <= end) {
+    if (weekdays.includes(current.getDay())) dates.push(toLocalIsoDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
 }
 
-function weekRangeFromDate(referenceDate: string): ScheduleFilters {
-  const date = dateFromIso(referenceDate);
-  if (!date) return getCurrentWeekRange();
-  const weekday = date.getDay() || 7;
-  const monday = new Date(date);
-  monday.setDate(date.getDate() - weekday + 1);
-  const saturday = new Date(monday);
-  saturday.setDate(monday.getDate() + 5);
-  return { date_from: toLocalIsoDate(monday), date_to: toLocalIsoDate(saturday), limit: 200 };
+function getDefaultTrimesterRange(): ScheduleFilters {
+  return { date_from: "", date_to: "", limit: 500 };
 }
 
-function getCurrentWeekRange(): ScheduleFilters {
-  const today = new Date();
-  const weekday = today.getDay() || 7;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - weekday + 1);
-  const saturday = new Date(monday);
-  saturday.setDate(monday.getDate() + 5);
-  return { date_from: toLocalIsoDate(monday), date_to: toLocalIsoDate(saturday), limit: 200 };
+function formatProgrammedDay(dateValue: string): string {
+  if (!dateValue) return "Sin fecha";
+  const date = new Date(`${dateValue}T00:00:00`);
+  const weekday = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(date);
+  const formattedDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${formattedDate}`;
 }
 
 const MAX_WEEKDAY_CARDS = 30;
@@ -129,15 +125,9 @@ function filterSchedulesByGroupAndInstructor(
   groupLabel: (group: Group) => string,
   instructorLabel: (instructor: Instructor) => string
 ): Schedule[] {
-  const normalizedGroup = groupQuery.trim().toLocaleLowerCase("es");
-  const normalizedInstructor = instructorQuery.trim().toLocaleLowerCase("es");
-  return schedules.filter(
-    (schedule) => {
-      const group = groupsById.get(schedule.group_id);
-      const instructor = instructorsById.get(schedule.instructor_id);
-      return (!normalizedGroup || (group ? groupLabel(group) : String(schedule.group_id)).toLocaleLowerCase("es").includes(normalizedGroup)) &&
-        (!normalizedInstructor || (instructor ? instructorLabel(instructor) : String(schedule.instructor_id)).toLocaleLowerCase("es").includes(normalizedInstructor));
-    }
+  return schedules.filter((schedule) =>
+    (!groupQuery || schedule.group_id === Number(groupQuery)) &&
+    (!instructorQuery || schedule.instructor_id === Number(instructorQuery))
   );
 }
 
@@ -196,6 +186,28 @@ function ExpandedScheduleFilters({
   );
 }
 
+function ExpandedSearchableFilters({
+  groups,
+  instructors,
+  groupQuery,
+  instructorQuery,
+  count,
+  total,
+  groupLabel,
+  instructorLabel,
+  onApply,
+  onClear,
+}: ExpandedScheduleFiltersProps) {
+  return (
+    <div className="expanded-filters-bar">
+      <SearchableSelect label="Filtrar por ficha" value={groupQuery} placeholder="Todas las fichas" searchPlaceholder="Buscar ficha..." options={groups.map((group) => ({ value: group.id, label: groupLabel(group) }))} onChange={(value) => onApply(String(value), instructorQuery)} />
+      <SearchableSelect label="Filtrar por instructor" value={instructorQuery} placeholder="Todos los instructores" searchPlaceholder="Buscar instructor..." options={instructors.map((instructor) => ({ value: instructor.id, label: instructorLabel(instructor) }))} onChange={(value) => onApply(groupQuery, String(value))} />
+      <button type="button" className="btn-secondary" onClick={onClear}>Limpiar filtros</button>
+      <span className="expanded-filter-count">Mostrando {count} de {total} horarios</span>
+    </div>
+  );
+}
+
 export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
 
@@ -209,8 +221,9 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [filterInstructor, setFilterInstructor] = useState<string>("");
   const [filterGroup, setFilterGroup] = useState<string>("");
   const [filterEnvironment, setFilterEnvironment] = useState<string>("");
-  const [filterDate, setFilterDate] = useState<string>("");
-  const [activeFilters, setActiveFilters] = useState<ScheduleFilters>(() => getCurrentWeekRange());
+  const [trimesterStartDate, setTrimesterStartDate] = useState("");
+  const [trimesterEndDate, setTrimesterEndDate] = useState("");
+  const [activeFilters, setActiveFilters] = useState<ScheduleFilters>(() => getDefaultTrimesterRange());
 
   // Form states
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -246,6 +259,8 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [selectedDetailIds, setSelectedDetailIds] = useState<Set<number>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
   const [showFullscreenTable, setShowFullscreenTable] = useState(false);
@@ -495,6 +510,19 @@ const filteredDetailSchedules = useMemo(
   [schedules, detailFilterGroupId, detailFilterInstructorId, groupsById, instructorsById]
 );
 const visibleDetailSchedules = useMemo(() => filteredDetailSchedules.slice(0, 200), [filteredDetailSchedules]);
+useEffect(() => {
+  const visibleIds = new Set(visibleDetailSchedules.map((schedule) => schedule.id));
+  setSelectedDetailIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
+}, [visibleDetailSchedules]);
+const allVisibleDetailSelected = visibleDetailSchedules.length > 0 && visibleDetailSchedules.every((schedule) => selectedDetailIds.has(schedule.id));
+const toggleAllVisibleDetails = () => setSelectedDetailIds(
+  allVisibleDetailSelected ? new Set() : new Set(visibleDetailSchedules.map((schedule) => schedule.id))
+);
+const toggleDetailSelection = (id: number) => setSelectedDetailIds((current) => {
+  const next = new Set(current);
+  next.has(id) ? next.delete(id) : next.add(id);
+  return next;
+});
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
   queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
@@ -595,6 +623,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setSelectedWeekdays([getWeekdayFromDate(sch.date)]);
     const rap = learningResultsById.get(sch.learning_result_id);
     const group = groupsById.get(sch.group_id);
+    if (group?.start_date && !trimesterStartDate) setTrimesterStartDate(group.start_date);
+    if (group?.end_date && !trimesterEndDate) setTrimesterEndDate(group.end_date);
     const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
     const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
     const instructor = instructorsById.get(sch.instructor_id);
@@ -680,7 +710,22 @@ const deleteMutation = useMutation({
     onError: (err: any) => {
       addToast("error", err.message || "Error al eliminar el horario.");
     },
-  });
+});
+
+const bulkDeleteMutation = useMutation({
+  mutationFn: async (ids: number[]) => {
+    const results = await Promise.allSettled(ids.map(deleteSchedule));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) throw new Error(`Se eliminaron ${ids.length - failed} registros, pero ${failed} no pudieron eliminarse.`);
+    return ids.length;
+  },
+  onSuccess: (count) => {
+    setSelectedDetailIds(new Set());
+    addToast("success", `${count} horarios eliminados correctamente.`);
+  },
+  onError: (error: Error) => addToast("error", error.message),
+  onSettled: () => queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+});
 
   // Event handlers
   const handleFichaChange = (id: number | "") => {
@@ -698,6 +743,8 @@ const deleteMutation = useMutation({
     }
     setGroupId(id);
     const g = groups.find((x) => x.id === id);
+    if (g?.start_date && !trimesterStartDate) setTrimesterStartDate(g.start_date);
+    if (g?.end_date && !trimesterEndDate) setTrimesterEndDate(g.end_date);
     setGroupSearch(g ? groupLabel(g) : "");
     if (g?.training_program_id) {
       setProgramId(g.training_program_id);
@@ -746,17 +793,19 @@ const deleteMutation = useMutation({
 
   const handleApplyFilters = (e: FormEvent) => {
     e.preventDefault();
-    const newFilters: ScheduleFilters = { limit: 200 };
+    setErrorMsg(null);
+    if (!trimesterStartDate || !trimesterEndDate) {
+      setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
+      return;
+    }
+    if (trimesterStartDate > trimesterEndDate) {
+      setErrorMsg("La fecha de inicio del trimestre no puede ser mayor a la fecha fin.");
+      return;
+    }
+    const newFilters: ScheduleFilters = { date_from: trimesterStartDate, date_to: trimesterEndDate, limit: 500 };
     if (filterInstructor) newFilters.instructor_id = Number(filterInstructor);
     if (filterGroup) newFilters.group_id = Number(filterGroup);
     if (filterEnvironment) newFilters.environment_id = Number(filterEnvironment);
-    if (filterDate) {
-      newFilters.date = filterDate;
-    } else if (!filterInstructor) {
-      const weekRange = getCurrentWeekRange();
-      newFilters.date_from = weekRange.date_from;
-      newFilters.date_to = weekRange.date_to;
-    }
     setActiveFilters(newFilters);
   };
 
@@ -764,9 +813,10 @@ const deleteMutation = useMutation({
     setFilterInstructor("");
     setFilterGroup("");
     setFilterEnvironment("");
-    setFilterDate("");
+    setTrimesterStartDate("");
+    setTrimesterEndDate("");
     setFilterInstructorSearch("");
-    setActiveFilters(getCurrentWeekRange());
+    setActiveFilters(getDefaultTrimesterRange());
   };
 
   const handleCancelClick = (id: number) => {
@@ -789,7 +839,16 @@ const deleteMutation = useMutation({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!groupId || !learningResultId || !instructorId || !environmentId || !dateVal || !startTime || !endTime) {
+    if (!trimesterStartDate || !trimesterEndDate) {
+      setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
+      return;
+    }
+    if (trimesterStartDate > trimesterEndDate) {
+      setErrorMsg("La fecha de inicio del trimestre no puede ser mayor a la fecha fin.");
+      return;
+    }
+
+    if (!groupId || !learningResultId || !instructorId || !environmentId || (editingSchedule && !dateVal) || !startTime || !endTime) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
@@ -819,9 +878,11 @@ const deleteMutation = useMutation({
 
     const targetDates = editingSchedule
       ? [dateVal]
-      : selectedWeekdays.length > 0
-      ? selectedWeekdays.map((weekday) => dateForWeekday(dateVal, weekday))
-      : [dateVal];
+      : datesForWeekdays(trimesterStartDate, trimesterEndDate, selectedWeekdays);
+    if (targetDates.length === 0) {
+      setErrorMsg("No hay fechas dentro del trimestre que coincidan con los días seleccionados.");
+      return;
+    }
 
     const basePayload: any = {
       instructor_id: Number(instructorId),
@@ -844,7 +905,6 @@ const deleteMutation = useMutation({
       updateMutation.mutate({ id: editingSchedule.id, payload });
     } else if (targetDates.length === 1) {
       const payload = { ...basePayload, date: targetDates[0], weekday: getWeekdayFromDate(targetDates[0]) };
-      setActiveFilters(weekRangeFromDate(dateVal));
       createMutation.mutate(payload);
     } else {
       setIsBulkSubmitting(true);
@@ -869,7 +929,6 @@ const deleteMutation = useMutation({
         setValidations(warnings);
         setShowBlockingAlert(blockedDays.length > 0);
         queryClient.invalidateQueries({ queryKey: ["schedules"] });
-        setActiveFilters(weekRangeFromDate(dateVal));
         if (blockedDays.length) {
           setErrorMsg(`No se pudieron programar estos días por reglas de negocio: ${blockedDays.join(", ")}.`);
         } else {
@@ -929,29 +988,17 @@ const deleteMutation = useMutation({
         </div>
         <div className="filter-fields">
           <label>
-            Fecha
-            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+            Fecha inicio trimestre <span className="req">*</span>
+            <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
           </label>
           <label>
-            Instructor
-            <input
-              type="search"
-              value={filterInstructorSearch}
-              onChange={(e) => setFilterInstructorSearch(e.target.value)}
-              placeholder="Buscar instructor..."
-            />
-            <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)}>
-              <option value="">Todos los instructores</option>
-              {filteredFilterInstructors.map((ins) => (
-                <option key={ins.id} value={ins.id}>
-                  {instructorLabel(ins)}
-                </option>
-              ))}
-</select>
-                  </label>
+            Fecha fin trimestre <span className="req">*</span>
+            <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
+          </label>
+          <SearchableSelect label="Instructor" value={filterInstructor} placeholder="Todos los instructores" searchPlaceholder="Buscar instructor..." options={instructors.map((ins) => ({ value: ins.id, label: instructorLabel(ins) }))} onChange={(value) => setFilterInstructor(String(value))} />
                 </div>
                 <div className="filter-actions">
-                  <button type="submit" className="btn-primary">Filtrar</button>
+                  <button type="submit" className="btn-primary">Consultar trimestre</button>
                   <button type="button" className="btn-secondary" onClick={handleClearFilters}>Limpiar</button>
                 </div>
               </form>
@@ -972,11 +1019,11 @@ const deleteMutation = useMutation({
                     {schedulesFetching && !schedulesLoading && (
                       <div className="soft-loading-indicator">Actualizando programación...</div>
                     )}
-                    <section className="week-view-card" aria-label="Vista semanal de programación">
+                    <section className="week-view-card" aria-label="Vista de programación por días">
                       <div className="week-view-header">
                         <div>
                           <span className="eyebrow">Matriz académica</span>
-                          <h3>Vista semanal de programación</h3>
+                          <h3>Vista de programación por días</h3>
                         </div>
                         <span className="week-view-count">{activeSchedules.length} horarios</span>
                         <button className="btn-secondary btn-expand-matrix" onClick={() => setShowFullscreenMatrix(true)} type="button" aria-label="Ampliar matriz">
@@ -1001,6 +1048,7 @@ const deleteMutation = useMutation({
         <button className={`week-schedule-card ${statusClass}`} disabled={!canWrite} key={sch.id}
           onClick={() => handleEditInit(sch)} title={canWrite ? "Editar horario" : "Modo consulta"} type="button"
         >
+          <span className="week-schedule-date">{formatProgrammedDay(sch.date)}</span>
           <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
           <span><strong>Instructor:</strong> {instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID ${sch.instructor_id}`}</span>
           <span><strong>Ambiente:</strong> {environment ? `${environment.code} - ${environment.name}` : `ID ${sch.environment_id}`}</span>
@@ -1036,7 +1084,7 @@ const deleteMutation = useMutation({
                         <table className="crud-table">
                           <thead>
                             <tr>
-                              <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
+                              <th>Días programados</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
                               {!isConsulta && <th>Acciones</th>}
                             </tr>
                           </thead>
@@ -1073,7 +1121,7 @@ const deleteMutation = useMutation({
                                     }}
                                     aria-label={`Ver detalle del horario ${sch.id}`}
                                   >
-                                    <td>{sch.date}</td>
+                                    <td>{formatProgrammedDay(sch.date)}</td>
                                     <td>{sch.start_time} - {sch.end_time}</td>
                                     <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
                                     <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
@@ -1136,10 +1184,23 @@ const deleteMutation = useMutation({
                     <form onSubmit={handleFormSubmit} className="schedule-form">
                       <div className="schedule-form-group">
                         <p className="form-group-title">Horario</p>
-                        <label className="form-label">
-                          {editingSchedule ? "Fecha" : "Semana de referencia"} <span className="req">*</span>
-                          <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
-                        </label>
+                        <p className="form-section-subtitle">Periodo del trimestre</p>
+                        <div className="form-row-compact">
+                          <label className="form-label">
+                            Fecha inicio trimestre <span className="req">*</span>
+                            <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
+                          </label>
+                          <label className="form-label">
+                            Fecha fin trimestre <span className="req">*</span>
+                            <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
+                          </label>
+                        </div>
+                        {editingSchedule && (
+                          <label className="form-label">
+                            Fecha programada <span className="req">*</span>
+                            <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
+                          </label>
+                        )}
                         {!editingSchedule && (
                           <fieldset className="weekday-selector">
                             <legend>Días a programar</legend>
@@ -1164,31 +1225,15 @@ const deleteMutation = useMutation({
 
                       <div className="schedule-form-group">
                         <p className="form-group-title">Datos académicos</p>
-                        <label className="form-label">
-                          Ficha / Grupo <span className="req">*</span>
-                          <input
-                            type="search"
-                            value={groupSearch}
-                            onChange={(e) => setGroupSearch(e.target.value)}
-                            placeholder="Buscar ficha..."
-                          />
-                          <select value={groupId} onChange={(e) => handleFichaChange(e.target.value ? Number(e.target.value) : "")} required>
-                            <option value="">Seleccione ficha...</option>
-                            {filteredGroups.map((g) => (<option key={g.id} value={g.id}>{groupLabel(g)}</option>))}
-                          </select>
-                        </label>
-                        <label className="form-label">
-                          Programa de Formación
-                          <input
-                            type="search"
-                            value={programSearch}
-                            onChange={(e) => setProgramSearch(e.target.value)}
-                            placeholder="Buscar programa..."
-                          />
-                          <select
-                            value={programId}
-                            onChange={(e) => {
-                              const nextProgramId = e.target.value ? Number(e.target.value) : "";
+                        <SearchableSelect label="Ficha / Grupo" value={groupId} required placeholder="Seleccione ficha..." searchPlaceholder="Buscar ficha..." options={groups.map((group) => ({ value: group.id, label: groupLabel(group) }))} onChange={(value) => handleFichaChange(value === "" ? "" : Number(value))} />
+                        <SearchableSelect
+                          label="Programa de Formación"
+                          value={programId}
+                          placeholder="Auto-detectado por ficha"
+                          searchPlaceholder="Buscar programa..."
+                          options={programs.filter((program) => programIdsWithGroups.size === 0 || programIdsWithGroups.has(program.id)).map((program) => ({ value: program.id, label: `${program.code} - ${program.name}` }))}
+                          onChange={(value) => {
+                              const nextProgramId = value === "" ? "" : Number(value);
                               setProgramId(nextProgramId);
                               const program = typeof nextProgramId === "number" ? programsById.get(nextProgramId) : undefined;
                               setProgramSearch(program ? `${program.code} - ${program.name}` : "");
@@ -1197,56 +1242,18 @@ const deleteMutation = useMutation({
                               setRapSearch("");
                               setLearningResultTopicId("");
                               setManualTopicName("");
-                            }}
-                          >
-                            <option value="">Auto-detectado por ficha</option>
-                            {filteredPrograms.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                          </select>
-                        </label>
-                        <label className="form-label rap-search-field">
-                          Resultado de Aprendizaje (RAP) <span className="req">*</span>
-                          <input
-                            type="text"
-                            value={rapSearch}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onChange={(e) => {
-                              const nextSearch = e.target.value;
-                              setRapSearch(nextSearch);
-                              const selectedLabel = selectedRapOption ? `${selectedRapOption.code} - ${selectedRapOption.description.slice(0, 100)}` : "";
-                              if (!nextSearch.trim() || nextSearch !== selectedLabel) {
-                                setLearningResultId("");
-                                setCompetencyId("");
-                                setLearningResultTopicId("");
-                                setManualTopicName("");
-                              }
-                            }}
-                            placeholder="Buscar RAP por código o descripción..."
-                            autoComplete="off"
-                          />
-                          <input type="hidden" value={learningResultId} required readOnly />
-                          <div className="rap-autocomplete-list">
-                            {rapOptions.map((lr) => (
-                              <button type="button" key={lr.id}
-                                className={`rap-autocomplete-item ${learningResultId === lr.id ? "selected" : ""}`}
-                                onClick={() => handleRapChange(lr.id)}
-                              >
-                                <strong>{lr.code}</strong>
-                                <span>{lr.description.slice(0, 140)}</span>
-                              </button>
-                            ))}
-                            {deferredRapSearch.trim() && rapOptions.length === 0 && (
-                              <div className="rap-autocomplete-empty">No se encontraron RAP con ese criterio.</div>
-                            )}
-                            {rapSource.length > 20 && !deferredRapSearch.trim() && (
-                              <div className="rap-autocomplete-hint">Escriba para buscar entre todos los resultados de aprendizaje.</div>
-                            )}
-                          </div>
-                          {selectedRapOption && (
-                            <div className="selected-rap-summary">
-                              <strong>RAP seleccionado:</strong> {selectedRapOption.code}
-                            </div>
-                          )}
-                        </label>
+                          }}
+                        />
+                        <SearchableSelect
+                          label="Resultado de Aprendizaje (RAP)"
+                          value={learningResultId}
+                          required
+                          placeholder="Seleccione RAP..."
+                          searchPlaceholder="Buscar RAP por código o descripción..."
+                          maxVisibleOptions={20}
+                          options={rapSource.map((rap) => ({ value: rap.id, label: rap.code, description: rap.description }))}
+                          onChange={(value) => value !== "" && handleRapChange(Number(value))}
+                        />
 
                         {learningResultId && !selectedProgramId && (
                           <div className="rap-info-card rap-info-empty">
@@ -1308,90 +1315,18 @@ const deleteMutation = useMutation({
                           </div>
                         )}
 
-                        <label className="form-label">
-                          Competencia Asociada
-                          <input
-                            type="search"
-                            value={competencySearch}
-                            onChange={(e) => setCompetencySearch(e.target.value)}
-                            placeholder="Buscar competencia..."
-                          />
-                          <select value={competencyId} onChange={(e) => {
-                            const nextCompetencyId = e.target.value ? Number(e.target.value) : "";
-                            setCompetencyId(nextCompetencyId);
-                            const competency = typeof nextCompetencyId === "number"
-                              ? competencies.find((comp) => comp.id === nextCompetencyId)
-                              : undefined;
-                            setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
-                          }}>
-                            <option value="">Auto-detectado por RAP</option>
-                            {filteredCompetencies.map((comp) => (<option key={comp.id} value={comp.id}>{comp.code} - {comp.name.slice(0, 50)}...</option>))}
-                          </select>
-                        </label>
+                        <SearchableSelect label="Competencia Asociada" value={competencyId} placeholder="Auto-detectado por RAP" searchPlaceholder="Buscar competencia..." options={competencies.map((competency) => ({ value: competency.id, label: `${competency.code} - ${competency.name}` }))} onChange={(value) => setCompetencyId(value === "" ? "" : Number(value))} />
                       </div>
 
                       <div className="schedule-form-group">
                         <p className="form-group-title">Asignación</p>
-                        <label className="form-label">
-                          Instructor <span className="req">*</span>
-                          <input
-                            type="search"
-                            value={instructorSearch}
-                            onChange={(e) => setInstructorSearch(e.target.value)}
-                            placeholder="Buscar instructor..."
-                          />
-                          <select value={instructorId} onChange={(e) => {
-                            const nextInstructorId = e.target.value ? Number(e.target.value) : "";
-                            setInstructorId(nextInstructorId);
-                            const instructor = typeof nextInstructorId === "number" ? instructorsById.get(nextInstructorId) : undefined;
-                            setInstructorSearch(instructor ? instructorLabel(instructor) : "");
-                          }} required>
-                            <option value="">Seleccione instructor...</option>
-                            {filteredInstructors.map((ins) => (<option key={ins.id} value={ins.id}>{instructorLabel(ins)}</option>))}
-                          </select>
-                        </label>
-                        <label className="form-label">
-                          Ambiente <span className="req">*</span>
-                          <input
-                            type="search"
-                            value={environmentSearch}
-                            onChange={(e) => setEnvironmentSearch(e.target.value)}
-                            placeholder="Buscar ambiente..."
-                          />
-                          <select value={environmentId} onChange={(e) => {
-                            const nextEnvironmentId = e.target.value ? Number(e.target.value) : "";
-                            setEnvironmentId(nextEnvironmentId);
-                            const environment = typeof nextEnvironmentId === "number" ? environmentsById.get(nextEnvironmentId) : undefined;
-                            setEnvironmentSearch(environment ? environmentLabel(environment) : "");
-                          }} required>
-                            <option value="">Seleccione ambiente...</option>
-                            {filteredEnvironments.map((env) => (<option key={env.id} value={env.id}>{environmentLabel(env)}</option>))}
-                          </select>
-                        </label>
+                        <SearchableSelect label="Instructor" value={instructorId} required placeholder="Seleccione instructor..." searchPlaceholder="Buscar instructor..." options={instructors.map((instructor) => ({ value: instructor.id, label: instructorLabel(instructor) }))} onChange={(value) => setInstructorId(value === "" ? "" : Number(value))} />
+                        <SearchableSelect label="Ambiente" value={environmentId} required placeholder="Seleccione ambiente..." searchPlaceholder="Buscar ambiente..." options={environments.map((environment) => ({ value: environment.id, label: environmentLabel(environment) }))} onChange={(value) => setEnvironmentId(value === "" ? "" : Number(value))} />
                       </div>
 
                 <div className="schedule-form-group">
                   <p className="form-group-title">Bloque y duración</p>
-                <label className="form-label">
-                  Bloque Horario Institucional
-                  <input
-                    type="search"
-                    value={blockSearch}
-                    onChange={(e) => setBlockSearch(e.target.value)}
-                    placeholder="Buscar bloque..."
-                  />
-                  <select
-                    value={blockId}
-                    onChange={(e) => handleBlockChange(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">Carga manual / Sin bloque</option>
-                    {filteredTimeBlocks.map((tb) => (
-                      <option key={tb.id} value={tb.id}>
-                        {tb.name} ({tb.start_time} - {tb.end_time})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque..." options={timeBlocks.map((block) => ({ value: block.id, label: `${block.name} (${block.start_time} - ${block.end_time})` }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />
 
                 <div className="form-row-compact">
                   <label className="form-label">
@@ -1492,12 +1427,12 @@ const deleteMutation = useMutation({
             <div className="fullscreen-matrix-header">
               <div>
                 <span className="eyebrow">Matriz académica</span>
-                <h3 id="matrix-title">Matriz semanal de programación</h3>
-                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica por día, instructor, ficha, ambiente y RAP.</p>
+                <h3 id="matrix-title">Matriz académica de programación</h3>
+                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica por días programados, instructor, ficha, ambiente y RAP.</p>
               </div>
               <button className="btn-secondary" onClick={() => setShowFullscreenMatrix(false)} aria-label="Cerrar matriz">Cerrar</button>
             </div>
-            <ExpandedScheduleFilters
+            <ExpandedSearchableFilters
               groups={groups}
               instructors={instructors}
               idPrefix="matrix-filter"
@@ -1536,6 +1471,7 @@ const deleteMutation = useMutation({
                               title={canWrite ? "Editar horario" : "Modo consulta"}
                               type="button"
                             >
+                              <span className="week-schedule-date">{formatProgrammedDay(sch.date)}</span>
                               <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
                               <span><strong>Instructor:</strong> {instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID ${sch.instructor_id}`}</span>
                               <span><strong>Ambiente:</strong> {environment ? `${environment.code} - ${environment.name}` : `ID ${sch.environment_id}`}</span>
@@ -1570,7 +1506,7 @@ const deleteMutation = useMutation({
               </div>
               <button className="btn-secondary" onClick={() => setShowFullscreenTable(false)} aria-label="Cerrar listado">Cerrar</button>
             </div>
-            <ExpandedScheduleFilters
+            <ExpandedSearchableFilters
               groups={groups}
               instructors={instructors}
               idPrefix="detail-filter"
@@ -1583,18 +1519,34 @@ const deleteMutation = useMutation({
               onApply={(groupQuery, instructorQuery) => { setDetailFilterGroupId(groupQuery); setDetailFilterInstructorId(instructorQuery); }}
               onClear={() => { setDetailFilterGroupId(""); setDetailFilterInstructorId(""); }}
             />
+            {canDelete && visibleDetailSchedules.length > 0 && (
+              <div className="bulk-actions-bar detailed-bulk-actions">
+                <button type="button" className="btn-secondary btn-sm" onClick={toggleAllVisibleDetails}>
+                  {allVisibleDetailSelected ? "Quitar selección" : "Seleccionar todas las filas cargadas"}
+                </button>
+                <span>{selectedDetailIds.size} horarios seleccionados</span>
+                <button type="button" className="btn-delete btn-sm" disabled={selectedDetailIds.size === 0 || bulkDeleteMutation.isPending} onClick={() => setConfirmBulkDelete(true)}>
+                  {bulkDeleteMutation.isPending ? "Eliminando..." : "Eliminar seleccionados"}
+                </button>
+              </div>
+            )}
             <div className="table-responsive" style={{ maxHeight: "calc(100vh - 270px)", overflowY: "auto" }}>
               <table className="crud-table">
                 <thead>
                   <tr>
-                    <th>Fecha</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
+                    {canDelete && (
+                      <th className="selection-cell">
+                        <input type="checkbox" checked={allVisibleDetailSelected} onChange={toggleAllVisibleDetails} aria-label="Seleccionar todas las filas cargadas" />
+                      </th>
+                    )}
+                    <th>Días programados</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
                     {!isConsulta && <th>Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredDetailSchedules.length === 0 ? (
                     <tr>
-                      <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
+                      <td colSpan={7 + (!isConsulta ? 1 : 0) + (canDelete ? 1 : 0)} className="text-center empty-cell">
                         <strong>No hay horarios programados para los filtros seleccionados.</strong>
                       </td>
                     </tr>
@@ -1623,7 +1575,18 @@ const deleteMutation = useMutation({
                           }}
                           aria-label={`Ver detalle del horario ${sch.id}`}
                         >
-                          <td>{sch.date}</td>
+                          {canDelete && (
+                            <td className="selection-cell">
+                              <input
+                                type="checkbox"
+                                checked={selectedDetailIds.has(sch.id)}
+                                onChange={() => toggleDetailSelection(sch.id)}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Seleccionar horario ${sch.id}`}
+                              />
+                            </td>
+                          )}
+                          <td>{formatProgrammedDay(sch.date)}</td>
                           <td>{sch.start_time} - {sch.end_time}</td>
                           <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
                           <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
@@ -1765,6 +1728,15 @@ const deleteMutation = useMutation({
         confirmDanger
         onConfirm={() => { if (confirmCancelId) { cancelMutation.mutate(confirmCancelId); setConfirmCancelId(null); } }}
         onCancel={() => setConfirmCancelId(null)}
+      />
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title="Eliminar horarios seleccionados"
+        message={`¿Está seguro de eliminar los ${selectedDetailIds.size} registros seleccionados? Esta acción no se puede deshacer y los horarios no podrán recuperarse.`}
+        confirmLabel="Sí, eliminar todos"
+        confirmDanger
+        onConfirm={() => { bulkDeleteMutation.mutate([...selectedDetailIds]); setConfirmBulkDelete(false); }}
+        onCancel={() => setConfirmBulkDelete(false)}
       />
       <ConfirmDialog
         open={confirmDeleteId !== null}

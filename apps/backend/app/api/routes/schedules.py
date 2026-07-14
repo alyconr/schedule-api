@@ -219,7 +219,7 @@ def list_schedules(
     date_to: date_type | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     include_cancelled: bool = Query(default=False),
-    limit: int = Query(default=200, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[Schedule]:
     stmt = select(Schedule).where(Schedule.status != "deleted")
     if not (include_inactive or include_cancelled):

@@ -1,4 +1,4 @@
-from datetime import date as date_type, time
+from datetime import date as date_type, datetime, time
 from decimal import Decimal
 from typing import Literal
 
@@ -55,6 +55,18 @@ class ValidationResult(BaseModel):
     message: str
     is_blocking: bool
     field: str | None = None
+
+
+class ScheduleValidationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    schedule_id: int
+    rule_code: str
+    severity: str
+    message: str
+    is_blocking: bool
+    created_at: datetime
 
 
 class ScheduleValidationResponse(BaseModel):

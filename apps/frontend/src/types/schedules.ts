@@ -78,3 +78,13 @@ export type ScheduleFilters = {
   include_cancelled?: boolean;
   limit?: number;
 };
+
+export type ScheduleValidation = {
+  id: number;
+  schedule_id: number;
+  rule_code: string;
+  severity: ValidationSeverity | string;
+  message: string;
+  is_blocking: boolean;
+  created_at?: string;
+};

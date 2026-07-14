@@ -7,6 +7,7 @@ import {
   updateSchedule,
   cancelSchedule,
   deleteSchedule,
+  fetchScheduleValidations,
 } from "../api/schedules";
 import { getTopicSelection } from "../api/topics";
 import {
@@ -119,6 +120,67 @@ function getCurrentWeekRange(): ScheduleFilters {
 
 const MAX_WEEKDAY_CARDS = 30;
 
+function filterSchedulesByGroupAndInstructor(
+  schedules: Schedule[],
+  groupId: number | "",
+  instructorId: number | ""
+): Schedule[] {
+  return schedules.filter(
+    (schedule) =>
+      (groupId === "" || schedule.group_id === groupId) &&
+      (instructorId === "" || schedule.instructor_id === instructorId)
+  );
+}
+
+interface ExpandedScheduleFiltersProps {
+  groups: Group[];
+  instructors: Instructor[];
+  groupId: number | "";
+  instructorId: number | "";
+  count: number;
+  total: number;
+  groupLabel: (group: Group) => string;
+  instructorLabel: (instructor: Instructor) => string;
+  onGroupChange: (value: number | "") => void;
+  onInstructorChange: (value: number | "") => void;
+  onClear: () => void;
+}
+
+function ExpandedScheduleFilters({
+  groups,
+  instructors,
+  groupId,
+  instructorId,
+  count,
+  total,
+  groupLabel,
+  instructorLabel,
+  onGroupChange,
+  onInstructorChange,
+  onClear,
+}: ExpandedScheduleFiltersProps) {
+  return (
+    <div className="expanded-filters-bar">
+      <label className="form-label">
+        Filtrar por ficha
+        <select value={groupId} onChange={(event) => onGroupChange(event.target.value ? Number(event.target.value) : "")}>
+          <option value="">Todas las fichas</option>
+          {groups.map((group) => <option key={group.id} value={group.id}>{groupLabel(group)}</option>)}
+        </select>
+      </label>
+      <label className="form-label">
+        Filtrar por instructor
+        <select value={instructorId} onChange={(event) => onInstructorChange(event.target.value ? Number(event.target.value) : "")}>
+          <option value="">Todos los instructores</option>
+          {instructors.map((instructor) => <option key={instructor.id} value={instructor.id}>{instructorLabel(instructor)}</option>)}
+        </select>
+      </label>
+      <button type="button" className="btn-secondary" onClick={onClear}>Limpiar filtros</button>
+      <span className="expanded-filter-count">Mostrando {count} de {total} horarios</span>
+    </div>
+  );
+}
+
 export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
 
@@ -174,6 +236,11 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [showFullscreenTable, setShowFullscreenTable] = useState(false);
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
   const [showBlockingAlert, setShowBlockingAlert] = useState(false);
+  const [matrixFilterGroupId, setMatrixFilterGroupId] = useState<number | "">("");
+  const [matrixFilterInstructorId, setMatrixFilterInstructorId] = useState<number | "">("");
+  const [detailFilterGroupId, setDetailFilterGroupId] = useState<number | "">("");
+  const [detailFilterInstructorId, setDetailFilterInstructorId] = useState<number | "">("");
+  const [warningSchedule, setWarningSchedule] = useState<Schedule | null>(null);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
@@ -397,6 +464,29 @@ const schedulesByWeekday = useMemo(() => weekDays.map((day) => {
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
   return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
 }), [activeSchedules]);
+
+const filteredMatrixSchedules = useMemo(
+  () => filterSchedulesByGroupAndInstructor(activeSchedules, matrixFilterGroupId, matrixFilterInstructorId),
+  [activeSchedules, matrixFilterGroupId, matrixFilterInstructorId]
+);
+const expandedMatrixSchedulesByWeekday = useMemo(() => weekDays.map((day) => {
+  const allDaySchedules = filteredMatrixSchedules
+    .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
+}), [filteredMatrixSchedules]);
+const filteredDetailSchedules = useMemo(
+  () => filterSchedulesByGroupAndInstructor(schedules, detailFilterGroupId, detailFilterInstructorId),
+  [schedules, detailFilterGroupId, detailFilterInstructorId]
+);
+const visibleDetailSchedules = useMemo(() => filteredDetailSchedules.slice(0, 200), [filteredDetailSchedules]);
+const warningValidationsQuery = useQuery({
+  queryKey: ["schedule-validations", warningSchedule?.id],
+  queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
+  enabled: Boolean(warningSchedule?.id),
+  staleTime: 60 * 1000,
+  refetchOnWindowFocus: false,
+});
 
 const getScheduleDisplayData = (schedule: Schedule) => {
     const instructor = instructorsById.get(schedule.instructor_id);
@@ -1392,8 +1482,24 @@ const deleteMutation = useMutation({
               </div>
               <button className="btn-secondary" onClick={() => setShowFullscreenMatrix(false)} aria-label="Cerrar matriz">Cerrar</button>
             </div>
+            <ExpandedScheduleFilters
+              groups={groups}
+              instructors={instructors}
+              groupId={matrixFilterGroupId}
+              instructorId={matrixFilterInstructorId}
+              count={filteredMatrixSchedules.length}
+              total={activeSchedules.length}
+              groupLabel={groupLabel}
+              instructorLabel={instructorLabel}
+              onGroupChange={setMatrixFilterGroupId}
+              onInstructorChange={setMatrixFilterInstructorId}
+              onClear={() => { setMatrixFilterGroupId(""); setMatrixFilterInstructorId(""); }}
+            />
+            {filteredMatrixSchedules.length === 0 ? (
+              <p className="expanded-filter-empty">No hay horarios programados para los filtros seleccionados.</p>
+            ) : (
             <div className="fullscreen-week-grid">
-              {schedulesByWeekday.map((day) => (
+              {expandedMatrixSchedulesByWeekday.map((day) => (
                 <div className="week-day-column" key={day.index}>
                   <div className="week-day-heading">
                     <strong>{day.label}</strong>
@@ -1432,6 +1538,7 @@ const deleteMutation = useMutation({
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
       )}
@@ -1448,8 +1555,20 @@ const deleteMutation = useMutation({
               </div>
               <button className="btn-secondary" onClick={() => setShowFullscreenTable(false)} aria-label="Cerrar listado">Cerrar</button>
             </div>
-            
-            <div className="table-responsive" style={{ maxHeight: "calc(100vh - 180px)", overflowY: "auto" }}>
+            <ExpandedScheduleFilters
+              groups={groups}
+              instructors={instructors}
+              groupId={detailFilterGroupId}
+              instructorId={detailFilterInstructorId}
+              count={filteredDetailSchedules.length}
+              total={schedules.length}
+              groupLabel={groupLabel}
+              instructorLabel={instructorLabel}
+              onGroupChange={setDetailFilterGroupId}
+              onInstructorChange={setDetailFilterInstructorId}
+              onClear={() => { setDetailFilterGroupId(""); setDetailFilterInstructorId(""); }}
+            />
+            <div className="table-responsive" style={{ maxHeight: "calc(100vh - 270px)", overflowY: "auto" }}>
               <table className="crud-table">
                 <thead>
                   <tr>
@@ -1458,14 +1577,14 @@ const deleteMutation = useMutation({
                   </tr>
                 </thead>
                 <tbody>
-                  {schedules.length === 0 ? (
+                  {filteredDetailSchedules.length === 0 ? (
                     <tr>
                       <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
-                        <strong>No hay horarios programados</strong>
+                        <strong>No hay horarios programados para los filtros seleccionados.</strong>
                       </td>
                     </tr>
                   ) : (
-                    schedules.map((sch) => {
+                    visibleDetailSchedules.map((sch) => {
                       const ins = instructorsById.get(sch.instructor_id);
                       const grp = groupsById.get(sch.group_id);
                       const env = environmentsById.get(sch.environment_id);
@@ -1498,7 +1617,20 @@ const deleteMutation = useMutation({
                             {rap ? rap.code : `ID ${sch.learning_result_id}`}
                             {topicName && <small className="schedule-topic-note">{topicName}</small>}
                           </td>
-                          <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
+                          <td>
+                            {sch.status === "warning" ? (
+                              <button
+                                type="button"
+                                className={`schedule-status ${statusClass} status-clickable`}
+                                onClick={() => setWarningSchedule(sch)}
+                                title="Ver detalle de advertencias"
+                              >
+                                {statusName}
+                              </button>
+                            ) : (
+                              <span className={`schedule-status ${statusClass}`}>{statusName}</span>
+                            )}
+                          </td>
                           {!isConsulta && (
                             <td className="actions-cell">
                               {isDeleted ? (
@@ -1532,9 +1664,56 @@ const deleteMutation = useMutation({
                 </tbody>
               </table>
             </div>
+            {filteredDetailSchedules.length > 200 && (
+              <p className="expanded-table-limit">Mostrando los primeros 200 de {filteredDetailSchedules.length} horarios. Usa los filtros para reducir resultados.</p>
+            )}
           </div>
         </div>
       )}
+
+      {warningSchedule && (() => {
+        const detail = getScheduleDisplayData(warningSchedule);
+        const warningItems = warningValidationsQuery.data ?? [];
+        return (
+          <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="warning-detail-title" onMouseDown={() => setWarningSchedule(null)}>
+            <div className="warning-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="modal-header-row">
+                <div>
+                  <span className="eyebrow">Advertencias del horario</span>
+                  <h3 id="warning-detail-title">Horario #{warningSchedule.id}</h3>
+                </div>
+                <button type="button" className="btn-secondary" onClick={() => setWarningSchedule(null)}>Cerrar</button>
+              </div>
+              <div className="warning-schedule-summary">
+                <span><strong>Fecha:</strong> {warningSchedule.date}</span>
+                <span><strong>Horario:</strong> {warningSchedule.start_time} - {warningSchedule.end_time}</span>
+                <span><strong>Ficha:</strong> {detail.group ? groupLabel(detail.group) : `ID ${warningSchedule.group_id}`}</span>
+                <span><strong>Instructor:</strong> {detail.instructor ? instructorLabel(detail.instructor) : `ID ${warningSchedule.instructor_id}`}</span>
+                <span><strong>Ambiente:</strong> {detail.environment ? environmentLabel(detail.environment) : `ID ${warningSchedule.environment_id}`}</span>
+              </div>
+              {warningValidationsQuery.isLoading ? (
+                <p className="expanded-filter-empty">Cargando advertencias...</p>
+              ) : warningValidationsQuery.isError ? (
+                <p className="expanded-filter-empty">No fue posible cargar las advertencias.</p>
+              ) : warningItems.length === 0 ? (
+                <p className="expanded-filter-empty">Este horario no tiene advertencias registradas.</p>
+              ) : (
+                <div className="warning-list">
+                  {warningItems.map((validation) => (
+                    <article className={`warning-detail-item severity-${validation.severity.toLowerCase()}`} key={validation.id}>
+                      <div className="warning-detail-heading">
+                        <strong>{validationRuleLabel(validation.rule_code)}</strong>
+                        <span>{validation.severity === "BLOCKING" ? "Bloqueante" : validation.severity === "WARNING" ? "Advertencia" : "Información"}</span>
+                      </div>
+                      <p>{validation.message}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <ValidationAlertDialog
         open={showBlockingAlert}

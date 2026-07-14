@@ -26,6 +26,7 @@ from app.schemas.schedules import (
     ScheduleUpdate,
     ScheduleValidationRequest,
     ScheduleValidationResponse,
+    ScheduleValidationRead,
     ValidationResult,
 )
 from app.services.schedule_service import derive_contract_type, get_week_range
@@ -246,6 +247,21 @@ def get_schedule(schedule_id: int, session: SessionDep) -> Schedule:
     if not obj:
         raise HTTPException(404, detail="Schedule not found")
     return obj
+
+
+@router.get(
+    "/{schedule_id}/validations",
+    response_model=list[ScheduleValidationRead],
+    dependencies=[Depends(require_roles(*ROLE_READ))],
+)
+def list_schedule_validations(schedule_id: int, session: SessionDep) -> list[ScheduleValidation]:
+    if session.get(Schedule, schedule_id) is None:
+        raise HTTPException(404, detail="Horario no encontrado")
+    return list(
+        session.exec(
+            select(ScheduleValidation).where(ScheduleValidation.schedule_id == schedule_id)
+        ).all()
+    )
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])

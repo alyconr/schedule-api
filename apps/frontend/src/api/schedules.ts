@@ -5,6 +5,7 @@ import {
   ScheduleUpdate,
   SchedulePersistResponse,
   ScheduleFilters,
+  ScheduleValidation,
 } from "../types/schedules";
 
 export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedule[]> {
@@ -48,4 +49,8 @@ export async function deleteSchedule(id: number): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>(`/schedules/${id}`, {
     method: "DELETE",
   });
+}
+
+export async function fetchScheduleValidations(scheduleId: number): Promise<ScheduleValidation[]> {
+  return apiRequest<ScheduleValidation[]>(`/schedules/${scheduleId}/validations`);
 }

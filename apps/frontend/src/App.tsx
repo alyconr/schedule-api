@@ -7,6 +7,8 @@ import { AppLayout } from "./components/AppLayout";
 import { ToastProvider } from "./components/ToastProvider";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
+import { ScheduleMatrixPage } from "./components/ScheduleMatrixPage";
+import { ScheduleDetailPage } from "./components/ScheduleDetailPage";
 import { UserManagement } from "./components/UserManagement";
 import { ImportWizard } from "./components/ImportWizard";
 import { ValidationAlertDialog, validationRuleLabel } from "./components/ValidationAlertDialog";
@@ -365,7 +367,11 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
       ) : visibleTab === "imports" ? (
         <ImportWizard currentUser={currentUser} />
       ) : visibleTab === "schedules" ? (
-        <SchedulePlanner currentUser={currentUser} />
+        <SchedulePlanner currentUser={currentUser} setActiveTab={handleTabChange} />
+      ) : visibleTab === "schedule-matrix" ? (
+        <ScheduleMatrixPage />
+      ) : visibleTab === "schedule-detail" ? (
+        <ScheduleDetailPage />
       ) : visibleTab === "validation" ? (
         !canValidate ? (
           <div className="error-panel">

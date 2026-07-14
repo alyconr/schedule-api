@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.api.routes.schedules import create_schedule
+from app.api.routes.schedules import create_schedule, list_schedules, list_schedules_detailed
 from app.main import app
 from app.models import (
     Competency,
@@ -50,6 +50,9 @@ class SchedulesPersistenceRoutesTest(unittest.TestCase):
     def test_validate_still_registered(self) -> None:
         self.assertTrue(self._prefix_exists("POST", "/api/v1/schedules/validate"))
 
+    def test_detailed_schedule_registered(self) -> None:
+        self.assertTrue(self._prefix_exists("GET", "/api/v1/schedules/detailed"))
+
     def test_schemas_import(self) -> None:
         from app.schemas.schedules import (
             ScheduleCreate,
@@ -89,6 +92,92 @@ class SchedulesPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(s, date(2026, 7, 5))
 
 
+def _seed_topic_fixtures(session: Session) -> dict[str, int]:
+    program = TrainingProgram(code="PROG-UNO", name="Programa uno")
+    other_program = TrainingProgram(code="PROG-DOS", name="Programa dos")
+    instructor = Instructor(
+        document_type="CC",
+        document_number="100",
+        first_name="Ana",
+        last_name="Perez",
+        email="ana@example.com",
+    )
+    environment = Environment(code="A1", name="Aula 1", capacity=30)
+    session.add(program)
+    session.add(other_program)
+    session.add(instructor)
+    session.add(environment)
+    session.commit()
+    session.refresh(program)
+    session.refresh(other_program)
+    session.refresh(instructor)
+    session.refresh(environment)
+
+    group = Group(code="G1", training_program_id=program.id, learners_count=10)
+    competency = Competency(code="C1", name="Competencia", training_program_id=program.id)
+    session.add(group)
+    session.add(competency)
+    session.commit()
+    session.refresh(group)
+    session.refresh(competency)
+
+    learning_result = LearningResult(code="RA1", description="Resultado", competency_id=competency.id)
+    other_learning_result = LearningResult(code="RA2", description="Otro resultado", competency_id=competency.id)
+    topic = Topic(code="T1", name="Tematica uno")
+    other_topic = Topic(code="T2", name="Tematica dos")
+    session.add(learning_result)
+    session.add(other_learning_result)
+    session.add(topic)
+    session.add(other_topic)
+    session.commit()
+    session.refresh(learning_result)
+    session.refresh(other_learning_result)
+    session.refresh(topic)
+    session.refresh(other_topic)
+
+    relation = LearningResultTopic(
+        relation_id="REL-UNO",
+        training_program_id=program.id,
+        training_program_code=program.code,
+        training_program_name=program.name,
+        learning_result_id=learning_result.id,
+        topic_id=topic.id,
+        group_id="G-REL-1",
+    )
+    other_lr_relation = LearningResultTopic(
+        relation_id="REL-OTRO-RA",
+        training_program_id=program.id,
+        learning_result_id=other_learning_result.id,
+        topic_id=other_topic.id,
+        group_id="G-REL-2",
+    )
+    other_program_relation = LearningResultTopic(
+        relation_id="REL-OTRO-PROG",
+        training_program_id=other_program.id,
+        learning_result_id=learning_result.id,
+        topic_id=other_topic.id,
+        group_id="G-REL-3",
+    )
+    session.add(relation)
+    session.add(other_lr_relation)
+    session.add(other_program_relation)
+    session.commit()
+    session.refresh(relation)
+    session.refresh(other_lr_relation)
+    session.refresh(other_program_relation)
+
+    return {
+        "program": program.id,
+        "group": group.id,
+        "instructor": instructor.id,
+        "environment": environment.id,
+        "learning_result": learning_result.id,
+        "relation": relation.id,
+        "other_lr_relation": other_lr_relation.id,
+        "other_program_relation": other_program_relation.id,
+    }
+
+
 class ScheduleTopicAssignmentTest(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = create_engine(
@@ -98,95 +187,10 @@ class ScheduleTopicAssignmentTest(unittest.TestCase):
         )
         SQLModel.metadata.create_all(self.engine)
         with Session(self.engine) as session:
-            self.ids = self._seed(session)
+            self.ids = _seed_topic_fixtures(session)
 
     def tearDown(self) -> None:
         self.engine.dispose()
-
-    def _seed(self, session: Session) -> dict[str, int]:
-        program = TrainingProgram(code="PROG-UNO", name="Programa uno")
-        other_program = TrainingProgram(code="PROG-DOS", name="Programa dos")
-        instructor = Instructor(
-            document_type="CC",
-            document_number="100",
-            first_name="Ana",
-            last_name="Perez",
-            email="ana@example.com",
-        )
-        environment = Environment(code="A1", name="Aula 1", capacity=30)
-        session.add(program)
-        session.add(other_program)
-        session.add(instructor)
-        session.add(environment)
-        session.commit()
-        session.refresh(program)
-        session.refresh(other_program)
-        session.refresh(instructor)
-        session.refresh(environment)
-
-        group = Group(code="G1", training_program_id=program.id, learners_count=10)
-        competency = Competency(code="C1", name="Competencia", training_program_id=program.id)
-        session.add(group)
-        session.add(competency)
-        session.commit()
-        session.refresh(group)
-        session.refresh(competency)
-
-        learning_result = LearningResult(code="RA1", description="Resultado", competency_id=competency.id)
-        other_learning_result = LearningResult(code="RA2", description="Otro resultado", competency_id=competency.id)
-        topic = Topic(code="T1", name="Tematica uno")
-        other_topic = Topic(code="T2", name="Tematica dos")
-        session.add(learning_result)
-        session.add(other_learning_result)
-        session.add(topic)
-        session.add(other_topic)
-        session.commit()
-        session.refresh(learning_result)
-        session.refresh(other_learning_result)
-        session.refresh(topic)
-        session.refresh(other_topic)
-
-        relation = LearningResultTopic(
-            relation_id="REL-UNO",
-            training_program_id=program.id,
-            training_program_code=program.code,
-            training_program_name=program.name,
-            learning_result_id=learning_result.id,
-            topic_id=topic.id,
-            group_id="G-REL-1",
-        )
-        other_lr_relation = LearningResultTopic(
-            relation_id="REL-OTRO-RA",
-            training_program_id=program.id,
-            learning_result_id=other_learning_result.id,
-            topic_id=other_topic.id,
-            group_id="G-REL-2",
-        )
-        other_program_relation = LearningResultTopic(
-            relation_id="REL-OTRO-PROG",
-            training_program_id=other_program.id,
-            learning_result_id=learning_result.id,
-            topic_id=other_topic.id,
-            group_id="G-REL-3",
-        )
-        session.add(relation)
-        session.add(other_lr_relation)
-        session.add(other_program_relation)
-        session.commit()
-        session.refresh(relation)
-        session.refresh(other_lr_relation)
-        session.refresh(other_program_relation)
-
-        return {
-            "program": program.id,
-            "group": group.id,
-            "instructor": instructor.id,
-            "environment": environment.id,
-            "learning_result": learning_result.id,
-            "relation": relation.id,
-            "other_lr_relation": other_lr_relation.id,
-            "other_program_relation": other_program_relation.id,
-        }
 
     def _payload(self, **overrides) -> ScheduleCreate:
         data = {
@@ -243,6 +247,112 @@ class ScheduleTopicAssignmentTest(unittest.TestCase):
                 session,
             )
         self.assertEqual(ctx.exception.status_code, 422)
+
+
+class ScheduleListingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        SQLModel.metadata.create_all(self.engine)
+        with Session(self.engine) as session:
+            self.ids = _seed_topic_fixtures(session)
+            self._create_schedules(session)
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def _create_schedules(self, session: Session) -> None:
+        with_topic = ScheduleCreate(
+            instructor_id=self.ids["instructor"],
+            group_id=self.ids["group"],
+            learning_result_id=self.ids["learning_result"],
+            learning_result_topic_id=self.ids["relation"],
+            environment_id=self.ids["environment"],
+            date=date(2026, 7, 7),
+            start_time="08:00",
+            end_time="10:00",
+            duration_hours=2,
+        )
+        create_schedule(with_topic, session)
+
+        manual_topic = ScheduleCreate(
+            instructor_id=self.ids["instructor"],
+            group_id=self.ids["group"],
+            learning_result_id=self.ids["learning_result"],
+            manual_topic_name="Tema manual de prueba",
+            environment_id=self.ids["environment"],
+            date=date(2026, 7, 9),
+            start_time="10:00",
+            end_time="12:00",
+            duration_hours=2,
+        )
+        create_schedule(manual_topic, session)
+
+    def _list_schedules(self, session: Session, **overrides):
+        params = dict(
+            instructor_id=None,
+            group_id=None,
+            environment_id=None,
+            learning_result_id=None,
+            date=None,
+            date_from=None,
+            date_to=None,
+            include_inactive=False,
+            include_cancelled=False,
+            limit=500,
+        )
+        params.update(overrides)
+        return list_schedules(session, **params)
+
+    def _list_schedules_detailed(self, session: Session, **overrides):
+        params = dict(
+            instructor_id=None,
+            group_id=None,
+            learning_result_id=None,
+            date_from=None,
+            date_to=None,
+            include_inactive=False,
+            include_cancelled=False,
+            limit=500,
+        )
+        params.update(overrides)
+        return list_schedules_detailed(session, **params)
+
+    def test_list_schedules_filters_by_learning_result(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules(session, learning_result_id=self.ids["learning_result"])
+        self.assertEqual(len(rows), 2)
+
+        with Session(self.engine) as session:
+            rows = self._list_schedules(session, learning_result_id=self.ids["learning_result"] + 999)
+        self.assertEqual(len(rows), 0)
+
+    def test_list_schedules_detailed_enriches_names(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules_detailed(session, group_id=self.ids["group"])
+        self.assertEqual(len(rows), 2)
+
+        by_date = {row.date: row for row in rows}
+        with_topic_row = by_date[date(2026, 7, 7)]
+        self.assertEqual(with_topic_row.instructor_name, "Ana Perez")
+        self.assertEqual(with_topic_row.group_code, "G1")
+        self.assertEqual(with_topic_row.training_program_name, "Programa uno")
+        self.assertEqual(with_topic_row.learning_result_code, "RA1")
+        self.assertEqual(with_topic_row.topic_name, "Tematica uno")
+        self.assertEqual(with_topic_row.weekday_label, "Martes")
+        self.assertEqual(with_topic_row.status, "validated")
+
+        manual_topic_row = by_date[date(2026, 7, 9)]
+        self.assertEqual(manual_topic_row.topic_name, "Tema manual de prueba")
+        self.assertEqual(manual_topic_row.weekday_label, "Jueves")
+
+    def test_list_schedules_detailed_filters_by_instructor(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules_detailed(session, instructor_id=self.ids["instructor"] + 999)
+        self.assertEqual(len(rows), 0)
 
 
 if __name__ == "__main__":

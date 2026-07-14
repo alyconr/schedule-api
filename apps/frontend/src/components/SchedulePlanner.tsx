@@ -34,6 +34,7 @@ import { SearchableSelect } from "./SearchableSelect";
 
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
+  setActiveTab: (tab: string) => void;
 }
 
 function calculateDurationHours(startTime: string, endTime: string): number {
@@ -116,99 +117,7 @@ function formatProgrammedDay(dateValue: string): string {
 
 const MAX_WEEKDAY_CARDS = 30;
 
-function filterSchedulesByGroupAndInstructor(
-  schedules: Schedule[],
-  groupQuery: string,
-  instructorQuery: string,
-  groupsById: Map<number, Group>,
-  instructorsById: Map<number, Instructor>,
-  groupLabel: (group: Group) => string,
-  instructorLabel: (instructor: Instructor) => string
-): Schedule[] {
-  return schedules.filter((schedule) =>
-    (!groupQuery || schedule.group_id === Number(groupQuery)) &&
-    (!instructorQuery || schedule.instructor_id === Number(instructorQuery))
-  );
-}
-
-interface ExpandedScheduleFiltersProps {
-  groups: Group[];
-  instructors: Instructor[];
-  idPrefix: string;
-  groupQuery: string;
-  instructorQuery: string;
-  count: number;
-  total: number;
-  groupLabel: (group: Group) => string;
-  instructorLabel: (instructor: Instructor) => string;
-  onApply: (groupQuery: string, instructorQuery: string) => void;
-  onClear: () => void;
-}
-
-function ExpandedScheduleFilters({
-  groups,
-  instructors,
-  idPrefix,
-  groupQuery,
-  instructorQuery,
-  count,
-  total,
-  groupLabel,
-  instructorLabel,
-  onApply,
-  onClear,
-}: ExpandedScheduleFiltersProps) {
-  const [draftGroup, setDraftGroup] = useState(groupQuery);
-  const [draftInstructor, setDraftInstructor] = useState(instructorQuery);
-
-  const clear = () => {
-    setDraftGroup("");
-    setDraftInstructor("");
-    onClear();
-  };
-
-  return (
-    <form className="expanded-filters-bar" onSubmit={(event) => { event.preventDefault(); onApply(draftGroup, draftInstructor); }}>
-      <label className="form-label">
-        Filtrar por ficha
-        <input list={`${idPrefix}-groups`} value={draftGroup} onChange={(event) => setDraftGroup(event.target.value)} placeholder="Escribe número o nombre de ficha" />
-        <datalist id={`${idPrefix}-groups`}>{groups.map((group) => <option key={group.id} value={groupLabel(group)} />)}</datalist>
-      </label>
-      <label className="form-label">
-        Filtrar por instructor
-        <input list={`${idPrefix}-instructors`} value={draftInstructor} onChange={(event) => setDraftInstructor(event.target.value)} placeholder="Escribe nombre del instructor" />
-        <datalist id={`${idPrefix}-instructors`}>{instructors.map((instructor) => <option key={instructor.id} value={instructorLabel(instructor)} />)}</datalist>
-      </label>
-      <button type="submit" className="btn-primary">Buscar</button>
-      <button type="button" className="btn-secondary" onClick={clear}>Limpiar filtros</button>
-      <span className="expanded-filter-count">Mostrando {count} de {total} horarios</span>
-    </form>
-  );
-}
-
-function ExpandedSearchableFilters({
-  groups,
-  instructors,
-  groupQuery,
-  instructorQuery,
-  count,
-  total,
-  groupLabel,
-  instructorLabel,
-  onApply,
-  onClear,
-}: ExpandedScheduleFiltersProps) {
-  return (
-    <div className="expanded-filters-bar">
-      <SearchableSelect label="Filtrar por ficha" value={groupQuery} placeholder="Todas las fichas" searchPlaceholder="Buscar ficha..." options={groups.map((group) => ({ value: group.id, label: groupLabel(group) }))} onChange={(value) => onApply(String(value), instructorQuery)} />
-      <SearchableSelect label="Filtrar por instructor" value={instructorQuery} placeholder="Todos los instructores" searchPlaceholder="Buscar instructor..." options={instructors.map((instructor) => ({ value: instructor.id, label: instructorLabel(instructor) }))} onChange={(value) => onApply(groupQuery, String(value))} />
-      <button type="button" className="btn-secondary" onClick={onClear}>Limpiar filtros</button>
-      <span className="expanded-filter-count">Mostrando {count} de {total} horarios</span>
-    </div>
-  );
-}
-
-export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
+export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
 
   // Roles permissions check
@@ -259,17 +168,9 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [selectedDetailIds, setSelectedDetailIds] = useState<Set<number>>(new Set());
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
-  const [showFullscreenMatrix, setShowFullscreenMatrix] = useState(false);
-  const [showFullscreenTable, setShowFullscreenTable] = useState(false);
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
   const [showBlockingAlert, setShowBlockingAlert] = useState(false);
-  const [matrixFilterGroupId, setMatrixFilterGroupId] = useState("");
-  const [matrixFilterInstructorId, setMatrixFilterInstructorId] = useState("");
-  const [detailFilterGroupId, setDetailFilterGroupId] = useState("");
-  const [detailFilterInstructorId, setDetailFilterInstructorId] = useState("");
   const [warningSchedule, setWarningSchedule] = useState<Schedule | null>(null);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
@@ -495,34 +396,6 @@ const schedulesByWeekday = useMemo(() => weekDays.map((day) => {
   return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
 }), [activeSchedules]);
 
-const filteredMatrixSchedules = useMemo(
-  () => filterSchedulesByGroupAndInstructor(activeSchedules, matrixFilterGroupId, matrixFilterInstructorId, groupsById, instructorsById, groupLabel, instructorLabel),
-  [activeSchedules, matrixFilterGroupId, matrixFilterInstructorId, groupsById, instructorsById]
-);
-const expandedMatrixSchedulesByWeekday = useMemo(() => weekDays.map((day) => {
-  const allDaySchedules = filteredMatrixSchedules
-    .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
-}), [filteredMatrixSchedules]);
-const filteredDetailSchedules = useMemo(
-  () => filterSchedulesByGroupAndInstructor(schedules, detailFilterGroupId, detailFilterInstructorId, groupsById, instructorsById, groupLabel, instructorLabel),
-  [schedules, detailFilterGroupId, detailFilterInstructorId, groupsById, instructorsById]
-);
-const visibleDetailSchedules = useMemo(() => filteredDetailSchedules.slice(0, 200), [filteredDetailSchedules]);
-useEffect(() => {
-  const visibleIds = new Set(visibleDetailSchedules.map((schedule) => schedule.id));
-  setSelectedDetailIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
-}, [visibleDetailSchedules]);
-const allVisibleDetailSelected = visibleDetailSchedules.length > 0 && visibleDetailSchedules.every((schedule) => selectedDetailIds.has(schedule.id));
-const toggleAllVisibleDetails = () => setSelectedDetailIds(
-  allVisibleDetailSelected ? new Set() : new Set(visibleDetailSchedules.map((schedule) => schedule.id))
-);
-const toggleDetailSelection = (id: number) => setSelectedDetailIds((current) => {
-  const next = new Set(current);
-  next.has(id) ? next.delete(id) : next.add(id);
-  return next;
-});
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
   queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
@@ -710,21 +583,6 @@ const deleteMutation = useMutation({
     onError: (err: any) => {
       addToast("error", err.message || "Error al eliminar el horario.");
     },
-});
-
-const bulkDeleteMutation = useMutation({
-  mutationFn: async (ids: number[]) => {
-    const results = await Promise.allSettled(ids.map(deleteSchedule));
-    const failed = results.filter((result) => result.status === "rejected").length;
-    if (failed) throw new Error(`Se eliminaron ${ids.length - failed} registros, pero ${failed} no pudieron eliminarse.`);
-    return ids.length;
-  },
-  onSuccess: (count) => {
-    setSelectedDetailIds(new Set());
-    addToast("success", `${count} horarios eliminados correctamente.`);
-  },
-  onError: (error: Error) => addToast("error", error.message),
-  onSettled: () => queryClient.invalidateQueries({ queryKey: ["schedules"] }),
 });
 
   // Event handlers
@@ -1026,8 +884,8 @@ const bulkDeleteMutation = useMutation({
                           <h3>Vista de programación por días</h3>
                         </div>
                         <span className="week-view-count">{activeSchedules.length} horarios</span>
-                        <button className="btn-secondary btn-expand-matrix" onClick={() => setShowFullscreenMatrix(true)} type="button" aria-label="Ampliar matriz">
-                          Ampliar matriz
+                        <button className="btn-secondary btn-expand-matrix" onClick={() => setActiveTab("schedule-matrix")} type="button">
+                          Ver matriz académica
                         </button>
                       </div>
                       <div className="week-grid" role="list">
@@ -1075,8 +933,8 @@ const bulkDeleteMutation = useMutation({
                           <h3>Listado de horarios</h3>
                         </div>
                         <span className="week-view-count">{schedules.length} registros</span>
-                        <button className="btn-secondary" onClick={() => setShowFullscreenTable(true)} type="button" aria-label="Ampliar listado">
-                          Ampliar listado
+                        <button className="btn-secondary" onClick={() => setActiveTab("schedule-detail")} type="button">
+                          Ver programación detallada
                         </button>
                       </div>
 
@@ -1420,235 +1278,6 @@ const bulkDeleteMutation = useMutation({
         )}
       </div>
 
-      {/* Fullscreen matrix modal */}
-      {showFullscreenMatrix && (
-        <div className="modal-overlay fullscreen-matrix" role="dialog" aria-modal="true" aria-labelledby="matrix-title">
-          <div className="fullscreen-matrix-content">
-            <div className="fullscreen-matrix-header">
-              <div>
-                <span className="eyebrow">Matriz académica</span>
-                <h3 id="matrix-title">Matriz académica de programación</h3>
-                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica por días programados, instructor, ficha, ambiente y RAP.</p>
-              </div>
-              <button className="btn-secondary" onClick={() => setShowFullscreenMatrix(false)} aria-label="Cerrar matriz">Cerrar</button>
-            </div>
-            <ExpandedSearchableFilters
-              groups={groups}
-              instructors={instructors}
-              idPrefix="matrix-filter"
-              groupQuery={matrixFilterGroupId}
-              instructorQuery={matrixFilterInstructorId}
-              count={filteredMatrixSchedules.length}
-              total={activeSchedules.length}
-              groupLabel={groupLabel}
-              instructorLabel={instructorLabel}
-              onApply={(groupQuery, instructorQuery) => { setMatrixFilterGroupId(groupQuery); setMatrixFilterInstructorId(instructorQuery); }}
-              onClear={() => { setMatrixFilterGroupId(""); setMatrixFilterInstructorId(""); }}
-            />
-            {filteredMatrixSchedules.length === 0 ? (
-              <p className="expanded-filter-empty">No hay horarios programados para los filtros seleccionados.</p>
-            ) : (
-            <div className="fullscreen-week-grid">
-              {expandedMatrixSchedulesByWeekday.map((day) => (
-                <div className="week-day-column" key={day.index}>
-                  <div className="week-day-heading">
-                    <strong>{day.label}</strong>
-                    <span>{day.total}</span>
-                  </div>
-                  <div className="week-day-body">
-                    {day.schedules.length === 0 ? (
-                      <p className="week-empty">Sin programación</p>
-                    ) : (
-                      <>
-                        {day.schedules.map((sch) => {
-                          const { instructor, environment, rap, topicName, statusClass } = getScheduleDisplayData(sch);
-                          return (
-                            <button
-                              className={`week-schedule-card ${statusClass}`}
-                              disabled={!canWrite}
-                              key={sch.id}
-                              onClick={() => { setShowFullscreenMatrix(false); handleEditInit(sch); }}
-                              title={canWrite ? "Editar horario" : "Modo consulta"}
-                              type="button"
-                            >
-                              <span className="week-schedule-date">{formatProgrammedDay(sch.date)}</span>
-                              <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
-                              <span><strong>Instructor:</strong> {instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID ${sch.instructor_id}`}</span>
-                              <span><strong>Ambiente:</strong> {environment ? `${environment.code} - ${environment.name}` : `ID ${sch.environment_id}`}</span>
-                              <span className="week-rap"><strong>RAP:</strong> {rap ? rapLabel(rap) : `ID ${sch.learning_result_id}`}</span>
-                              <span className="week-topic"><strong>Temática:</strong> {topicName || "Sin temática"}</span>
-                            </button>
-                          );
-                        })}
-                        {day.total > MAX_WEEKDAY_CARDS && (
-                          <p className="week-empty">Mostrando {MAX_WEEKDAY_CARDS} de {day.total}. Usa filtros para reducir resultados.</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Fullscreen table modal */}
-      {showFullscreenTable && (
-        <div className="modal-overlay fullscreen-matrix" role="dialog" aria-modal="true" aria-labelledby="table-modal-title">
-          <div className="fullscreen-matrix-content">
-            <div className="fullscreen-matrix-header">
-              <div>
-                <span className="eyebrow">Programación detallada</span>
-                <h3 id="table-modal-title">Listado de horarios programados</h3>
-                <p className="fullscreen-matrix-subtitle">Visualización ampliada de la programación académica en formato tabla.</p>
-              </div>
-              <button className="btn-secondary" onClick={() => setShowFullscreenTable(false)} aria-label="Cerrar listado">Cerrar</button>
-            </div>
-            <ExpandedSearchableFilters
-              groups={groups}
-              instructors={instructors}
-              idPrefix="detail-filter"
-              groupQuery={detailFilterGroupId}
-              instructorQuery={detailFilterInstructorId}
-              count={filteredDetailSchedules.length}
-              total={schedules.length}
-              groupLabel={groupLabel}
-              instructorLabel={instructorLabel}
-              onApply={(groupQuery, instructorQuery) => { setDetailFilterGroupId(groupQuery); setDetailFilterInstructorId(instructorQuery); }}
-              onClear={() => { setDetailFilterGroupId(""); setDetailFilterInstructorId(""); }}
-            />
-            {canDelete && visibleDetailSchedules.length > 0 && (
-              <div className="bulk-actions-bar detailed-bulk-actions">
-                <button type="button" className="btn-secondary btn-sm" onClick={toggleAllVisibleDetails}>
-                  {allVisibleDetailSelected ? "Quitar selección" : "Seleccionar todas las filas cargadas"}
-                </button>
-                <span>{selectedDetailIds.size} horarios seleccionados</span>
-                <button type="button" className="btn-delete btn-sm" disabled={selectedDetailIds.size === 0 || bulkDeleteMutation.isPending} onClick={() => setConfirmBulkDelete(true)}>
-                  {bulkDeleteMutation.isPending ? "Eliminando..." : "Eliminar seleccionados"}
-                </button>
-              </div>
-            )}
-            <div className="table-responsive" style={{ maxHeight: "calc(100vh - 270px)", overflowY: "auto" }}>
-              <table className="crud-table">
-                <thead>
-                  <tr>
-                    {canDelete && (
-                      <th className="selection-cell">
-                        <input type="checkbox" checked={allVisibleDetailSelected} onChange={toggleAllVisibleDetails} aria-label="Seleccionar todas las filas cargadas" />
-                      </th>
-                    )}
-                    <th>Días programados</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
-                    {!isConsulta && <th>Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDetailSchedules.length === 0 ? (
-                    <tr>
-                      <td colSpan={7 + (!isConsulta ? 1 : 0) + (canDelete ? 1 : 0)} className="text-center empty-cell">
-                        <strong>No hay horarios programados para los filtros seleccionados.</strong>
-                      </td>
-                    </tr>
-                  ) : (
-                    visibleDetailSchedules.map((sch) => {
-                      const ins = instructorsById.get(sch.instructor_id);
-                      const grp = groupsById.get(sch.group_id);
-                      const env = environmentsById.get(sch.environment_id);
-                      const rap = learningResultsById.get(sch.learning_result_id);
-                      const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
-                      const isCancelled = sch.status === "cancelled";
-                      const isDeleted = sch.status === "deleted";
-                      return (
-                        <tr
-                          key={sch.id}
-                          className="clickable-row"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailSchedule(sch);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-                              event.preventDefault();
-                              setDetailSchedule(sch);
-                            }
-                          }}
-                          aria-label={`Ver detalle del horario ${sch.id}`}
-                        >
-                          {canDelete && (
-                            <td className="selection-cell">
-                              <input
-                                type="checkbox"
-                                checked={selectedDetailIds.has(sch.id)}
-                                onChange={() => toggleDetailSelection(sch.id)}
-                                onClick={(event) => event.stopPropagation()}
-                                aria-label={`Seleccionar horario ${sch.id}`}
-                              />
-                            </td>
-                          )}
-                          <td>{formatProgrammedDay(sch.date)}</td>
-                          <td>{sch.start_time} - {sch.end_time}</td>
-                          <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
-                          <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
-                          <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
-                          <td>
-                            {rap ? rap.code : `ID ${sch.learning_result_id}`}
-                            {topicName && <small className="schedule-topic-note">{topicName}</small>}
-                          </td>
-                          <td>
-                            {sch.status === "warning" ? (
-                              <button
-                                type="button"
-                                className={`schedule-status ${statusClass} status-clickable`}
-                                onClick={() => setWarningSchedule(sch)}
-                                title="Ver detalle de advertencias"
-                              >
-                                {statusName}
-                              </button>
-                            ) : (
-                              <span className={`schedule-status ${statusClass}`}>{statusName}</span>
-                            )}
-                          </td>
-                          {!isConsulta && (
-                            <td className="actions-cell">
-                              {isDeleted ? (
-                                <span className="row-action-state">Eliminado</span>
-                              ) : isCancelled ? (
-                                <>
-                                  <span className="row-action-state">Cancelado</span>
-                                  {canDelete && (
-                                    <button type="button" className="btn-delete" onClick={() => { setShowFullscreenTable(false); handleDeleteClick(sch.id); }}>Eliminar</button>
-                                  )}
-                                </>
-                              ) : (
-                                <>
-                                  {canWrite && (
-                                    <button type="button" className="btn-edit" onClick={() => { setShowFullscreenTable(false); handleEditInit(sch); }}>Editar</button>
-                                  )}
-                                  {canWrite && (
-                                    <button type="button" className="btn-cancel" onClick={() => { setShowFullscreenTable(false); handleCancelClick(sch.id); }}>Cancelar</button>
-                                  )}
-                                  {canDelete && (
-                                    <button type="button" className="btn-delete" onClick={() => { setShowFullscreenTable(false); handleDeleteClick(sch.id); }}>Eliminar</button>
-                                  )}
-                                </>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {filteredDetailSchedules.length > 200 && (
-              <p className="expanded-table-limit">Mostrando los primeros 200 de {filteredDetailSchedules.length} horarios. Usa los filtros para reducir resultados.</p>
-            )}
-          </div>
-        </div>
-      )}
-
       {warningSchedule && (() => {
         const detail = getScheduleDisplayData(warningSchedule);
         const warningItems = warningValidationsQuery.data ?? [];
@@ -1728,15 +1357,6 @@ const bulkDeleteMutation = useMutation({
         confirmDanger
         onConfirm={() => { if (confirmCancelId) { cancelMutation.mutate(confirmCancelId); setConfirmCancelId(null); } }}
         onCancel={() => setConfirmCancelId(null)}
-      />
-      <ConfirmDialog
-        open={confirmBulkDelete}
-        title="Eliminar horarios seleccionados"
-        message={`¿Está seguro de eliminar los ${selectedDetailIds.size} registros seleccionados? Esta acción no se puede deshacer y los horarios no podrán recuperarse.`}
-        confirmLabel="Sí, eliminar todos"
-        confirmDanger
-        onConfirm={() => { bulkDeleteMutation.mutate([...selectedDetailIds]); setConfirmBulkDelete(false); }}
-        onCancel={() => setConfirmBulkDelete(false)}
       />
       <ConfirmDialog
         open={confirmDeleteId !== null}

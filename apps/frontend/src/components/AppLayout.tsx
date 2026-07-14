@@ -28,6 +28,8 @@ export function AppLayout({
       title: "Operación",
       items: [
         { id: "schedules", label: "Programación de Horarios" },
+        { id: "schedule-matrix", label: "Matriz Académica" },
+        { id: "schedule-detail", label: "Programación Detallada" },
         ...(canWrite ? [{ id: "validation", label: "Validación Manual" }] : []),
         ...(canWrite ? [{ id: "imports", label: "Carga Masiva" }] : []),
       ],

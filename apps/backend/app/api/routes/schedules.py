@@ -18,10 +18,12 @@ from app.models import (
     LearningResultTopic,
     Schedule,
     ScheduleValidation,
+    Topic,
     TrainingProgram,
 )
 from app.schemas.schedules import (
     ScheduleCreate,
+    ScheduleDetailedRead,
     SchedulePersistResponse,
     ScheduleUpdate,
     ScheduleValidationRequest,
@@ -29,7 +31,7 @@ from app.schemas.schedules import (
     ScheduleValidationRead,
     ValidationResult,
 )
-from app.services.schedule_service import derive_contract_type, get_week_range
+from app.services.schedule_service import derive_contract_type, get_week_range, weekday_label
 from app.services.schedule_validation import validate_schedule
 
 
@@ -214,6 +216,7 @@ def list_schedules(
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
     environment_id: int | None = Query(default=None),
+    learning_result_id: int | None = Query(default=None),
     date: date_type | None = Query(default=None),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
@@ -230,6 +233,8 @@ def list_schedules(
         stmt = stmt.where(Schedule.group_id == group_id)
     if environment_id is not None:
         stmt = stmt.where(Schedule.environment_id == environment_id)
+    if learning_result_id is not None:
+        stmt = stmt.where(Schedule.learning_result_id == learning_result_id)
     if date is not None:
         stmt = stmt.where(Schedule.date == date)
     else:
@@ -239,6 +244,93 @@ def list_schedules(
             stmt = stmt.where(Schedule.date <= date_to)
     stmt = stmt.order_by(Schedule.date, Schedule.start_time).limit(limit)
     return list(session.exec(stmt).all())
+
+
+@router.get(
+    "/detailed",
+    response_model=list[ScheduleDetailedRead],
+    dependencies=[Depends(require_roles(*ROLE_READ))],
+)
+def list_schedules_detailed(
+    session: SessionDep,
+    instructor_id: int | None = Query(default=None),
+    group_id: int | None = Query(default=None),
+    learning_result_id: int | None = Query(default=None),
+    date_from: date_type | None = Query(default=None),
+    date_to: date_type | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+    include_cancelled: bool = Query(default=False),
+    limit: int = Query(default=500, ge=1, le=2000),
+) -> list[ScheduleDetailedRead]:
+    stmt = (
+        select(Schedule, Instructor, Group, TrainingProgram, LearningResult, Environment)
+        .join(Instructor, Instructor.id == Schedule.instructor_id)
+        .join(Group, Group.id == Schedule.group_id)
+        .outerjoin(TrainingProgram, TrainingProgram.id == Schedule.training_program_id)
+        .outerjoin(LearningResult, LearningResult.id == Schedule.learning_result_id)
+        .join(Environment, Environment.id == Schedule.environment_id)
+        .where(Schedule.status != "deleted")
+    )
+    if not (include_inactive or include_cancelled):
+        stmt = stmt.where(Schedule.status != "cancelled")
+    if instructor_id is not None:
+        stmt = stmt.where(Schedule.instructor_id == instructor_id)
+    if group_id is not None:
+        stmt = stmt.where(Schedule.group_id == group_id)
+    if learning_result_id is not None:
+        stmt = stmt.where(Schedule.learning_result_id == learning_result_id)
+    if date_from is not None:
+        stmt = stmt.where(Schedule.date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Schedule.date <= date_to)
+    stmt = stmt.order_by(Schedule.date, Schedule.start_time).limit(limit)
+
+    rows = session.exec(stmt).all()
+
+    topic_ids = {sch.learning_result_topic_id for sch, *_ in rows if sch.learning_result_topic_id}
+    topics_by_relation_id: dict[int, str] = {}
+    if topic_ids:
+        relations = session.exec(
+            select(LearningResultTopic).where(LearningResultTopic.id.in_(topic_ids))
+        ).all()
+        topic_ids_by_topic_table = {rel.id: rel.topic_id for rel in relations}
+        topic_table_ids = set(topic_ids_by_topic_table.values())
+        topics = session.exec(select(Topic).where(Topic.id.in_(topic_table_ids))).all() if topic_table_ids else []
+        topics_by_id = {t.id: t.name for t in topics}
+        topics_by_relation_id = {
+            rel_id: topics_by_id.get(topic_table_id, "")
+            for rel_id, topic_table_id in topic_ids_by_topic_table.items()
+        }
+
+    results: list[ScheduleDetailedRead] = []
+    for sch, instructor, group, program, learning_result, environment in rows:
+        topic_name = sch.manual_topic_name or (
+            topics_by_relation_id.get(sch.learning_result_topic_id) if sch.learning_result_topic_id else None
+        )
+        results.append(
+            ScheduleDetailedRead(
+                id=sch.id,
+                date=sch.date,
+                weekday_label=weekday_label(sch.weekday or sch.date.isoweekday()),
+                start_time=sch.start_time,
+                end_time=sch.end_time,
+                instructor_id=instructor.id,
+                instructor_name=f"{instructor.first_name} {instructor.last_name}",
+                group_id=group.id,
+                group_code=group.code,
+                group_name=group.name,
+                training_program_id=program.id if program else None,
+                training_program_name=program.name if program else None,
+                learning_result_id=learning_result.id if learning_result else None,
+                learning_result_code=learning_result.code if learning_result else None,
+                learning_result_description=learning_result.description if learning_result else None,
+                topic_name=topic_name,
+                environment_id=environment.id,
+                environment_name=environment.name,
+                status=sch.status,
+            )
+        )
+    return results
 
 
 @router.get("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_READ))])

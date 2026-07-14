@@ -71,12 +71,35 @@ export type ScheduleFilters = {
   instructor_id?: number;
   group_id?: number;
   environment_id?: number;
+  learning_result_id?: number;
   date?: string;
   date_from?: string;
   date_to?: string;
   include_inactive?: boolean;
   include_cancelled?: boolean;
   limit?: number;
+};
+
+export type ScheduleDetailed = {
+  id: number;
+  date: string;
+  weekday_label: string;
+  start_time: string;
+  end_time: string;
+  instructor_id: number;
+  instructor_name: string;
+  group_id: number;
+  group_code: string;
+  group_name?: string | null;
+  training_program_id?: number | null;
+  training_program_name?: string | null;
+  learning_result_id?: number | null;
+  learning_result_code?: string | null;
+  learning_result_description?: string | null;
+  topic_name?: string | null;
+  environment_id: number;
+  environment_name: string;
+  status: ScheduleStatus;
 };
 
 export type ScheduleValidation = {

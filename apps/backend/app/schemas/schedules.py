@@ -125,3 +125,27 @@ class SchedulePersistResponse(BaseModel):
     status: str
     schedule: dict | None = None
     validations: list[ValidationResult]
+
+
+class ScheduleDetailedRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: date_type
+    weekday_label: str
+    start_time: time
+    end_time: time
+    instructor_id: int
+    instructor_name: str
+    group_id: int
+    group_code: str
+    group_name: str | None = None
+    training_program_id: int | None = None
+    training_program_name: str | None = None
+    learning_result_id: int | None = None
+    learning_result_code: str | None = None
+    learning_result_description: str | None = None
+    topic_name: str | None = None
+    environment_id: int
+    environment_name: str
+    status: str

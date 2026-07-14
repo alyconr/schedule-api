@@ -122,62 +122,77 @@ const MAX_WEEKDAY_CARDS = 30;
 
 function filterSchedulesByGroupAndInstructor(
   schedules: Schedule[],
-  groupId: number | "",
-  instructorId: number | ""
+  groupQuery: string,
+  instructorQuery: string,
+  groupsById: Map<number, Group>,
+  instructorsById: Map<number, Instructor>,
+  groupLabel: (group: Group) => string,
+  instructorLabel: (instructor: Instructor) => string
 ): Schedule[] {
+  const normalizedGroup = groupQuery.trim().toLocaleLowerCase("es");
+  const normalizedInstructor = instructorQuery.trim().toLocaleLowerCase("es");
   return schedules.filter(
-    (schedule) =>
-      (groupId === "" || schedule.group_id === groupId) &&
-      (instructorId === "" || schedule.instructor_id === instructorId)
+    (schedule) => {
+      const group = groupsById.get(schedule.group_id);
+      const instructor = instructorsById.get(schedule.instructor_id);
+      return (!normalizedGroup || (group ? groupLabel(group) : String(schedule.group_id)).toLocaleLowerCase("es").includes(normalizedGroup)) &&
+        (!normalizedInstructor || (instructor ? instructorLabel(instructor) : String(schedule.instructor_id)).toLocaleLowerCase("es").includes(normalizedInstructor));
+    }
   );
 }
 
 interface ExpandedScheduleFiltersProps {
   groups: Group[];
   instructors: Instructor[];
-  groupId: number | "";
-  instructorId: number | "";
+  idPrefix: string;
+  groupQuery: string;
+  instructorQuery: string;
   count: number;
   total: number;
   groupLabel: (group: Group) => string;
   instructorLabel: (instructor: Instructor) => string;
-  onGroupChange: (value: number | "") => void;
-  onInstructorChange: (value: number | "") => void;
+  onApply: (groupQuery: string, instructorQuery: string) => void;
   onClear: () => void;
 }
 
 function ExpandedScheduleFilters({
   groups,
   instructors,
-  groupId,
-  instructorId,
+  idPrefix,
+  groupQuery,
+  instructorQuery,
   count,
   total,
   groupLabel,
   instructorLabel,
-  onGroupChange,
-  onInstructorChange,
+  onApply,
   onClear,
 }: ExpandedScheduleFiltersProps) {
+  const [draftGroup, setDraftGroup] = useState(groupQuery);
+  const [draftInstructor, setDraftInstructor] = useState(instructorQuery);
+
+  const clear = () => {
+    setDraftGroup("");
+    setDraftInstructor("");
+    onClear();
+  };
+
   return (
-    <div className="expanded-filters-bar">
+    <form className="expanded-filters-bar" onSubmit={(event) => { event.preventDefault(); onApply(draftGroup, draftInstructor); }}>
       <label className="form-label">
         Filtrar por ficha
-        <select value={groupId} onChange={(event) => onGroupChange(event.target.value ? Number(event.target.value) : "")}>
-          <option value="">Todas las fichas</option>
-          {groups.map((group) => <option key={group.id} value={group.id}>{groupLabel(group)}</option>)}
-        </select>
+        <input list={`${idPrefix}-groups`} value={draftGroup} onChange={(event) => setDraftGroup(event.target.value)} placeholder="Escribe número o nombre de ficha" />
+        <datalist id={`${idPrefix}-groups`}>{groups.map((group) => <option key={group.id} value={groupLabel(group)} />)}</datalist>
       </label>
       <label className="form-label">
         Filtrar por instructor
-        <select value={instructorId} onChange={(event) => onInstructorChange(event.target.value ? Number(event.target.value) : "")}>
-          <option value="">Todos los instructores</option>
-          {instructors.map((instructor) => <option key={instructor.id} value={instructor.id}>{instructorLabel(instructor)}</option>)}
-        </select>
+        <input list={`${idPrefix}-instructors`} value={draftInstructor} onChange={(event) => setDraftInstructor(event.target.value)} placeholder="Escribe nombre del instructor" />
+        <datalist id={`${idPrefix}-instructors`}>{instructors.map((instructor) => <option key={instructor.id} value={instructorLabel(instructor)} />)}</datalist>
       </label>
-      <button type="button" className="btn-secondary" onClick={onClear}>Limpiar filtros</button>
+      <button type="submit" className="btn-primary">Buscar</button>
+      <button type="button" className="btn-secondary" onClick={clear}>Limpiar filtros</button>
       <span className="expanded-filter-count">Mostrando {count} de {total} horarios</span>
-    </div>
+    </form>
   );
 }
 
@@ -236,10 +251,10 @@ export function SchedulePlanner({ currentUser }: SchedulePlannerProps) {
   const [showFullscreenTable, setShowFullscreenTable] = useState(false);
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
   const [showBlockingAlert, setShowBlockingAlert] = useState(false);
-  const [matrixFilterGroupId, setMatrixFilterGroupId] = useState<number | "">("");
-  const [matrixFilterInstructorId, setMatrixFilterInstructorId] = useState<number | "">("");
-  const [detailFilterGroupId, setDetailFilterGroupId] = useState<number | "">("");
-  const [detailFilterInstructorId, setDetailFilterInstructorId] = useState<number | "">("");
+  const [matrixFilterGroupId, setMatrixFilterGroupId] = useState("");
+  const [matrixFilterInstructorId, setMatrixFilterInstructorId] = useState("");
+  const [detailFilterGroupId, setDetailFilterGroupId] = useState("");
+  const [detailFilterInstructorId, setDetailFilterInstructorId] = useState("");
   const [warningSchedule, setWarningSchedule] = useState<Schedule | null>(null);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
@@ -466,8 +481,8 @@ const schedulesByWeekday = useMemo(() => weekDays.map((day) => {
 }), [activeSchedules]);
 
 const filteredMatrixSchedules = useMemo(
-  () => filterSchedulesByGroupAndInstructor(activeSchedules, matrixFilterGroupId, matrixFilterInstructorId),
-  [activeSchedules, matrixFilterGroupId, matrixFilterInstructorId]
+  () => filterSchedulesByGroupAndInstructor(activeSchedules, matrixFilterGroupId, matrixFilterInstructorId, groupsById, instructorsById, groupLabel, instructorLabel),
+  [activeSchedules, matrixFilterGroupId, matrixFilterInstructorId, groupsById, instructorsById]
 );
 const expandedMatrixSchedulesByWeekday = useMemo(() => weekDays.map((day) => {
   const allDaySchedules = filteredMatrixSchedules
@@ -476,8 +491,8 @@ const expandedMatrixSchedulesByWeekday = useMemo(() => weekDays.map((day) => {
   return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
 }), [filteredMatrixSchedules]);
 const filteredDetailSchedules = useMemo(
-  () => filterSchedulesByGroupAndInstructor(schedules, detailFilterGroupId, detailFilterInstructorId),
-  [schedules, detailFilterGroupId, detailFilterInstructorId]
+  () => filterSchedulesByGroupAndInstructor(schedules, detailFilterGroupId, detailFilterInstructorId, groupsById, instructorsById, groupLabel, instructorLabel),
+  [schedules, detailFilterGroupId, detailFilterInstructorId, groupsById, instructorsById]
 );
 const visibleDetailSchedules = useMemo(() => filteredDetailSchedules.slice(0, 200), [filteredDetailSchedules]);
 const warningValidationsQuery = useQuery({
@@ -1485,14 +1500,14 @@ const deleteMutation = useMutation({
             <ExpandedScheduleFilters
               groups={groups}
               instructors={instructors}
-              groupId={matrixFilterGroupId}
-              instructorId={matrixFilterInstructorId}
+              idPrefix="matrix-filter"
+              groupQuery={matrixFilterGroupId}
+              instructorQuery={matrixFilterInstructorId}
               count={filteredMatrixSchedules.length}
               total={activeSchedules.length}
               groupLabel={groupLabel}
               instructorLabel={instructorLabel}
-              onGroupChange={setMatrixFilterGroupId}
-              onInstructorChange={setMatrixFilterInstructorId}
+              onApply={(groupQuery, instructorQuery) => { setMatrixFilterGroupId(groupQuery); setMatrixFilterInstructorId(instructorQuery); }}
               onClear={() => { setMatrixFilterGroupId(""); setMatrixFilterInstructorId(""); }}
             />
             {filteredMatrixSchedules.length === 0 ? (
@@ -1558,14 +1573,14 @@ const deleteMutation = useMutation({
             <ExpandedScheduleFilters
               groups={groups}
               instructors={instructors}
-              groupId={detailFilterGroupId}
-              instructorId={detailFilterInstructorId}
+              idPrefix="detail-filter"
+              groupQuery={detailFilterGroupId}
+              instructorQuery={detailFilterInstructorId}
               count={filteredDetailSchedules.length}
               total={schedules.length}
               groupLabel={groupLabel}
               instructorLabel={instructorLabel}
-              onGroupChange={setDetailFilterGroupId}
-              onInstructorChange={setDetailFilterInstructorId}
+              onApply={(groupQuery, instructorQuery) => { setDetailFilterGroupId(groupQuery); setDetailFilterInstructorId(instructorQuery); }}
               onClear={() => { setDetailFilterGroupId(""); setDetailFilterInstructorId(""); }}
             />
             <div className="table-responsive" style={{ maxHeight: "calc(100vh - 270px)", overflowY: "auto" }}>

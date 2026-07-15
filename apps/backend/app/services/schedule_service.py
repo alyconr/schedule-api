@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 def derive_contract_type(name: str) -> str:
     name_lower = name.lower()
-    if "planta" in name_lower:
+    if any(value in name_lower for value in ("planta", "carrera administrativa", "nombramiento provisional", "nombramiento ordinario")):
         return "planta"
     if "contratista" in name_lower:
         return "contratista"

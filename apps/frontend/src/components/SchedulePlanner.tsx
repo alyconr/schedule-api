@@ -105,6 +105,10 @@ function normalizeSearchText(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+function latestValidationResults(items: ValidationResult[]): ValidationResult[] {
+  return [...new Map(items.map((item) => [item.rule_code, item])).values()];
+}
+
 function normalizeRapDescription(value: string): string {
   return normalizeSearchText(value).replace(/^\s*\d+\s*[\.\-:]?\s*/, "");
 }
@@ -177,7 +181,7 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmDeleteIds, setConfirmDeleteIds] = useState<number[] | null>(null);
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
   const [showBlockingAlert, setShowBlockingAlert] = useState(false);
@@ -187,6 +191,7 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<number | null>(null);
   const [selectedSummaryEntityId, setSelectedSummaryEntityId] = useState<number | null>(null);
   const [draggedScheduleId, setDraggedScheduleId] = useState<number | null>(null);
+  const [selectedWeeklyBlockIds, setSelectedWeeklyBlockIds] = useState<number[]>([]);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
@@ -559,6 +564,10 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     if (summaryDetail === "environments") setSelectedEnvironmentId(searchedEnvironmentId);
   }, [summaryDetail, searchedEnvironmentId]);
 
+  useEffect(() => {
+    setSelectedWeeklyBlockIds([]);
+  }, [summaryDetail, selectedSummaryEntityId, selectedEnvironmentId]);
+
   // Reset form helper
   const resetForm = (keepValidation = false) => {
     setEditingSchedule(null);
@@ -692,17 +701,6 @@ const cancelMutation = useMutation({
     },
   });
 
-const deleteMutation = useMutation({
-    mutationFn: deleteSchedule,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["schedules"] });
-      addToast("success", "Horario eliminado correctamente.");
-    },
-    onError: (err: any) => {
-      addToast("error", err.message || "Error al eliminar el horario.");
-    },
-});
-
   // Event handlers
   const handleFichaChange = (id: number | "") => {
     setLearningResultId("");
@@ -772,7 +770,30 @@ const deleteMutation = useMutation({
   };
 
   const handleDeleteClick = (id: number) => {
-    setConfirmDeleteId(id);
+    setConfirmDeleteIds([id]);
+  };
+
+  const weeklySeriesIds = (scheduleIds: number[]) => {
+    const anchors = activeSchedules.filter((schedule) => scheduleIds.includes(schedule.id));
+    return [...new Set(activeSchedules
+      .filter((schedule) => anchors.some((anchor) => weeklyBlockKey(schedule) === weeklyBlockKey(anchor) && weekdayIndex(schedule) === weekdayIndex(anchor)))
+      .map((schedule) => schedule.id))];
+  };
+
+  const deleteWeeklySchedules = async () => {
+    if (!confirmDeleteIds?.length) return;
+    setIsBulkSubmitting(true);
+    try {
+      await Promise.all(confirmDeleteIds.map(deleteSchedule));
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      setSelectedWeeklyBlockIds([]);
+      addToast("success", `${confirmDeleteIds.length} ${confirmDeleteIds.length === 1 ? "horario eliminado" : "horarios eliminados"}.`);
+    } catch (error: any) {
+      addToast("error", error.message || "No fue posible eliminar los horarios seleccionados.");
+    } finally {
+      setConfirmDeleteIds(null);
+      setIsBulkSubmitting(false);
+    }
   };
 
   const moveWeeklyBlock = async (targetWeekday: number) => {
@@ -894,8 +915,9 @@ const deleteMutation = useMutation({
             savedCount += 1;
           }
         }
-        setValidationStatus(blockedDays.length ? "blocked" : warnings.length ? "warning" : "validated");
-        setValidations(warnings);
+        const currentValidations = latestValidationResults(warnings);
+        setValidationStatus(blockedDays.length ? "blocked" : currentValidations.length ? "warning" : "validated");
+        setValidations(currentValidations);
         setShowBlockingAlert(blockedDays.length > 0);
         queryClient.invalidateQueries({ queryKey: ["schedules"] });
         if (blockedDays.length) {
@@ -982,7 +1004,29 @@ const deleteMutation = useMutation({
                           : `Ambiente ${selectedEnvironmentId}`}
                       </h4>
                     </div>
-                    <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>
+                    <div className="weekly-chronogram-selection">
+                      <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>
+                      {canDelete && (
+                        <>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={selectedWeeklyBlockIds.length === selectedWeeklySchedule.schedules.length && selectedWeeklySchedule.schedules.length > 0}
+                              onChange={(event) => setSelectedWeeklyBlockIds(event.target.checked ? selectedWeeklySchedule.schedules.map((schedule) => schedule.id) : [])}
+                            />
+                            Seleccionar todos
+                          </label>
+                          <button
+                            type="button"
+                            className="weekly-delete-selected"
+                            disabled={!selectedWeeklyBlockIds.length || isBulkSubmitting}
+                            onClick={() => setConfirmDeleteIds(weeklySeriesIds(selectedWeeklyBlockIds))}
+                          >
+                            Eliminar seleccionados
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </header>
                   <div className="weekly-chronogram-scroll">
                     <div className="weekly-chronogram-grid">
@@ -1020,6 +1064,19 @@ const deleteMutation = useMutation({
                                     onDragEnd={() => setDraggedScheduleId(null)}
                                     aria-label={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
                                   >
+                                    {canDelete && (
+                                      <div className="weekly-block-actions">
+                                        <label>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedWeeklyBlockIds.includes(schedule.id)}
+                                            onChange={(event) => setSelectedWeeklyBlockIds((current) => event.target.checked ? [...current, schedule.id] : current.filter((id) => id !== schedule.id))}
+                                          />
+                                          Seleccionar
+                                        </label>
+                                        <button type="button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
+                                      </div>
+                                    )}
                                     <div className="weekly-chronogram-time">
                                       <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
                                       <span className={`status-pill ${detail.statusClass}`}>{detail.statusName}</span>
@@ -1530,13 +1587,13 @@ const deleteMutation = useMutation({
         onCancel={() => setConfirmCancelId(null)}
       />
       <ConfirmDialog
-        open={confirmDeleteId !== null}
-        title="Eliminar horario"
-        message="¿Seguro que deseas marcar este horario como eliminado?"
-        confirmLabel="Eliminar horario"
+        open={Boolean(confirmDeleteIds?.length)}
+        title={confirmDeleteIds && confirmDeleteIds.length > 1 ? "Eliminar horarios" : "Eliminar horario"}
+        message={`¿Seguro que deseas eliminar ${confirmDeleteIds?.length || 0} ${confirmDeleteIds?.length === 1 ? "horario" : "horarios"}?`}
+        confirmLabel={confirmDeleteIds && confirmDeleteIds.length > 1 ? "Eliminar horarios" : "Eliminar horario"}
         confirmDanger
-        onConfirm={() => { if (confirmDeleteId) { deleteMutation.mutate(confirmDeleteId); setConfirmDeleteId(null); } }}
-        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => void deleteWeeklySchedules()}
+        onCancel={() => setConfirmDeleteIds(null)}
       />
     </div>
   );

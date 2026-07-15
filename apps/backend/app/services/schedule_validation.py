@@ -44,6 +44,7 @@ def validate_schedule(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     _validate_overlaps(payload, validations)
+    _validate_plant_schedule_window(payload, validations)
     _validate_weekly_hours(payload, validations)
 
     if payload["environment_capacity"] < payload["group_learners"]:
@@ -118,6 +119,16 @@ def _validate_weekly_hours(payload: dict[str, Any], validations: list[dict[str, 
                     "duration_hours",
                 )
             )
+        elif total_hours < 30:
+            missing = 30 - total_hours
+            validations.append(
+                _validation(
+                    "PLANT_INSTRUCTOR_MISSING_HOURS",
+                    "WARNING",
+                    f"El instructor de planta tiene {missing:g} horas pendientes para completar 30.",
+                    "duration_hours",
+                )
+            )
 
     if contract_type == "contratista":
         if total_hours < 40:
@@ -139,3 +150,26 @@ def _validate_weekly_hours(payload: dict[str, Any], validations: list[dict[str, 
                     "duration_hours",
                 )
             )
+
+
+def _validate_plant_schedule_window(payload: dict[str, Any], validations: list[dict[str, Any]]) -> None:
+    if payload["instructor_contract_type"] != "planta":
+        return
+    if payload["date"].isoweekday() >= 6:
+        validations.append(
+            _validation(
+                "PLANT_INSTRUCTOR_WEEKEND",
+                "BLOCKING",
+                "Los instructores de planta no pueden programarse los fines de semana.",
+                "date",
+            )
+        )
+    if payload["end_time"] > time(18, 0):
+        validations.append(
+            _validation(
+                "PLANT_INSTRUCTOR_NIGHT_SHIFT",
+                "BLOCKING",
+                "Los instructores de planta no pueden programarse en horario nocturno después de las 18:00.",
+                "end_time",
+            )
+        )

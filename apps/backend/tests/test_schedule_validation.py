@@ -68,6 +68,31 @@ class ScheduleValidationTest(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertIn("PLANT_INSTRUCTOR_MAX_HOURS", {item["rule_code"] for item in result["validations"]})
 
+    def test_planta_warns_with_missing_weekly_hours(self) -> None:
+        payload = base_payload()
+        payload["instructor_contract_type"] = "planta"
+        payload["instructor_weekly_hours"] = 20
+        payload["duration_hours"] = 4
+        result = validate_schedule(payload)
+        warning = next(item for item in result["validations"] if item["rule_code"] == "PLANT_INSTRUCTOR_MISSING_HOURS")
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("6 horas pendientes", warning["message"])
+
+    def test_planta_blocks_weekend_schedule(self) -> None:
+        payload = base_payload()
+        payload["date"] = date(2026, 7, 11)
+        result = validate_schedule(payload)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("PLANT_INSTRUCTOR_WEEKEND", {item["rule_code"] for item in result["validations"]})
+
+    def test_planta_blocks_night_schedule(self) -> None:
+        payload = base_payload()
+        payload["start_time"] = time(17, 0)
+        payload["end_time"] = time(19, 0)
+        result = validate_schedule(payload)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("PLANT_INSTRUCTOR_NIGHT_SHIFT", {item["rule_code"] for item in result["validations"]})
+
     def test_contratista_rule_uses_40_weekly_hours(self) -> None:
         payload = base_payload()
         payload["instructor_contract_type"] = "contratista"

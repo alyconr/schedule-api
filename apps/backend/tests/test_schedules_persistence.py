@@ -66,6 +66,9 @@ class SchedulesPersistenceRoutesTest(unittest.TestCase):
     def test_derive_contract_type_planta(self) -> None:
         self.assertEqual(derive_contract_type("Instructor de Planta"), "planta")
         self.assertEqual(derive_contract_type("planta"), "planta")
+        self.assertEqual(derive_contract_type("Carrera Administrativa"), "planta")
+        self.assertEqual(derive_contract_type("Nombramiento Provisional"), "planta")
+        self.assertEqual(derive_contract_type("Nombramiento Ordinario"), "planta")
 
     def test_derive_contract_type_contratista(self) -> None:
         self.assertEqual(derive_contract_type("Instructor Contratista"), "contratista")

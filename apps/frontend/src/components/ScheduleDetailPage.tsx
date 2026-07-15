@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
 import { fetchSchedulesDetailed } from "../api/schedules";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
-import { ScheduleFilterBar, ScheduleQueryStatus, ScheduleWarningDialog } from "./ScheduleQueryShared";
+import { formatProgrammedDay, ScheduleFilterBar, ScheduleQueryStatus, ScheduleWarningDialog } from "./ScheduleQueryShared";
 
 const STATUS_LABELS: Record<string, string> = {
   validated: "Válido",
@@ -39,13 +39,20 @@ export function ScheduleDetailPage() {
     enabled: hasFilter,
   });
   const schedules = schedulesQuery.data ?? [];
+  const visibleSchedules = useMemo(() => {
+    const latestWarning = schedules
+      .filter((schedule) => schedule.status === "warning")
+      .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)[0];
+    return schedules.filter((schedule) => schedule.status !== "warning" || schedule.id === latestWarning?.id);
+  }, [schedules]);
 
   return (
-    <section className="workspace">
+    <section className="workspace schedule-query-workspace">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Operación</p>
+          <p className="eyebrow">Consulta académica</p>
           <h1>Programación Detallada</h1>
+          <p className="page-intro">Revisa cada sesión programada, su RAP, ambiente y estado en una sola vista.</p>
         </div>
       </header>
 
@@ -59,10 +66,14 @@ export function ScheduleDetailPage() {
 
       <ScheduleQueryStatus hasFilter={hasFilter} query={schedulesQuery} />
 
-      {hasFilter && schedules.length > 0 && (
-        <section className="week-view-card" aria-label="Listado detallado de horarios">
+      {hasFilter && visibleSchedules.length > 0 && (
+        <section className="week-view-card schedule-detail-card" aria-label="Listado detallado de horarios">
+          <header className="results-heading">
+            <div><span className="eyebrow">Resultado de la consulta</span><h2>Agenda programada</h2></div>
+            <span className="results-count">{visibleSchedules.length} {visibleSchedules.length === 1 ? "sesión" : "sesiones"}</span>
+          </header>
           <div className="table-responsive">
-            <table className="crud-table">
+            <table className="crud-table schedule-detail-table">
               <thead>
                 <tr>
                   <th>Día programado</th>
@@ -75,16 +86,15 @@ export function ScheduleDetailPage() {
                   <th>Ambiente</th>
                   <th>Estado</th>
                   <th>Advertencias</th>
-                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {schedules.map((schedule) => (
+                {visibleSchedules.map((schedule) => (
                   <tr key={schedule.id}>
-                    <td>{schedule.weekday_label} {schedule.date}</td>
-                    <td>{schedule.start_time} - {schedule.end_time}</td>
-                    <td>{schedule.instructor_name}</td>
-                    <td>{schedule.group_code}</td>
+                    <td className="day-cell">{formatProgrammedDay(schedule.date)}</td>
+                    <td className="time-cell">{schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}</td>
+                    <td className="instructor-cell">{schedule.instructor_name}</td>
+                    <td><strong className="group-code">{schedule.group_code}</strong></td>
                     <td>{schedule.training_program_name || "-"}</td>
                     <td>{schedule.learning_result_code || "-"}</td>
                     <td>{schedule.topic_name || "-"}</td>
@@ -104,7 +114,6 @@ export function ScheduleDetailPage() {
                         "-"
                       )}
                     </td>
-                    <td>-</td>
                   </tr>
                 ))}
               </tbody>

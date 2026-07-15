@@ -37,6 +37,8 @@ interface SchedulePlannerProps {
   setActiveTab: (tab: string) => void;
 }
 
+type SummaryDetail = "warnings" | "instructors" | "groups" | "environments";
+
 function calculateDurationHours(startTime: string, endTime: string): number {
   if (!startTime || !endTime) return 0;
   const [sh, sm] = startTime.split(":").map(Number);
@@ -53,6 +55,32 @@ const weekDays = [
   { index: 5, label: "Viernes" },
   { index: 6, label: "Sábado" },
 ];
+
+function weekdayIndex(schedule: Schedule): number {
+  return schedule.weekday || new Date(`${schedule.date}T00:00:00`).getDay() || 7;
+}
+
+function weekdayName(schedule: Schedule): string {
+  return weekDays.find((day) => day.index === weekdayIndex(schedule))?.label || "Domingo";
+}
+
+function weeklyBlockKey(schedule: Schedule): string {
+  return [schedule.group_id, schedule.instructor_id, schedule.environment_id, schedule.learning_result_id, schedule.learning_result_topic_id, schedule.manual_topic_name, schedule.start_time, schedule.end_time].join("|");
+}
+
+function weeklySchedules(schedules: Schedule[]): Schedule[] {
+  return [...new Map(schedules.map((schedule) => [
+    `${schedule.weekday || weekdayName(schedule)}|${weeklyBlockKey(schedule)}`,
+    schedule,
+  ])).values()].sort((a, b) => weekdayIndex(a) - weekdayIndex(b) || a.start_time.localeCompare(b.start_time));
+}
+
+function dateForWeekday(date: string, targetWeekday: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  const currentWeekday = value.getUTCDay() || 7;
+  value.setUTCDate(value.getUTCDate() + targetWeekday - currentWeekday);
+  return value.toISOString().slice(0, 10);
+}
 
 function getWeekdayFromDate(date: string): number {
   const [year, month, day] = date.split("-").map(Number);
@@ -103,19 +131,7 @@ function datesForWeekdays(startValue: string, endValue: string, weekdays: number
   return dates;
 }
 
-function getDefaultTrimesterRange(): ScheduleFilters {
-  return { date_from: "", date_to: "", limit: 500 };
-}
-
-function formatProgrammedDay(dateValue: string): string {
-  if (!dateValue) return "Sin fecha";
-  const date = new Date(`${dateValue}T00:00:00`);
-  const weekday = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(date);
-  const formattedDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${formattedDate}`;
-}
-
-const MAX_WEEKDAY_CARDS = 30;
+const PLANNER_SUMMARY_FILTERS: ScheduleFilters = { limit: 2000 };
 
 export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
@@ -126,13 +142,8 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const canDelete = roles.includes("admin") || roles.includes("coordinador");
 
-  // State for search filters
-  const [filterInstructor, setFilterInstructor] = useState<string>("");
-  const [filterGroup, setFilterGroup] = useState<string>("");
-  const [filterEnvironment, setFilterEnvironment] = useState<string>("");
   const [trimesterStartDate, setTrimesterStartDate] = useState("");
   const [trimesterEndDate, setTrimesterEndDate] = useState("");
-  const [activeFilters, setActiveFilters] = useState<ScheduleFilters>(() => getDefaultTrimesterRange());
 
   // Form states
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -155,7 +166,6 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const [instructorSearch, setInstructorSearch] = useState("");
   const [environmentSearch, setEnvironmentSearch] = useState("");
   const [blockSearch, setBlockSearch] = useState("");
-  const [filterInstructorSearch, setFilterInstructorSearch] = useState("");
   const [learningResultTopicId, setLearningResultTopicId] = useState<number | "">("");
   const [manualTopicName, setManualTopicName] = useState("");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
@@ -172,6 +182,11 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const [detailSchedule, setDetailSchedule] = useState<Schedule | null>(null);
   const [showBlockingAlert, setShowBlockingAlert] = useState(false);
   const [warningSchedule, setWarningSchedule] = useState<Schedule | null>(null);
+  const [summaryDetail, setSummaryDetail] = useState<SummaryDetail | null>(null);
+  const [summarySearch, setSummarySearch] = useState("");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<number | null>(null);
+  const [selectedSummaryEntityId, setSelectedSummaryEntityId] = useState<number | null>(null);
+  const [draggedScheduleId, setDraggedScheduleId] = useState<number | null>(null);
   const selectedLearningResultId = typeof learningResultId === "number" ? learningResultId : undefined;
   const selectedProgramId = typeof programId === "number" ? programId : undefined;
 
@@ -359,19 +374,10 @@ const contractTypes = contractTypesQuery.data || [];
     () => timeBlocks.filter((tb) => includesSearch(`${tb.name} ${tb.start_time} ${tb.end_time}`, blockSearch)),
     [timeBlocks, blockSearch]
   );
-  const filteredFilterInstructors = useMemo(
-    () => instructors.filter((ins) => includesSearch(instructorLabel(ins), filterInstructorSearch)),
-    [instructors, filterInstructorSearch, contractTypesById]
-  );
   // 2. Fetch Schedules
-const {
-  data: schedules = [],
-  isLoading: schedulesLoading,
-  isError: schedulesError,
-  isFetching: schedulesFetching,
-} = useQuery<Schedule[]>({
-  queryKey: ["schedules", activeFilters],
-  queryFn: () => fetchSchedules({ ...activeFilters, include_inactive: true }),
+const { data: schedules = [] } = useQuery<Schedule[]>({
+  queryKey: ["schedules", "planner-summary"],
+  queryFn: () => fetchSchedules({ ...PLANNER_SUMMARY_FILTERS, include_inactive: true }),
   staleTime: 60 * 1000,
   refetchOnWindowFocus: false,
   placeholderData: (previousData) => previousData,
@@ -382,20 +388,22 @@ const {
     () => schedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
     [schedules]
   );
-  const visibleSchedules = useMemo(() => schedules.slice(0, 100), [schedules]);
+  const latestWarningsByInstructor = useMemo(() => {
+    const latest = new Map<number, Schedule>();
+    activeSchedules
+      .filter((schedule) => schedule.status === "warning")
+      .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
+      .forEach((schedule) => {
+        if (!latest.has(schedule.instructor_id)) latest.set(schedule.instructor_id, schedule);
+      });
+    return [...latest.values()];
+  }, [activeSchedules]);
   const plannerStats = useMemo(() => ({
-    active: activeSchedules.length,
-    warnings: activeSchedules.filter((s) => s.status === "warning").length,
+    warnings: latestWarningsByInstructor.length,
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
+    groups: new Set(activeSchedules.map((s) => s.group_id)).size,
     environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
-  }), [activeSchedules]);
-const schedulesByWeekday = useMemo(() => weekDays.map((day) => {
-  const allDaySchedules = activeSchedules
-    .filter((schedule) => getWeekdayFromDate(schedule.date) === day.index)
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  return { ...day, total: allDaySchedules.length, schedules: allDaySchedules.slice(0, MAX_WEEKDAY_CARDS) };
-}), [activeSchedules]);
-
+  }), [activeSchedules, latestWarningsByInstructor]);
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
   queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
@@ -440,6 +448,116 @@ const getScheduleDisplayData = (schedule: Schedule) => {
 
     return { instructor, group, environment, rap, topicName, statusClass, statusName };
   };
+
+  const summaryItems = useMemo(() => {
+    if (!summaryDetail) return [];
+    if (summaryDetail === "warnings") {
+      return latestWarningsByInstructor
+        .map((schedule) => {
+          const detail = getScheduleDisplayData(schedule);
+          return {
+            id: schedule.id,
+            primary: `${weekdayName(schedule)} · ${detail.group?.code || `Ficha ${schedule.group_id}`} · ${detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}`,
+            secondary: `${schedule.start_time.slice(0, 5)}–${schedule.end_time.slice(0, 5)} · ${detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}`,
+          };
+        });
+    }
+    if (summaryDetail === "instructors" || summaryDetail === "groups") return [];
+    const ids = [...new Set(activeSchedules.map((schedule) => schedule.environment_id))];
+    return ids.map((id) => {
+      const count = activeSchedules.filter((schedule) => schedule.environment_id === id).length;
+      const entity = environmentsById.get(id);
+      return {
+        id,
+        primary: entity ? environmentLabel(entity) : `Ambiente ${id}`,
+        secondary: `${count} ${count === 1 ? "sesión programada" : "sesiones programadas"}`,
+      };
+    });
+  }, [summaryDetail, activeSchedules, environmentsById, latestWarningsByInstructor]);
+
+  const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
+    ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => ({
+        id,
+        instructor: instructorsById.get(id),
+        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.instructor_id === id)),
+      }))
+    : [], [summaryDetail, activeSchedules, instructorsById]);
+
+  const groupScheduleGroups = useMemo(() => summaryDetail === "groups"
+    ? [...new Set(activeSchedules.map((schedule) => schedule.group_id))].map((id) => ({
+        id,
+        group: groupsById.get(id),
+        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.group_id === id)),
+      }))
+    : [], [summaryDetail, activeSchedules, groupsById]);
+
+  const environmentScheduleGroups = useMemo(() => summaryDetail === "environments"
+    ? [...new Set(activeSchedules.map((schedule) => schedule.environment_id))].map((id) => ({
+        id,
+        environment: environmentsById.get(id),
+        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.environment_id === id)),
+      }))
+    : [], [summaryDetail, activeSchedules, environmentsById]);
+
+  const summaryTitle = summaryDetail === "warnings" ? "Horarios con advertencias" : summaryDetail === "instructors" ? "Instructores programados" : summaryDetail === "groups" ? "Fichas programadas" : "Ambientes usados";
+  const summarySearchTerm = normalizeSearchText(summarySearch.trim());
+  const scheduleSearchText = (schedule: Schedule) => {
+    const detail = getScheduleDisplayData(schedule);
+    const program = schedule.training_program_id ? programsById.get(schedule.training_program_id) : undefined;
+    return normalizeSearchText([
+      weekdayName(schedule), schedule.start_time, schedule.end_time,
+      detail.instructor ? instructorLabel(detail.instructor) : "",
+      detail.group ? groupLabel(detail.group) : "",
+      detail.environment ? environmentLabel(detail.environment) : "",
+      detail.rap ? `${detail.rap.code} ${detail.rap.description}` : "",
+      detail.topicName, program ? `${program.code} ${program.name}` : "",
+    ].join(" "));
+  };
+  const filteredSummaryItems = summarySearchTerm
+    ? summaryItems.filter((item) => normalizeSearchText(`${item.primary} ${item.secondary}`).includes(summarySearchTerm))
+    : summaryItems;
+  const filteredInstructorScheduleGroups = summarySearchTerm
+    ? instructorScheduleGroups.filter((group) => normalizeSearchText(group.instructor ? instructorLabel(group.instructor) : `Instructor ${group.id}`).includes(summarySearchTerm) || group.schedules.some((schedule) => scheduleSearchText(schedule).includes(summarySearchTerm)))
+    : instructorScheduleGroups;
+  const filteredGroupScheduleGroups = summarySearchTerm
+    ? groupScheduleGroups.filter((group) => normalizeSearchText(group.group ? groupLabel(group.group) : `Ficha ${group.id}`).includes(summarySearchTerm) || group.schedules.some((schedule) => scheduleSearchText(schedule).includes(summarySearchTerm)))
+    : groupScheduleGroups;
+  const searchedEntityId = summarySearchTerm
+    ? summaryDetail === "groups" && filteredGroupScheduleGroups.length === 1
+      ? filteredGroupScheduleGroups[0].id
+      : summaryDetail === "instructors" && filteredInstructorScheduleGroups.length === 1
+      ? filteredInstructorScheduleGroups[0].id
+      : null
+    : null;
+  const searchedEnvironmentId = summarySearchTerm && summaryDetail === "environments" && filteredSummaryItems.length === 1
+    ? filteredSummaryItems[0].id
+    : null;
+  const selectedEnvironmentGroup = environmentScheduleGroups.find((group) => group.id === selectedEnvironmentId);
+  const selectedInstructorGroup = instructorScheduleGroups.find((group) => group.id === selectedSummaryEntityId);
+  const selectedGroupSchedule = groupScheduleGroups.find((group) => group.id === selectedSummaryEntityId);
+  const selectedWeeklySchedule = summaryDetail === "instructors"
+    ? selectedInstructorGroup
+    : summaryDetail === "groups"
+    ? selectedGroupSchedule
+    : summaryDetail === "environments"
+    ? selectedEnvironmentGroup
+    : undefined;
+
+  useEffect(() => {
+    setSummarySearch("");
+    setSelectedEnvironmentId(null);
+    setSelectedSummaryEntityId(null);
+  }, [summaryDetail]);
+
+  useEffect(() => {
+    if (summaryDetail === "groups" || summaryDetail === "instructors") {
+      setSelectedSummaryEntityId(searchedEntityId);
+    }
+  }, [summaryDetail, searchedEntityId]);
+
+  useEffect(() => {
+    if (summaryDetail === "environments") setSelectedEnvironmentId(searchedEnvironmentId);
+  }, [summaryDetail, searchedEnvironmentId]);
 
   // Reset form helper
   const resetForm = (keepValidation = false) => {
@@ -649,40 +767,33 @@ const deleteMutation = useMutation({
     }
   };
 
-  const handleApplyFilters = (e: FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    if (!trimesterStartDate || !trimesterEndDate) {
-      setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
-      return;
-    }
-    if (trimesterStartDate > trimesterEndDate) {
-      setErrorMsg("La fecha de inicio del trimestre no puede ser mayor a la fecha fin.");
-      return;
-    }
-    const newFilters: ScheduleFilters = { date_from: trimesterStartDate, date_to: trimesterEndDate, limit: 500 };
-    if (filterInstructor) newFilters.instructor_id = Number(filterInstructor);
-    if (filterGroup) newFilters.group_id = Number(filterGroup);
-    if (filterEnvironment) newFilters.environment_id = Number(filterEnvironment);
-    setActiveFilters(newFilters);
-  };
-
-  const handleClearFilters = () => {
-    setFilterInstructor("");
-    setFilterGroup("");
-    setFilterEnvironment("");
-    setTrimesterStartDate("");
-    setTrimesterEndDate("");
-    setFilterInstructorSearch("");
-    setActiveFilters(getDefaultTrimesterRange());
-  };
-
   const handleCancelClick = (id: number) => {
     setConfirmCancelId(id);
   };
 
   const handleDeleteClick = (id: number) => {
     setConfirmDeleteId(id);
+  };
+
+  const moveWeeklyBlock = async (targetWeekday: number) => {
+    const dragged = activeSchedules.find((schedule) => schedule.id === draggedScheduleId);
+    setDraggedScheduleId(null);
+    if (!canWrite || !dragged || weekdayIndex(dragged) === targetWeekday) return;
+
+    const occurrences = activeSchedules.filter((schedule) => weeklyBlockKey(schedule) === weeklyBlockKey(dragged) && weekdayIndex(schedule) === weekdayIndex(dragged));
+    setIsBulkSubmitting(true);
+    try {
+      for (const schedule of occurrences) {
+        const result = await updateSchedule(schedule.id, { date: dateForWeekday(schedule.date, targetWeekday), weekday: targetWeekday });
+        if (result.status === "blocked") throw new Error(result.validations.map((item) => item.message).join(" ") || "El cambio está bloqueado por las reglas de programación.");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      addToast("success", `Bloque movido a ${weekDays.find((day) => day.index === targetWeekday)?.label}.`);
+    } catch (error: any) {
+      addToast("error", error.message || "No fue posible mover la programación.");
+    } finally {
+      setIsBulkSubmitting(false);
+    }
   };
 
   const toggleWeekday = (weekdayIndex: number) => {
@@ -814,222 +925,282 @@ const deleteMutation = useMutation({
         </div>
       </div>
 
-      <div className="schedule-summary-grid" aria-label="Resumen de programación">
-        <div className="schedule-summary-card">
-          <span>Horarios activos</span>
-          <strong>{plannerStats.active}</strong>
-        </div>
-        <div className="schedule-summary-card warning">
+      <div className="schedule-summary-grid planner-summary-grid" aria-label="Resumen de programación">
+        <button type="button" className="schedule-summary-card warning" onClick={() => setSummaryDetail("warnings")} aria-label={`Ver ${plannerStats.warnings} horarios con advertencias`}>
           <span>Con advertencias</span>
           <strong>{plannerStats.warnings}</strong>
-        </div>
-        <div className="schedule-summary-card">
+          <small>Ver detalle →</small>
+        </button>
+        <button type="button" className="schedule-summary-card" onClick={() => setSummaryDetail("instructors")} aria-label={`Ver ${plannerStats.instructors} instructores programados`}>
           <span>Instructores programados</span>
           <strong>{plannerStats.instructors}</strong>
-        </div>
-        <div className="schedule-summary-card">
+          <small>Ver detalle →</small>
+        </button>
+        <button type="button" className="schedule-summary-card" onClick={() => setSummaryDetail("groups")} aria-label={`Ver ${plannerStats.groups} fichas programadas`}>
+          <span>Fichas programadas</span>
+          <strong>{plannerStats.groups}</strong>
+          <small>Ver detalle →</small>
+        </button>
+        <button type="button" className="schedule-summary-card" onClick={() => setSummaryDetail("environments")} aria-label={`Ver ${plannerStats.environments} ambientes usados`}>
           <span>Ambientes usados</span>
           <strong>{plannerStats.environments}</strong>
-        </div>
+          <small>Ver detalle →</small>
+        </button>
       </div>
+
+      {summaryDetail && (
+        <div className="modal-overlay" role="presentation" onMouseDown={() => setSummaryDetail(null)}>
+          <section className={`summary-detail-modal${summaryDetail === "instructors" || summaryDetail === "groups" || summaryDetail === "environments" ? " instructor-schedule-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="summary-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="modal-header-row">
+              <div><span className="eyebrow">Resumen de programación</span><h3 id="summary-detail-title">{summaryTitle}</h3></div>
+              <button type="button" className="detail-dialog-close" onClick={() => setSummaryDetail(null)} aria-label="Cerrar">×</button>
+            </header>
+            <label className="summary-modal-search">
+              <span>Buscar en {summaryTitle.toLowerCase()}</span>
+              <input type="search" value={summarySearch} onChange={(event) => setSummarySearch(event.target.value)} placeholder="Escriba un nombre, ficha, día, RAP o ambiente..." autoFocus />
+            </label>
+            <p className="summary-detail-count">{summaryDetail === "instructors" ? filteredInstructorScheduleGroups.length : summaryDetail === "groups" ? filteredGroupScheduleGroups.length : filteredSummaryItems.length} resultados</p>
+              {selectedWeeklySchedule ? (
+                <div className="weekly-chronogram-page">
+                  <button type="button" className="summary-back-button" onClick={() => summaryDetail === "environments" ? setSelectedEnvironmentId(null) : setSelectedSummaryEntityId(null)}>
+                    ← Volver a {summaryDetail === "instructors" ? "instructores" : summaryDetail === "groups" ? "fichas" : "ambientes"}
+                  </button>
+                  <header className="weekly-chronogram-heading">
+                    <div>
+                      <span>Cronograma semanal</span>
+                      <h4>
+                        {summaryDetail === "instructors"
+                          ? selectedInstructorGroup?.instructor
+                            ? instructorLabel(selectedInstructorGroup.instructor)
+                            : `Instructor ${selectedSummaryEntityId}`
+                          : summaryDetail === "groups" && selectedGroupSchedule?.group
+                          ? groupLabel(selectedGroupSchedule.group)
+                          : summaryDetail === "groups"
+                          ? `Ficha ${selectedSummaryEntityId}`
+                          : selectedEnvironmentGroup?.environment
+                          ? environmentLabel(selectedEnvironmentGroup.environment)
+                          : `Ambiente ${selectedEnvironmentId}`}
+                      </h4>
+                    </div>
+                    <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>
+                  </header>
+                  <div className="weekly-chronogram-scroll">
+                    <div className="weekly-chronogram-grid">
+                      {weekDays.map((day) => {
+                        const daySchedules = selectedWeeklySchedule.schedules.filter((schedule) => weekdayIndex(schedule) === day.index);
+                        return (
+                          <section
+                            className={`weekly-chronogram-day${draggedScheduleId ? " is-drop-target" : ""}`}
+                            key={day.index}
+                            onDragOver={(event) => {
+                              if (canWrite) event.preventDefault();
+                            }}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              void moveWeeklyBlock(day.index);
+                            }}
+                          >
+                            <header>
+                              <strong>{day.label}</strong>
+                              <span>{daySchedules.length}</span>
+                            </header>
+                            <div className="weekly-chronogram-blocks">
+                              {daySchedules.length ? daySchedules.map((schedule) => {
+                                const detail = getScheduleDisplayData(schedule);
+                                return (
+                                  <article
+                                    className="weekly-chronogram-block"
+                                    key={schedule.id}
+                                    draggable={canWrite && !isBulkSubmitting}
+                                    onDragStart={(event) => {
+                                      setDraggedScheduleId(schedule.id);
+                                      event.dataTransfer.effectAllowed = "move";
+                                      event.dataTransfer.setData("text/plain", String(schedule.id));
+                                    }}
+                                    onDragEnd={() => setDraggedScheduleId(null)}
+                                    aria-label={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
+                                  >
+                                    <div className="weekly-chronogram-time">
+                                      <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
+                                      <span className={`status-pill ${detail.statusClass}`}>{detail.statusName}</span>
+                                    </div>
+                                    <h5>
+                                      {summaryDetail === "instructors"
+                                        ? detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`
+                                        : summaryDetail === "groups"
+                                        ? detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`
+                                        : `${detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`} · ${detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}`}
+                                    </h5>
+                                    <dl>
+                                      <div><dt>Ambiente</dt><dd>{detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}</dd></div>
+                                      <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : `RAP ${schedule.learning_result_id}`}</dd></div>
+                                      <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática registrada"}</dd></div>
+                                    </dl>
+                                  </article>
+                                );
+                              }) : <p className="weekly-chronogram-empty">Sin programación</p>}
+                            </div>
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : summaryDetail === "instructors" && filteredInstructorScheduleGroups.length ? (
+              <div className="instructor-schedule-groups">
+                {filteredInstructorScheduleGroups.map((group) => (
+                        <section
+                          className="instructor-schedule-group schedule-entity-card"
+                          key={group.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedSummaryEntityId(group.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") setSelectedSummaryEntityId(group.id);
+                          }}
+                        >
+                    <header><div><span>Instructor</span><h4>{group.instructor ? instructorLabel(group.instructor) : `Instructor ${group.id}`}</h4></div><strong>{group.schedules.length} {group.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong></header>
+                    <div className="instructor-session-list">
+                      {group.schedules.map((schedule) => {
+                        const detail = getScheduleDisplayData(schedule);
+                        const program = schedule.training_program_id ? programsById.get(schedule.training_program_id) : undefined;
+                        const competency = schedule.competency_id ? competencies.find((item) => item.id === schedule.competency_id) : undefined;
+                        return (
+                          <article key={schedule.id}>
+                            <div className="instructor-session-heading"><strong>{detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`}</strong><span className={`schedule-status ${detail.statusClass}`}>{detail.statusName}</span></div>
+                            <dl>
+                              <div><dt>Día y horario</dt><dd>{weekdayName(schedule)} · {schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)} · {schedule.duration_hours} h</dd></div>
+                              <div><dt>Programa</dt><dd>{program ? `${program.code} · ${program.name}` : "Sin programa"}</dd></div>
+                              <div><dt>Competencia</dt><dd>{competency ? `${competency.code} · ${competency.name}` : "Sin competencia"}</dd></div>
+                              <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : "Sin RAP"}</dd></div>
+                              <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática"}</dd></div>
+                              <div><dt>Ambiente</dt><dd>{detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}</dd></div>
+                              <div className="instructor-session-wide"><dt>Observaciones</dt><dd>{schedule.notes || "Sin observaciones"}</dd></div>
+                            </dl>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : summaryDetail === "groups" && filteredGroupScheduleGroups.length ? (
+              <div className="instructor-schedule-groups">
+                {filteredGroupScheduleGroups.map((group) => (
+                        <section
+                          className="instructor-schedule-group schedule-entity-card"
+                          key={group.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedSummaryEntityId(group.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") setSelectedSummaryEntityId(group.id);
+                          }}
+                        >
+                    <header><div><span>Ficha</span><h4>{group.group ? groupLabel(group.group) : `Ficha ${group.id}`}</h4></div><strong>{group.schedules.length} {group.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong></header>
+                    <div className="instructor-session-list">
+                      {group.schedules.map((schedule) => {
+                        const detail = getScheduleDisplayData(schedule);
+                        const program = schedule.training_program_id ? programsById.get(schedule.training_program_id) : undefined;
+                        const competency = schedule.competency_id ? competencies.find((item) => item.id === schedule.competency_id) : undefined;
+                        return (
+                          <article key={schedule.id}>
+                            <div className="instructor-session-heading"><strong>{weekdayName(schedule)} · {schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong><span className={`schedule-status ${detail.statusClass}`}>{detail.statusName}</span></div>
+                            <dl>
+                              <div><dt>Instructor</dt><dd>{detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}</dd></div>
+                              <div><dt>Duración</dt><dd>{schedule.duration_hours} horas</dd></div>
+                              <div><dt>Programa</dt><dd>{program ? `${program.code} · ${program.name}` : "Sin programa"}</dd></div>
+                              <div><dt>Competencia</dt><dd>{competency ? `${competency.code} · ${competency.name}` : "Sin competencia"}</dd></div>
+                              <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : "Sin RAP"}</dd></div>
+                              <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática"}</dd></div>
+                              <div><dt>Ambiente</dt><dd>{detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}</dd></div>
+                              <div className="instructor-session-wide"><dt>Observaciones</dt><dd>{schedule.notes || "Sin observaciones"}</dd></div>
+                            </dl>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : summaryDetail === "environments" && selectedEnvironmentGroup ? (
+              <div className="instructor-schedule-groups">
+                <button type="button" className="summary-back-button" onClick={() => setSelectedEnvironmentId(null)}>← Volver a ambientes</button>
+                <section className="instructor-schedule-group">
+                  <header><div><span>Ambiente</span><h4>{selectedEnvironmentGroup.environment ? environmentLabel(selectedEnvironmentGroup.environment) : `Ambiente ${selectedEnvironmentGroup.id}`}</h4></div><strong>{selectedEnvironmentGroup.schedules.length} {selectedEnvironmentGroup.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong></header>
+                  {selectedEnvironmentGroup.environment && <div className="environment-meta"><span><strong>Tipo</strong>{selectedEnvironmentGroup.environment.environment_type}</span><span><strong>Capacidad</strong>{selectedEnvironmentGroup.environment.capacity}</span><span><strong>Ubicación</strong>{selectedEnvironmentGroup.environment.location || "Sin ubicación"}</span></div>}
+                  <div className="instructor-session-list">
+                    {selectedEnvironmentGroup.schedules.map((schedule) => {
+                      const detail = getScheduleDisplayData(schedule);
+                      const program = schedule.training_program_id ? programsById.get(schedule.training_program_id) : undefined;
+                      return (
+                        <article key={schedule.id}>
+                          <div className="instructor-session-heading"><strong>{weekdayName(schedule)} · {schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong><span className={`schedule-status ${detail.statusClass}`}>{detail.statusName}</span></div>
+                          <dl>
+                            <div><dt>Instructor</dt><dd>{detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}</dd></div>
+                            <div><dt>Ficha</dt><dd>{detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`}</dd></div>
+                            <div><dt>Programa</dt><dd>{program ? `${program.code} · ${program.name}` : "Sin programa"}</dd></div>
+                            <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : "Sin RAP"}</dd></div>
+                            <div className="instructor-session-wide"><dt>Temática</dt><dd>{detail.topicName || "Sin temática"}</dd></div>
+                          </dl>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+            ) : filteredSummaryItems.length ? (
+              <div className="summary-detail-list">
+                {filteredSummaryItems.map((item) => summaryDetail === "warnings" ? (
+                  <button
+                    type="button"
+                    className="summary-warning-item"
+                    key={item.id}
+                    onClick={() => {
+                      const schedule = activeSchedules.find((current) => current.id === item.id);
+                      if (schedule) setWarningSchedule(schedule);
+                      setSummaryDetail(null);
+                    }}
+                  >
+                    <strong>{item.primary}</strong>
+                    <span>{item.secondary}</span>
+                    <small>Ver información de la advertencia →</small>
+                  </button>
+                ) : summaryDetail === "environments" ? (
+                  <button type="button" className="summary-environment-item" key={item.id} onClick={() => setSelectedEnvironmentId(item.id)}>
+                    <strong>{item.primary}</strong><span>{item.secondary}</span><small>Ver programación del ambiente →</small>
+                  </button>
+                ) : <article key={item.id}><strong>{item.primary}</strong><span>{item.secondary}</span></article>)}
+              </div>
+            ) : (
+              <div className="empty-panel">No hay resultados para la búsqueda.</div>
+            )}
+          </section>
+        </div>
+      )}
 
       {errorMsg && <div className="toast toast-error">{errorMsg}</div>}
       {!hasMasterData && !isConsulta && (
         <div className="empty-panel">Primero cargue el archivo normalizado desde Carga Masiva.</div>
       )}
 
-      {/* 2. Filter panel */}
-      <form className="schedule-filters" onSubmit={handleApplyFilters}>
-        <div className="filter-heading">
-          <span className="eyebrow">Filtros</span>
-          <strong>Consulta de agenda</strong>
-        </div>
-        <div className="filter-fields">
-          <label>
-            Fecha inicio trimestre <span className="req">*</span>
-            <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
-          </label>
-          <label>
-            Fecha fin trimestre <span className="req">*</span>
-            <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
-          </label>
-          <SearchableSelect label="Instructor" value={filterInstructor} placeholder="Todos los instructores" searchPlaceholder="Buscar instructor..." options={instructors.map((ins) => ({ value: ins.id, label: instructorLabel(ins) }))} onChange={(value) => setFilterInstructor(String(value))} />
-                </div>
-                <div className="filter-actions">
-                  <button type="submit" className="btn-primary">Consultar trimestre</button>
-                  <button type="button" className="btn-secondary" onClick={handleClearFilters}>Limpiar</button>
-                </div>
-              </form>
-
-              {/* 3. Main Workspace Grid */}
-              <div className={`schedule-grid ${isConsulta ? "full-grid" : ""}`}>
+              {/* 2. Main Workspace */}
+              <div className="schedule-grid full-grid planner-sections-stack">
                 {/* Grilla de listado (Izquierda) */}
 <div className="schedule-table-section">
-                {schedulesLoading ? (
-                  <div className="loader">Cargando programación de horarios...</div>
-                ) : schedulesError ? (
-                  <div className="error-panel">
-                    <h3>Error al cargar horarios</h3>
-                    <p>No fue posible conectar con el servidor.</p>
+                <section className="week-view-card schedule-navigation-card" aria-label="Consultas de programación">
+                  <div className="week-view-header">
+                    <div>
+                      <span className="eyebrow">Consultas de programación</span>
+                      <h3>Visualización de horarios</h3>
+                      <p className="text-muted">Consulte la matriz académica o el listado detallado en páginas independientes.</p>
+                    </div>
                   </div>
-                ) : (
-                  <>
-                    {schedulesFetching && !schedulesLoading && (
-                      <div className="soft-loading-indicator">Actualizando programación...</div>
-                    )}
-                    <section className="week-view-card" aria-label="Vista de programación por días">
-                      <div className="week-view-header">
-                        <div>
-                          <span className="eyebrow">Matriz académica</span>
-                          <h3>Vista de programación por días</h3>
-                        </div>
-                        <span className="week-view-count">{activeSchedules.length} horarios</span>
-                        <button className="btn-secondary btn-expand-matrix" onClick={() => setActiveTab("schedule-matrix")} type="button">
-                          Ver matriz académica
-                        </button>
-                      </div>
-                      <div className="week-grid" role="list">
-                        {schedulesByWeekday.map((day) => (
-                          <div className="week-day-column" key={day.index}>
-                            <div className="week-day-heading">
-                              <strong>{day.label}</strong>
-                              <span>{day.total}</span>
-                            </div>
-                            <div className="week-day-body">
-                              {day.schedules.length === 0 ? (
-  <p className="week-empty">Sin programación</p>
-) : (
-  <>
-    {day.schedules.map((sch) => {
-      const { instructor, environment, rap, topicName, statusClass } = getScheduleDisplayData(sch);
-      return (
-        <button className={`week-schedule-card ${statusClass}`} disabled={!canWrite} key={sch.id}
-          onClick={() => handleEditInit(sch)} title={canWrite ? "Editar horario" : "Modo consulta"} type="button"
-        >
-          <span className="week-schedule-date">{formatProgrammedDay(sch.date)}</span>
-          <span className="week-schedule-time">{sch.start_time} - {sch.end_time}</span>
-          <span><strong>Instructor:</strong> {instructor ? `${instructor.first_name} ${instructor.last_name}` : `ID ${sch.instructor_id}`}</span>
-          <span><strong>Ambiente:</strong> {environment ? `${environment.code} - ${environment.name}` : `ID ${sch.environment_id}`}</span>
-          <span className="week-rap"><strong>RAP:</strong> {rap ? rapLabel(rap) : `ID ${sch.learning_result_id}`}</span>
-          <span className="week-topic"><strong>Temática:</strong> {topicName || "Sin temática"}</span>
-        </button>
-      );
-    })}
-    {day.total > MAX_WEEKDAY_CARDS && (
-      <p className="week-empty">Mostrando {MAX_WEEKDAY_CARDS} de {day.total}. Usa filtros para reducir resultados.</p>
-    )}
-  </>
-)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="week-view-card" style={{ marginTop: "24px" }} aria-label="Listado de horarios programados">
-                      <div className="week-view-header">
-                        <div>
-                          <span className="eyebrow">Programación detallada</span>
-                          <h3>Listado de horarios</h3>
-                        </div>
-                        <span className="week-view-count">{schedules.length} registros</span>
-                        <button className="btn-secondary" onClick={() => setActiveTab("schedule-detail")} type="button">
-                          Ver programación detallada
-                        </button>
-                      </div>
-
-                      <div className="table-responsive">
-                        <table className="crud-table">
-                          <thead>
-                            <tr>
-                              <th>Días programados</th><th>Horario</th><th>Instructor</th><th>Ficha</th><th>Ambiente</th><th>RAP</th><th>Estado</th>
-                              {!isConsulta && <th>Acciones</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {schedules.length === 0 ? (
-                              <tr>
-                                <td colSpan={isConsulta ? 7 : 8} className="text-center empty-cell">
-                                  <strong>No hay horarios programados</strong>
-                                  <span>Ajusta los filtros o registra una nueva programación académica.</span>
-                                </td>
-                              </tr>
-                            ) : (
-                              visibleSchedules.map((sch) => {
-                                const ins = instructorsById.get(sch.instructor_id);
-                                const grp = groupsById.get(sch.group_id);
-                                const env = environmentsById.get(sch.environment_id);
-                                const rap = learningResultsById.get(sch.learning_result_id);
-                                const { topicName, statusClass, statusName } = getScheduleDisplayData(sch);
-                                const isCancelled = sch.status === "cancelled";
-                                const isDeleted = sch.status === "deleted";
-                                return (
-                                  <tr
-                                    key={sch.id}
-                                    className="clickable-row"
-                                    tabIndex={0}
-                                    onClick={(event) => {
-                                      if (!(event.target as HTMLElement).closest("button, input, a, select, textarea, label")) setDetailSchedule(sch);
-                                    }}
-                                    onKeyDown={(event) => {
-                                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-                                        event.preventDefault();
-                                        setDetailSchedule(sch);
-                                      }
-                                    }}
-                                    aria-label={`Ver detalle del horario ${sch.id}`}
-                                  >
-                                    <td>{formatProgrammedDay(sch.date)}</td>
-                                    <td>{sch.start_time} - {sch.end_time}</td>
-                                    <td>{ins ? `${ins.first_name} ${ins.last_name}` : `ID ${sch.instructor_id}`}</td>
-                                    <td>{grp ? grp.code : `ID ${sch.group_id}`}</td>
-                                    <td>{env ? env.name : `ID ${sch.environment_id}`}</td>
-                                    <td>
-                                      {rap ? rap.code : `ID ${sch.learning_result_id}`}
-                                      {topicName && <small className="schedule-topic-note">{topicName}</small>}
-                                    </td>
-                                    <td><span className={`schedule-status ${statusClass}`}>{statusName}</span></td>
-                                    {!isConsulta && (
-                                      <td className="actions-cell">
-                                        {isDeleted ? (
-                                          <span className="row-action-state">Eliminado</span>
-                                        ) : isCancelled ? (
-                                          <>
-                                            <span className="row-action-state">Cancelado</span>
-                                            {canDelete && (
-                                              <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <>
-                                            {canWrite && (
-                                              <button type="button" className="btn-edit" onClick={() => handleEditInit(sch)}>Editar</button>
-                                            )}
-                                            {canWrite && (
-                                              <button type="button" className="btn-cancel" onClick={() => handleCancelClick(sch.id)}>Cancelar</button>
-                                            )}
-                                            {canDelete && (
-                                              <button type="button" className="btn-delete" onClick={() => handleDeleteClick(sch.id)}>Eliminar</button>
-                                            )}
-                                          </>
-                                        )}
-                                      </td>
-                                    )}
-                                  </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                      {schedules.length > 100 && (
-                        <p className="text-muted" style={{ padding: "8px 0 0", fontSize: "0.85rem" }}>
-                          Mostrando los primeros 100 horarios. Usa filtros para reducir los resultados.
-                        </p>
-                      )}
-                    </section>
-                  </>
-                )}
+                  <div className="quick-links-grid">
+                    <button type="button" className="btn-secondary" onClick={() => setActiveTab("schedule-matrix")}>Ver Matriz Académica</button>
+                    <button type="button" className="btn-secondary" onClick={() => setActiveTab("schedule-detail")}>Ver Programación Detallada</button>
+                  </div>
+                </section>
               </div>
 
               {!isConsulta && (

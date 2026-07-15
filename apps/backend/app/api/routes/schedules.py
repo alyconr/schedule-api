@@ -262,6 +262,12 @@ def list_schedules_detailed(
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[ScheduleDetailedRead]:
+    if instructor_id is None and group_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Debe filtrar por instructor o ficha para consultar horarios detallados.",
+        )
+
     stmt = (
         select(Schedule, Instructor, Group, TrainingProgram, LearningResult, Environment)
         .join(Instructor, Instructor.id == Schedule.instructor_id)
@@ -304,6 +310,9 @@ def list_schedules_detailed(
 
     results: list[ScheduleDetailedRead] = []
     for sch, instructor, group, program, learning_result, environment in rows:
+        resolved_program = program
+        if resolved_program is None and group.training_program_id is not None:
+            resolved_program = session.get(TrainingProgram, group.training_program_id)
         topic_name = sch.manual_topic_name or (
             topics_by_relation_id.get(sch.learning_result_topic_id) if sch.learning_result_topic_id else None
         )
@@ -319,8 +328,8 @@ def list_schedules_detailed(
                 group_id=group.id,
                 group_code=group.code,
                 group_name=group.name,
-                training_program_id=program.id if program else None,
-                training_program_name=program.name if program else None,
+                training_program_id=resolved_program.id if resolved_program else None,
+                training_program_name=resolved_program.name if resolved_program else None,
                 learning_result_id=learning_result.id if learning_result else None,
                 learning_result_code=learning_result.code if learning_result else None,
                 learning_result_description=learning_result.description if learning_result else None,

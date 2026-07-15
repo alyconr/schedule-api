@@ -19,6 +19,14 @@ export function rapLabel(rap: LearningResult): string {
   return `${rap.code} - ${rap.description.slice(0, 70)}`;
 }
 
+export function formatProgrammedDay(dateValue: string): string {
+  if (!dateValue) return "Sin fecha";
+  const date = new Date(`${dateValue}T00:00:00`);
+  const weekday = new Intl.DateTimeFormat("es-CO", { weekday: "long" }).format(date);
+  const formattedDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${formattedDate}`;
+}
+
 type ScheduleFilterBarProps = {
   groups: Group[];
   instructors: Instructor[];
@@ -42,6 +50,7 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
       learning_result_id: learningResultId === "" ? undefined : Number(learningResultId),
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      limit: 500,
     });
   };
 
@@ -55,7 +64,7 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
   };
 
   return (
-    <form className="schedule-filters" onSubmit={submit}>
+    <form className="schedule-filters schedule-query-filters" onSubmit={submit}>
       <div className="filter-heading">
         <span className="eyebrow">Filtros</span>
         <strong>Consultar horarios programados</strong>

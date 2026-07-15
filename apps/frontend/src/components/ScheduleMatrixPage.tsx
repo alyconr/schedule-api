@@ -1,27 +1,32 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
 import { fetchSchedulesDetailed } from "../api/schedules";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
-import { ScheduleFilterBar, ScheduleQueryStatus } from "./ScheduleQueryShared";
+import { groupLabel, instructorLabel, rapLabel, ScheduleFilterBar, ScheduleQueryStatus } from "./ScheduleQueryShared";
 
-const WEEKDAY_ORDER = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-
-function dateRangeLabel(filters: ScheduleFilters): string {
-  if (filters.date_from && filters.date_to) return `${filters.date_from} a ${filters.date_to}`;
-  if (filters.date_from) return `Desde ${filters.date_from}`;
-  if (filters.date_to) return `Hasta ${filters.date_to}`;
-  return "Sin rango de fechas";
-}
+const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const shortDate = (value: string) => new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+const STATUS_LABELS: Record<string, string> = {
+  validated: "Válido",
+  valid: "Válido",
+  warning: "Advertencia",
+  blocked: "Bloqueado",
+  cancelled: "Cancelado",
+  deleted: "Eliminado",
+  draft: "Borrador",
+};
 
 export function ScheduleMatrixPage() {
   const [filters, setFilters] = useState<ScheduleFilters>({});
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date());
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleDetailed | null>(null);
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
   const learningResultsQuery = useQuery({ queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") });
-
   const hasFilter = Boolean(filters.group_id || filters.instructor_id);
   const schedulesQuery = useQuery<ScheduleDetailed[]>({
     queryKey: ["schedules-detailed", filters],
@@ -30,29 +35,52 @@ export function ScheduleMatrixPage() {
   });
   const schedules = schedulesQuery.data ?? [];
 
-  const groupedByWeekday = useMemo(() => {
+  useEffect(() => {
+    const firstDate = filters.date_from || schedules[0]?.date;
+    if (firstDate) setVisibleMonth(new Date(`${firstDate}T00:00:00`));
+  }, [filters.date_from, schedules]);
+
+  const schedulesByDate = useMemo(() => {
     const map = new Map<string, ScheduleDetailed[]>();
-    schedules.forEach((schedule) => {
-      const key = schedule.weekday_label || "Sin día";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(schedule);
-    });
-    return WEEKDAY_ORDER.filter((day) => map.has(day)).map((day) => ({
-      weekday: day,
-      schedules: map.get(day)!.sort((a, b) => {
-        const dateCompare = a.date.localeCompare(b.date);
-        return dateCompare !== 0 ? dateCompare : a.start_time.localeCompare(b.start_time);
-      }),
-    }));
+    schedules.forEach((schedule) => map.set(schedule.date, [...(map.get(schedule.date) ?? []), schedule]));
+    map.forEach((items) => items.sort((a, b) => a.start_time.localeCompare(b.start_time)));
+    return map;
   }, [schedules]);
 
+  const calendarDays = useMemo(() => {
+    const year = visibleMonth.getFullYear();
+    const month = visibleMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingEmptyDays = (new Date(year, month, 1).getDay() + 6) % 7;
+    return [
+      ...Array.from({ length: leadingEmptyDays }, () => null),
+      ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, month, index + 1)),
+    ];
+  }, [visibleMonth]);
+
+  const moveMonth = (amount: number) => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+  const monthTitle = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric" }).format(visibleMonth);
+  const scheduledDays = schedulesByDate.size;
+  const todayKey = new Date().toLocaleDateString("en-CA");
+  const activeFilterLabels = useMemo(() => {
+    const labels: { name: string; value: string }[] = [];
+    const group = filters.group_id ? groupsQuery.data?.find((item) => item.id === filters.group_id) : undefined;
+    const instructor = filters.instructor_id ? instructorsQuery.data?.find((item) => item.id === filters.instructor_id) : undefined;
+    const rap = filters.learning_result_id ? learningResultsQuery.data?.find((item) => item.id === filters.learning_result_id) : undefined;
+    if (filters.group_id) labels.push({ name: "Ficha", value: group ? groupLabel(group) : String(filters.group_id) });
+    if (filters.instructor_id) labels.push({ name: "Instructor", value: instructor ? instructorLabel(instructor) : String(filters.instructor_id) });
+    if (filters.learning_result_id) labels.push({ name: "RAP", value: rap ? rapLabel(rap) : String(filters.learning_result_id) });
+    if (filters.date_from || filters.date_to) labels.push({
+      name: "Fechas",
+      value: `${filters.date_from ? shortDate(filters.date_from) : "Inicio"} – ${filters.date_to ? shortDate(filters.date_to) : "Actualidad"}`,
+    });
+    return labels;
+  }, [filters, groupsQuery.data, instructorsQuery.data, learningResultsQuery.data]);
+
   return (
-    <section className="workspace">
+    <section className="workspace schedule-query-workspace">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Operación</p>
-          <h1>Matriz Académica</h1>
-        </div>
+        <div><p className="eyebrow">Panorama académico</p><h1>Matriz Académica</h1><p className="page-intro">Explora la programación mensual y abre cualquier sesión para consultar su detalle.</p></div>
       </header>
 
       <ScheduleFilterBar
@@ -62,52 +90,67 @@ export function ScheduleMatrixPage() {
         onApply={setFilters}
         onClear={() => setFilters({})}
       />
-
       <ScheduleQueryStatus hasFilter={hasFilter} query={schedulesQuery} />
 
       {hasFilter && schedules.length > 0 && (
-        <>
-          <div className="schedule-summary-grid" aria-label="Resumen de la matriz">
-            <div className="schedule-summary-card">
-              <span>Total horarios</span>
-              <strong>{schedules.length}</strong>
+        <section className="academic-calendar" aria-label="Calendario de la matriz académica">
+          <header className="academic-calendar-toolbar">
+            <button type="button" className="calendar-nav-button" onClick={() => moveMonth(-1)} aria-label="Mes anterior">‹</button>
+            <div className="calendar-period">
+              <span>{schedules.length} sesiones · {scheduledDays} días</span>
+              <h2>{monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1)}</h2>
+              <div className="calendar-active-filters" aria-label="Filtros activos">
+                {activeFilterLabels.map((filter) => <span key={filter.name}><strong>{filter.name}</strong>{filter.value}</span>)}
+              </div>
             </div>
-            <div className="schedule-summary-card">
-              <span>Días con programación</span>
-              <strong>{groupedByWeekday.map((group) => group.weekday).join(", ")}</strong>
-            </div>
-            <div className="schedule-summary-card">
-              <span>Rango consultado</span>
-              <strong>{dateRangeLabel(filters)}</strong>
-            </div>
-          </div>
-
-          <section className="week-view-card" aria-label="Matriz académica">
-            <div className="week-grid" role="list">
-              {groupedByWeekday.map((day) => (
-                <div className="week-day-column" key={day.weekday}>
-                  <div className="week-day-heading">
-                    <strong>{day.weekday}</strong>
-                    <span>{day.schedules.length}</span>
-                  </div>
-                  <div className="week-day-body">
-                    {day.schedules.map((schedule) => (
-                      <div className="week-schedule-card" key={schedule.id}>
-                        <span className="week-schedule-date">{schedule.date}</span>
-                        <span className="week-schedule-time">{schedule.start_time} - {schedule.end_time}</span>
-                        <span><strong>Instructor:</strong> {schedule.instructor_name}</span>
-                        <span><strong>Ficha:</strong> {schedule.group_code}</span>
-                        <span className="week-rap"><strong>RAP:</strong> {schedule.learning_result_code || "Sin RAP"}</span>
-                        <span className="week-topic"><strong>Temática:</strong> {schedule.topic_name || "Sin temática"}</span>
-                        <span><strong>Ambiente:</strong> {schedule.environment_name}</span>
-                      </div>
+            <button type="button" className="calendar-nav-button" onClick={() => moveMonth(1)} aria-label="Mes siguiente">›</button>
+          </header>
+          <div className="academic-calendar-grid" role="grid">
+            {WEEKDAYS.map((weekday) => <div className="calendar-weekday" role="columnheader" key={weekday}>{weekday}</div>)}
+            {calendarDays.map((date, index) => {
+              if (!date) return <div className="calendar-day calendar-day-empty" key={`empty-${index}`} aria-hidden="true" />;
+              const key = `${monthKey(date)}-${String(date.getDate()).padStart(2, "0")}`;
+              const daySchedules = schedulesByDate.get(key) ?? [];
+              return (
+                <div className={`calendar-day${daySchedules.length ? " has-events" : ""}${key === todayKey ? " is-today" : ""}`} role="gridcell" key={key}>
+                  <span className="calendar-day-number">{date.getDate()}</span>
+                  <div className="calendar-events">
+                    {daySchedules.map((schedule) => (
+                      <button type="button" className={`calendar-event status-${schedule.status}`} key={schedule.id} onClick={() => setSelectedSchedule(schedule)}>
+                        <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
+                        <span>{schedule.group_code} · {schedule.instructor_name}</span>
+                        <small>{schedule.environment_name}</small>
+                      </button>
                     ))}
                   </div>
                 </div>
-              ))}
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {selectedSchedule && (
+        <div className="modal-overlay calendar-detail-overlay" role="presentation" onMouseDown={() => setSelectedSchedule(null)}>
+          <section className="detail-dialog calendar-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="detail-dialog-header">
+              <div><p className="eyebrow">Programación #{selectedSchedule.id}</p><h2 id="calendar-detail-title">{selectedSchedule.group_code}</h2><p>{selectedSchedule.group_name || "Ficha programada"}</p></div>
+              <button type="button" className="detail-dialog-close" onClick={() => setSelectedSchedule(null)} aria-label="Cerrar">×</button>
+            </header>
+            <div className="calendar-detail-grid">
+              <span><strong>Fecha</strong>{selectedSchedule.weekday_label}, {selectedSchedule.date}</span>
+              <span><strong>Horario</strong>{selectedSchedule.start_time.slice(0, 5)} – {selectedSchedule.end_time.slice(0, 5)}</span>
+              <span><strong>Estado</strong><em className={`schedule-status status-${selectedSchedule.status}`}>{STATUS_LABELS[selectedSchedule.status] || "Borrador"}</em></span>
+              <span><strong>Instructor</strong>{selectedSchedule.instructor_name}</span>
+              <span><strong>Ficha</strong>{selectedSchedule.group_code}{selectedSchedule.group_name ? ` · ${selectedSchedule.group_name}` : ""}</span>
+              <span><strong>Programa</strong>{selectedSchedule.training_program_name || "Sin programa"}</span>
+              <span><strong>Ambiente</strong>{selectedSchedule.environment_name}</span>
+              <span className="calendar-detail-wide"><strong>RAP</strong>{selectedSchedule.learning_result_code || "Sin RAP"}{selectedSchedule.learning_result_description ? ` · ${selectedSchedule.learning_result_description}` : ""}</span>
+              <span className="calendar-detail-wide"><strong>Temática</strong>{selectedSchedule.topic_name || "Sin temática registrada"}</span>
             </div>
+            <footer className="calendar-detail-footer"><button type="button" className="btn-primary" onClick={() => setSelectedSchedule(null)}>Cerrar detalle</button></footer>
           </section>
-        </>
+        </div>
       )}
     </section>
   );

@@ -354,6 +354,13 @@ class ScheduleListingTest(unittest.TestCase):
             rows = self._list_schedules_detailed(session, instructor_id=self.ids["instructor"] + 999)
         self.assertEqual(len(rows), 0)
 
+    def test_list_schedules_detailed_requires_instructor_or_group(self) -> None:
+        with Session(self.engine) as session:
+            with self.assertRaises(HTTPException) as context:
+                self._list_schedules_detailed(session)
+        self.assertEqual(context.exception.status_code, 422)
+        self.assertIn("instructor o ficha", context.exception.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

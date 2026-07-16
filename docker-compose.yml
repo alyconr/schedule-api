@@ -24,6 +24,12 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sena_user}:${POSTGRES_PASSWORD:-replace_with_strong_password}@postgres:5432/${POSTGRES_DB:-sena_horarios}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,backend,testserver}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-insecure-dev-secret-do-not-use-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Sena1234}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Administrador}
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,7 +45,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "3001:80"
 
 volumes:
   postgres_data:

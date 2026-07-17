@@ -33,7 +33,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
+    expose:
       - "8000"
 
   frontend:
@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    ports:
+    expose:
       - "80"
 
 volumes:

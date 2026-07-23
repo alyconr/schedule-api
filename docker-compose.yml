@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  backend:
+  schedule-backend:
     build:
       context: ./apps/backend
     restart: unless-stopped
@@ -23,7 +23,7 @@ services:
       APP_NAME: ${APP_NAME:-GESTION DE HORARIOS CGMLTI API}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sena_user}:${POSTGRES_PASSWORD:-replace_with_strong_password}@postgres:5432/${POSTGRES_DB:-sena_horarios}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
-      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-horarios.datasena.com,localhost,127.0.0.1,backend,testserver}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-horarios.datasena.com,localhost,127.0.0.1,schedule-backend,testserver}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-insecure-dev-secret-do-not-use-in-production}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
@@ -43,7 +43,7 @@ services:
         VITE_API_URL: ${VITE_API_URL:-/api/v1}
     restart: unless-stopped
     depends_on:
-      - backend
+      - schedule-backend
     expose:
       - "80"
 

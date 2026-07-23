@@ -43,5 +43,5 @@ Docker:
 docker compose up --build
 ```
 
-API base: `http://localhost:8000/api/v1`.
+API base desde el frontend Docker: `/api/v1` (Nginx la reenvia internamente a `backend:8000`).
 Frontend: `http://localhost:3000`.

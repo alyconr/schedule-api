@@ -1378,29 +1378,26 @@ textarea:focus:not(:focus-visible) {
 }
 
 .schedule-query-filters {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
 }
 
 .schedule-query-filters .filter-heading { grid-column: 1 / -1; }
-.schedule-query-filters .filter-fields { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+/* auto-fit sizes columns off the real container width, not the viewport, so fields
+   never get squeezed below a readable width regardless of sidebar state */
+.schedule-query-filters .filter-fields { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.schedule-query-filters .filter-fields > * { min-width: 0; }
 .schedule-query-filters .searchable-select-trigger,
 .schedule-query-filters input { height: 46px; min-height: 46px; box-sizing: border-box; }
-.schedule-query-filters .searchable-select-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schedule-query-filters .searchable-select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-query-filters .filter-actions button { min-height: 46px; }
 
 @media (max-width: 1100px) {
   .schedule-query-filters { grid-template-columns: 1fr; }
-  .schedule-query-filters .filter-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .schedule-query-filters .filter-actions { justify-content: flex-end; }
 }
 
-@media (max-width: 720px) {
-  .schedule-query-filters .filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 480px) {
-  .schedule-query-filters .filter-fields { grid-template-columns: 1fr; }
   .schedule-query-filters .filter-actions { display: grid; grid-template-columns: 1fr 1fr; }
 }
 

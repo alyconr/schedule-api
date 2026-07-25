@@ -84,6 +84,10 @@ Toda programación de una ficha debe estar asociada a una competencia y a uno o 
 
 El sistema debe permitir consultar la programación de cada ficha por jornada, semana, competencia, resultado de aprendizaje, instructor y ambiente.
 
+### RN-047. Registro obligatorio de trimestre académico en fichas de formación
+
+Toda ficha debe registrar el trimestre académico como atributo propio (`groups.trimester`). El trimestre es obligatorio para crear o importar nuevas fichas, puede contener un trimestre individual (ej. TRIMESTRE I) o un rango (ej. TRIMESTRE I - II), y debe mostrarse cuando una ficha sea seleccionada, programada o consultada.
+
 ---
 
 ## 5. Reglas sobre ambientes de aprendizaje

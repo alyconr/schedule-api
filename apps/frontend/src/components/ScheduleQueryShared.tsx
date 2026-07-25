@@ -7,8 +7,25 @@ import { useQuery } from "@tanstack/react-query";
 import { validationRuleLabel } from "./ValidationAlertDialog";
 import { SearchableSelect } from "./SearchableSelect";
 
+export function getGroupTrimester(group: Group): string {
+  if (group.trimester && group.trimester.trim()) {
+    return group.trimester.trim();
+  }
+  if (group.notes) {
+    const match = group.notes.match(/Trimestre:\s*([^|]+)/i);
+    if (match && match[1].trim()) {
+      return match[1].trim();
+    }
+  }
+  return "Sin trimestre";
+}
+
 export function groupLabel(group: Group): string {
-  return `${group.code}${group.name ? ` - ${group.name}` : ""}`;
+  const parts = [group.code];
+  if (group.name) parts.push(group.name);
+  if (group.jornada) parts.push(group.jornada);
+  parts.push(getGroupTrimester(group));
+  return parts.join(" - ");
 }
 
 export function instructorLabel(instructor: Instructor): string {
@@ -165,6 +182,7 @@ export function ScheduleWarningDialog({ schedule, onClose }: ScheduleWarningDial
           <span><strong>Fecha:</strong> {schedule.date}</span>
           <span><strong>Horario:</strong> {schedule.start_time} - {schedule.end_time}</span>
           <span><strong>Ficha:</strong> {schedule.group_code}</span>
+          <span><strong>Trimestre:</strong> {schedule.group_trimester || "Sin trimestre"}</span>
           <span><strong>Instructor:</strong> {schedule.instructor_name}</span>
           <span><strong>Ambiente:</strong> {schedule.environment_name}</span>
         </div>

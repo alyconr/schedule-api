@@ -341,8 +341,8 @@ const contractTypes = contractTypesQuery.data || [];
     return `${ins.first_name} ${ins.last_name} - ${vinculation} - max ${ins.weekly_max_hours} h`;
   };
   const groupLabel = (group: Group) => {
-    const trimester = noteValue(group.notes, "Trimestre");
-    return `${group.code}${group.name ? ` - ${group.name}` : ""}${group.jornada ? ` - ${group.jornada}` : ""}${trimester ? ` - ${trimester}` : ""}`;
+    const trimester = group.trimester?.trim() || noteValue(group.notes, "Trimestre") || "Sin trimestre";
+    return `${group.code}${group.name ? ` - ${group.name}` : ""}${group.jornada ? ` - ${group.jornada}` : ""} - ${trimester}`;
   };
   const environmentLabel = (env: Environment) => `${env.code} - ${env.location || env.name}`;
   const rapLabel = (rap: LearningResult) => {
@@ -1567,6 +1567,7 @@ const cancelMutation = useMutation({
             { label: "Duración", value: `${detailSchedule.duration_hours} horas` },
             { label: "Instructor", value: detail.instructor ? `${detail.instructor.first_name} ${detail.instructor.last_name}` : detailSchedule.instructor_id },
             { label: "Ficha", value: detail.group ? groupLabel(detail.group) : detailSchedule.group_id },
+            { label: "Trimestre", value: detail.group ? (detail.group.trimester?.trim() || noteValue(detail.group.notes, "Trimestre") || "Sin trimestre") : "Sin trimestre" },
             { label: "Ambiente", value: detail.environment ? environmentLabel(detail.environment) : detailSchedule.environment_id },
             { label: "RAP", value: detail.rap ? rapLabel(detail.rap) : detailSchedule.learning_result_id },
             { label: "Temática", value: detail.topicName },

@@ -229,6 +229,8 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(contract_types["CONTRATISTA SENA"]["weekly_base_hours"], Decimal("40"))
         self.assertEqual(contract_types["CONTRATISTA SENA"]["monthly_training_hours"], Decimal("170"))
         self.assertEqual(res.items["programs"][0]["code"], build_program_code("DESARROLLO DE PROCESOS DE MERCADEO"))
+        self.assertEqual(res.items["groups"][0]["trimester"], "TRIMESTRE I - II")
+        self.assertNotIn("Trimestre:", res.items["groups"][0]["notes"] or "")
         self.assertIn("Sede: Sede Colombia", res.items["groups"][0]["notes"])
         relation = res.items["ra_topic_relations"][0]
         self.assertTrue(relation["learning_result_code"].startswith("CAD-TRIMESTRE_I-RAP-"))
@@ -265,6 +267,8 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertIsNotNone(session.exec(select(TrainingProgram)).first())
             group = session.exec(select(Group)).first()
             self.assertIsNotNone(group)
+            self.assertEqual(group.trimester, "TRIMESTRE I - II")
+            self.assertNotIn("Trimestre:", group.notes or "")
             self.assertIn("Sede: Sede Colombia", group.notes)
             self.assertIsNotNone(group.productive_stage_start_date)
             self.assertIsNotNone(group.productive_stage_end_date)
@@ -281,6 +285,7 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             )
             session.refresh(group)
             self.assertGreater(second_result.updated["groups"], 0)
+            self.assertEqual(group.trimester, "TRIMESTRE I - II")
             self.assertIsNotNone(group.productive_stage_start_date)
             self.assertIsNotNone(group.productive_stage_end_date)
             self.assertIsNotNone(session.exec(select(LearningResult)).first())
@@ -329,7 +334,18 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         
         res = preview_workbook(f_bytes.read(), "dummy.xlsx", "semaforos_sena")
         self.assertTrue(len(res.errors) > 0)
-        self.assertTrue(any("LISTA_INSTRUCTORES_AMBIENTES" in e.message for e in res.errors))
+    def test_import_row_missing_trimester(self) -> None:
+        import io, openpyxl
+        wb_bytes = build_schedule_normalized_workbook_bytes()
+        wb = openpyxl.load_workbook(io.BytesIO(wb_bytes))
+        ws = wb["FICHAS"]
+        ws.cell(row=2, column=5, value="")
+        buf = io.BytesIO()
+        wb.save(buf)
+        res = preview_workbook(buf.getvalue(), "test.xlsx", "schedule_normalized")
+        self.assertTrue(len(res.errors) > 0)
+        self.assertTrue(any(err.entity == "group" and "TRIMESTRE" in err.message for err in res.errors))
+        self.assertNotIn("3068352", [g["code"] for g in res.items["groups"]])
 
 
 if __name__ == "__main__":

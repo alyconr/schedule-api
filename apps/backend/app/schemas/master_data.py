@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # --- ContractType ---
@@ -135,12 +135,23 @@ class GroupCreate(BaseModel):
     training_program_id: Optional[int] = None
     jornada: Optional[str] = Field(default=None, max_length=50)
     modality: Optional[str] = Field(default=None, max_length=50)
+    trimester: str = Field(min_length=1, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     productive_stage_start_date: Optional[date] = None
     productive_stage_end_date: Optional[date] = None
     learners_count: int = Field(default=0, ge=0)
     notes: Optional[str] = None
+
+    @field_validator("trimester")
+    @classmethod
+    def validate_trimester(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("trimester no puede estar vacío")
+        v_stripped = v.strip()
+        if len(v_stripped) > 50:
+            raise ValueError("trimester no puede tener más de 50 caracteres")
+        return v_stripped
 
 
 class GroupUpdate(BaseModel):
@@ -150,6 +161,7 @@ class GroupUpdate(BaseModel):
     training_program_id: Optional[int] = None
     jornada: Optional[str] = Field(default=None, max_length=50)
     modality: Optional[str] = Field(default=None, max_length=50)
+    trimester: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     productive_stage_start_date: Optional[date] = None
@@ -157,6 +169,19 @@ class GroupUpdate(BaseModel):
     learners_count: Optional[int] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_trimester_update(self) -> "GroupUpdate":
+        if "trimester" in self.__pydantic_fields_set__:
+            if self.trimester is None:
+                raise ValueError("trimester no puede ser null")
+            v_stripped = self.trimester.strip()
+            if not v_stripped:
+                raise ValueError("trimester no puede estar vacío")
+            if len(v_stripped) > 50:
+                raise ValueError("trimester no puede tener más de 50 caracteres")
+            self.trimester = v_stripped
+        return self
 
 
 # --- Environment ---

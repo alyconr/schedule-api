@@ -140,6 +140,7 @@ class ScheduleDetailedRead(BaseModel):
     group_id: int
     group_code: str
     group_name: str | None = None
+    group_trimester: str | None = None
     training_program_id: int | None = None
     training_program_name: str | None = None
     learning_result_id: int | None = None

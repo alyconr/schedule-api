@@ -328,6 +328,7 @@ def list_schedules_detailed(
                 group_id=group.id,
                 group_code=group.code,
                 group_name=group.name,
+                group_trimester=group.trimester,
                 training_program_id=resolved_program.id if resolved_program else None,
                 training_program_name=resolved_program.name if resolved_program else None,
                 learning_result_id=learning_result.id if learning_result else None,

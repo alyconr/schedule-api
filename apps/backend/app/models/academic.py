@@ -154,6 +154,7 @@ class Group(SQLModel, table=True):
     training_program_id: Optional[int] = Field(default=None, foreign_key="training_programs.id")
     jornada: Optional[str] = Field(default=None, max_length=50)
     modality: Optional[str] = Field(default=None, max_length=50)
+    trimester: Optional[str] = Field(default=None, max_length=50)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     productive_stage_start_date: Optional[date] = None

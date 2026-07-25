@@ -118,7 +118,7 @@ export function ScheduleMatrixPage() {
                     {daySchedules.map((schedule) => (
                       <button type="button" className={`calendar-event status-${schedule.status}`} key={schedule.id} onClick={() => setSelectedSchedule(schedule)}>
                         <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
-                        <span>{schedule.group_code} · {schedule.instructor_name}</span>
+                        <span>{schedule.group_code} · {schedule.group_trimester || "Sin trimestre"} · {schedule.instructor_name}</span>
                         <small>{schedule.environment_name}</small>
                       </button>
                     ))}
@@ -143,6 +143,7 @@ export function ScheduleMatrixPage() {
               <span><strong>Estado</strong><em className={`schedule-status status-${selectedSchedule.status}`}>{STATUS_LABELS[selectedSchedule.status] || "Borrador"}</em></span>
               <span><strong>Instructor</strong>{selectedSchedule.instructor_name}</span>
               <span><strong>Ficha</strong>{selectedSchedule.group_code}{selectedSchedule.group_name ? ` · ${selectedSchedule.group_name}` : ""}</span>
+              <span><strong>Trimestre</strong>{selectedSchedule.group_trimester || "Sin trimestre"}</span>
               <span><strong>Programa</strong>{selectedSchedule.training_program_name || "Sin programa"}</span>
               <span><strong>Ambiente</strong>{selectedSchedule.environment_name}</span>
               <span className="calendar-detail-wide"><strong>RAP</strong>{selectedSchedule.learning_result_code || "Sin RAP"}{selectedSchedule.learning_result_description ? ` · ${selectedSchedule.learning_result_description}` : ""}</span>

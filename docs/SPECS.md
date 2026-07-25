@@ -103,6 +103,7 @@ Otro tipo configurable.
 Campos mínimos:
 ID interno.
 Número de ficha.
+Trimestre académico (`trimester`: VARCHAR(50), obligatorio para nuevas fichas e importaciones; backfill automático desde `notes`).
 Programa de formación.
 Jornada.
 Modalidad.

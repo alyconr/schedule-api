@@ -155,6 +155,7 @@ const resourceConfigs: Record<string, ResourceConfig> = {
       },
       { name: "jornada", label: "Jornada", type: "text" },
       { name: "modality", label: "Modalidad", type: "text" },
+      { name: "trimester", label: "Trimestre", type: "text", required: true },
       { name: "start_date", label: "Fecha Inicio", type: "date" },
       { name: "end_date", label: "Fecha Fin", type: "date" },
       { name: "productive_stage_start_date", label: "Fecha inicio etapa productiva", type: "date" },

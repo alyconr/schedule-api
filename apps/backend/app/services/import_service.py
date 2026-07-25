@@ -688,14 +688,24 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                 items["programs"].append({"code": program_code, "name": program_name[:300], "level": level[:100] or None})
                 seen["programs"].add(program_code)
             trimester, _trimester_number = parse_trimester_label(row_cell(row, tri_idx))
+            if not trimester:
+                errors.append(
+                    ImportIssue(
+                        sheet=sheet.title,
+                        row=row_num,
+                        entity="group",
+                        severity="error",
+                        message="TRIMESTRE es obligatorio para cada ficha.",
+                        raw_value=code,
+                    )
+                )
+                continue
             jornada = str(row_cell(row, jornada_idx) or "").strip()
             if not jornada:
                 warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="group", severity="warning", message="Ficha sin jornada.", raw_value=code))
             notes = []
             if row_cell(row, area_idx):
                 notes.append(f"Coordinacion: {row_cell(row, area_idx)}")
-            if trimester:
-                notes.append(f"Trimestre: {trimester}")
             sede = str(row_cell(row, sede_idx) or "").strip()
             if sede:
                 notes.append(f"Sede: {sede}")
@@ -710,6 +720,7 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
                     "code": code[:50],
                     "name": name[:300],
                     "jornada": jornada[:50] if jornada else None,
+                    "trimester": trimester[:50],
                     "start_date": parse_excel_date(row_cell(row, start_idx)),
                     "end_date": parse_excel_date(row_cell(row, end_idx)),
                     "productive_stage_start_date": prod_start,
@@ -1447,6 +1458,7 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "code": grp["code"],
             "name": grp["name"],
             "jornada": grp["jornada"],
+            "trimester": grp.get("trimester"),
             "start_date": grp["start_date"],
             "end_date": grp["end_date"],
             "productive_stage_start_date": grp.get("productive_stage_start_date"),

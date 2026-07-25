@@ -80,6 +80,7 @@ export function ScheduleDetailPage() {
                   <th>Horario</th>
                   <th>Instructor</th>
                   <th>Ficha</th>
+                  <th>Trimestre</th>
                   <th>Programa</th>
                   <th>RAP</th>
                   <th>Temática</th>
@@ -95,6 +96,7 @@ export function ScheduleDetailPage() {
                     <td className="time-cell">{schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}</td>
                     <td className="instructor-cell">{schedule.instructor_name}</td>
                     <td><strong className="group-code">{schedule.group_code}</strong></td>
+                    <td>{schedule.group_trimester || "Sin trimestre"}</td>
                     <td>{schedule.training_program_name || "-"}</td>
                     <td>{schedule.learning_result_code || "-"}</td>
                     <td>{schedule.topic_name || "-"}</td>

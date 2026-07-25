@@ -66,6 +66,7 @@ export interface Group {
   training_program_id?: number;
   jornada?: string;
   modality?: string;
+  trimester?: string | null;
   start_date?: string;
   end_date?: string;
   productive_stage_start_date?: string;

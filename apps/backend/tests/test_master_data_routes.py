@@ -146,6 +146,61 @@ class MasterDataRoutesTest(unittest.TestCase):
 
             self.assertEqual([row.name for row in rows], ["ACTIVE"])
 
+    def test_group_schemas_validation(self) -> None:
+        from app.schemas.master_data import GroupCreate, GroupUpdate
+        from pydantic import ValidationError
+
+        # Valid GroupCreate
+        valid = GroupCreate(code="3068352", trimester="  TRIMESTRE I  ", learners_count=30)
+        self.assertEqual(valid.trimester, "TRIMESTRE I")
+
+        # Missing trimester
+        with self.assertRaises(ValidationError):
+            GroupCreate(code="3068352", learners_count=30)
+
+        # Blank/whitespace trimester
+        with self.assertRaises(ValidationError):
+            GroupCreate(code="3068352", trimester="   ", learners_count=30)
+
+        # Trimester too long (> 50 chars)
+        with self.assertRaises(ValidationError):
+            GroupCreate(code="3068352", trimester="T" * 51, learners_count=30)
+
+        # Valid GroupUpdate (omitted)
+        up_omitted = GroupUpdate(name="Nombre")
+        self.assertNotIn("trimester", up_omitted.model_dump(exclude_unset=True))
+
+        # Invalid GroupUpdate (explicit null)
+        with self.assertRaises(ValidationError):
+            GroupUpdate(trimester=None)
+
+        # Invalid GroupUpdate (whitespace)
+        with self.assertRaises(ValidationError):
+            GroupUpdate(trimester="   ")
+
+    def test_group_routes_crud(self) -> None:
+        from app.api.routes.groups import create_group, get_group, list_groups, update_group
+        from app.schemas.master_data import GroupCreate, GroupUpdate
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            payload = GroupCreate(code="3068352", name="Ficha Test", trimester="TRIMESTRE I", learners_count=25)
+            created = create_group(payload, session)
+            self.assertEqual(created.trimester, "TRIMESTRE I")
+
+            fetched = get_group(created.id, session)
+            self.assertEqual(fetched.trimester, "TRIMESTRE I")
+
+            # Partial update omitting trimester
+            updated1 = update_group(created.id, GroupUpdate(name="Nuevo Nombre"), session)
+            self.assertEqual(updated1.name, "Nuevo Nombre")
+            self.assertEqual(updated1.trimester, "TRIMESTRE I")
+
+            # Update trimester
+            updated2 = update_group(created.id, GroupUpdate(trimester="TRIMESTRE II"), session)
+            self.assertEqual(updated2.trimester, "TRIMESTRE II")
+
 
 if __name__ == "__main__":
     unittest.main()

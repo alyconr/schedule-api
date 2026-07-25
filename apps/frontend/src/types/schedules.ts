@@ -91,6 +91,7 @@ export type ScheduleDetailed = {
   group_id: number;
   group_code: string;
   group_name?: string | null;
+  group_trimester?: string | null;
   training_program_id?: number | null;
   training_program_name?: string | null;
   learning_result_id?: number | null;

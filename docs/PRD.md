@@ -136,6 +136,7 @@ Cada tipo de vinculación puede tener reglas de carga horaria diferentes.
 Datos mínimos:
 
 - Número de ficha.
+- Trimestre académico.
 - Programa de formación.
 - Jornada.
 - Número de aprendices.
@@ -350,7 +351,7 @@ El sistema debe permitir crear, editar, consultar, activar e inactivar instructo
 
 ### RF-02. Gestión de fichas
 
-El sistema debe permitir crear, editar, consultar, activar e inactivar fichas de formación.
+El sistema debe permitir crear, editar, consultar, importar, visualizar el trimestre, activar e inactivar fichas de formación.
 
 ### RF-03. Gestión de programas
 

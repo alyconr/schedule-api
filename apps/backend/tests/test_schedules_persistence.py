@@ -116,7 +116,7 @@ def _seed_topic_fixtures(session: Session) -> dict[str, int]:
     session.refresh(instructor)
     session.refresh(environment)
 
-    group = Group(code="G1", training_program_id=program.id, learners_count=10)
+    group = Group(code="G1", training_program_id=program.id, learners_count=10, trimester="TRIMESTRE III")
     competency = Competency(code="C1", name="Competencia", training_program_id=program.id)
     session.add(group)
     session.add(competency)
@@ -342,6 +342,7 @@ class ScheduleListingTest(unittest.TestCase):
         with_topic_row = by_date[date(2026, 7, 7)]
         self.assertEqual(with_topic_row.instructor_name, "Ana Perez")
         self.assertEqual(with_topic_row.group_code, "G1")
+        self.assertEqual(with_topic_row.group_trimester, "TRIMESTRE III")
         self.assertEqual(with_topic_row.training_program_name, "Programa uno")
         self.assertEqual(with_topic_row.learning_result_code, "RA1")
         self.assertEqual(with_topic_row.topic_name, "Tematica uno")

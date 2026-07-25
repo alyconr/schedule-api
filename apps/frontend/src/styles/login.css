@@ -1,21 +1,27 @@
 /* ==========================================================================
-   LOGIN PAGE — PIXEL GRID & INSTITUTIONAL LAYOUT
+   LOGIN PAGE — ROUTE MAP & INSTITUTIONAL LAYOUT
    ========================================================================== */
 
 .login-page {
-  min-height: 100dvh;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(480px, 46%) minmax(0, 54%);
+  grid-template-columns: minmax(540px, 51%) minmax(0, 49%);
   background: var(--color-bg);
 }
 
 /* PANEL IZQUIERDO: FORMULARIO */
 .login-form-panel {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  padding: clamp(2rem, 5vw, 5rem);
+  height: 100dvh;
+  padding: clamp(1.5rem, 4vw, 4rem);
   background:
     radial-gradient(
       circle at top left,
@@ -31,11 +37,13 @@
 
 /* BOTÓN DE RETORNO AL INICIO */
 .btn-back-landing {
+  position: absolute;
+  top: clamp(1.25rem, 3.6vh, 2.5rem);
+  left: clamp(1.5rem, 5.5vw, 7rem);
   min-height: 48px;
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  margin-bottom: 1.5rem;
   padding: 0.75rem 1.25rem;
   border: 1px solid rgba(35, 130, 71, 0.24);
   border-radius: var(--radius-md);
@@ -61,7 +69,7 @@
 
 .login-card {
   width: 100%;
-  padding: clamp(2rem, 3.5vw, 3.25rem);
+  padding: clamp(2.25rem, 3.3vw, 3.2rem);
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(203, 213, 225, 0.85);
   border-radius: var(--radius-lg);
@@ -73,17 +81,17 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.65rem;
 }
 
 .login-brand-header img {
-  width: 48px;
-  height: 48px;
+  width: 54px;
+  height: 54px;
   object-fit: contain;
 }
 
 .login-brand-titles h1 {
-  font-size: 1.45rem;
+  font-size: clamp(1.5rem, 1.7vw, 1.75rem);
   font-weight: 800;
   color: var(--color-dark-green);
   margin: 0;
@@ -91,23 +99,23 @@
 }
 
 .login-brand-titles p {
-  font-size: 0.9rem;
+  font-size: 0.98rem;
   color: #64748b;
   margin: 0;
   font-weight: 600;
 }
 
 .login-subtitle {
-  font-size: 0.98rem;
+  font-size: 1rem;
   color: #475569;
   line-height: 1.5;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.6rem;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.15rem;
 }
 
 .login-field {
@@ -124,7 +132,7 @@
 
 .login-field input {
   width: 100%;
-  padding: 0.85rem 1.1rem;
+  padding: 0.85rem 1.05rem;
   font-size: 1rem;
   min-height: 52px;
   border: 1px solid #cbd5e1;
@@ -143,7 +151,7 @@
 .login-submit {
   margin-top: 0.5rem;
   min-height: 54px;
-  padding: 0.95rem 1.5rem;
+  padding: 0.95rem 1.4rem;
   font-size: 1.05rem;
   font-weight: 700;
   background-color: var(--color-primary);
@@ -159,24 +167,111 @@
   box-shadow: 0 6px 16px rgba(35, 130, 71, 0.25);
 }
 
-/* PANEL DERECHO: PIXEL GRID Y OVERLAY INSTITUCIONAL */
+/* PANEL DERECHO: MAPA DE RUTAS Y OVERLAY INSTITUCIONAL */
 .login-effect-panel {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  min-height: 100dvh;
-  padding: clamp(2rem, 6vw, 6rem);
+  height: 100dvh;
+  padding: clamp(2rem, 5.5vw, 5.5rem);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   color: #ffffff;
-  background: #102319;
+  background:
+    radial-gradient(circle at 20% 85%, rgba(72, 187, 120, 0.55), transparent 32rem),
+    radial-gradient(circle at 82% 12%, rgba(67, 56, 202, 0.5), transparent 34rem),
+    linear-gradient(135deg, #102319 0%, #244c43 43%, #566da8 100%);
 }
 
-.login-pixel-grid {
+.login-route-map {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.login-route-map::before,
+.login-route-map::after {
+  content: "";
+  position: absolute;
+  inset: -16%;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at 44% 58%, #000 0%, transparent 68%);
+  opacity: 0.42;
+  transform: rotate(-8deg);
+}
+
+.login-route-map::after {
+  background-size: 192px 192px;
+  opacity: 0.22;
+  animation: route-drift 18s linear infinite;
+}
+
+.route-line {
+  position: absolute;
+  left: 8%;
+  right: 6%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
+  box-shadow: 0 0 28px rgba(110, 231, 183, 0.32);
+  transform-origin: left center;
+}
+
+.line-a {
+  top: 26%;
+  transform: rotate(18deg);
+  animation: route-pulse 5.5s ease-in-out infinite;
+}
+
+.line-b {
+  top: 53%;
+  transform: rotate(-11deg);
+  animation: route-pulse 6.5s ease-in-out 1s infinite;
+}
+
+.line-c {
+  top: 74%;
+  transform: rotate(8deg);
+  animation: route-pulse 7s ease-in-out 0.4s infinite;
+}
+
+.route-node {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 10px rgba(52, 211, 153, 0.14), 0 0 30px rgba(52, 211, 153, 0.5);
+  animation: node-float 4.8s ease-in-out infinite;
+}
+
+.node-a {
+  top: 24%;
+  left: 18%;
+}
+
+.node-b {
+  top: 41%;
+  right: 20%;
+  animation-delay: 0.7s;
+}
+
+.node-c {
+  left: 34%;
+  bottom: 20%;
+  animation-delay: 1.2s;
+}
+
+.node-d {
+  right: 12%;
+  bottom: 32%;
+  animation-delay: 1.8s;
 }
 
 .login-effect-overlay {
@@ -186,16 +281,16 @@
   pointer-events: none;
   background: linear-gradient(
     135deg,
-    rgba(16, 35, 25, 0.76) 0%,
-    rgba(23, 98, 53, 0.42) 50%,
-    rgba(35, 130, 71, 0.25) 100%
+    rgba(16, 35, 25, 0.78) 0%,
+    rgba(23, 98, 53, 0.34) 48%,
+    rgba(50, 64, 142, 0.32) 100%
   );
 }
 
 .login-effect-content {
   position: relative;
   z-index: 1;
-  max-width: 520px;
+  max-width: 560px;
 }
 
 .login-effect-logo {
@@ -255,63 +350,110 @@
   color: #ffffff;
 }
 
-/* FALLBACK VISUAL SI EL CDN DE AIFX NO ESTÁ DISPONIBLE */
-.login-effect-panel.effect-unavailable {
-  background:
-    radial-gradient(
-      circle at 75% 25%,
-      rgba(16, 185, 129, 0.34),
-      transparent 28%
-    ),
-    linear-gradient(
-      145deg,
-      #102319 0%,
-      #176235 52%,
-      #238247 100%
-    );
+@keyframes route-drift {
+  from {
+    transform: translate3d(0, 0, 0) rotate(-8deg);
+  }
+
+  to {
+    transform: translate3d(96px, 96px, 0) rotate(-8deg);
+  }
+}
+
+@keyframes route-pulse {
+  0%,
+  100% {
+    opacity: 0.24;
+  }
+
+  50% {
+    opacity: 0.78;
+  }
+}
+
+@keyframes node-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-10px) scale(1.12);
+  }
 }
 
 /* RESPONSIVE DESIGN */
 @media (max-width: 1024px) {
   .login-page {
-    grid-template-columns: minmax(340px, 48%) minmax(0, 52%);
+    grid-template-columns: minmax(440px, 54%) minmax(0, 46%);
   }
 
   .login-effect-panel {
     padding: 2.5rem;
   }
+
+  .btn-back-landing {
+    left: clamp(1.25rem, 4vw, 3rem);
+  }
 }
 
 @media (max-width: 767px) {
   .login-page {
-    display: flex;
-    flex-direction: column;
-    min-height: 100dvh;
+    display: block;
   }
 
   .login-form-panel {
-    order: 1;
-    min-height: 100dvh;
+    height: 100dvh;
     padding: 1.5rem 1rem;
   }
 
   .login-effect-panel {
-    order: 2;
-    min-height: 300px;
-    padding: 2.5rem 1.5rem;
+    display: none;
+  }
+
+  .btn-back-landing {
+    top: 1rem;
+    left: 1rem;
+  }
+
+  .login-form-content {
+    width: min(100%, 520px);
+  }
+
+  .login-card {
+    padding: clamp(1.75rem, 7vw, 2.35rem);
   }
 }
 
 @media (max-width: 420px), (max-height: 620px) {
-  .login-effect-panel {
-    display: none;
+  .login-card {
+    padding: 1.5rem;
+  }
+
+  .login-brand-header {
+    margin-bottom: 1.25rem;
+  }
+
+  .login-subtitle {
+    margin-bottom: 1.25rem;
+  }
+
+  .login-field input,
+  .login-submit {
+    min-height: 48px;
   }
 }
 
 /* PREFERS REDUCED MOTION */
 @media (prefers-reduced-motion: reduce) {
-  .login-pixel-grid {
+  .login-route-map {
     display: none;
+  }
+
+  .route-line,
+  .route-node,
+  .login-route-map::after {
+    animation: none;
   }
 
   .login-effect-panel {

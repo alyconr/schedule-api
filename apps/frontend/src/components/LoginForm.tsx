@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { login } from "../api/auth";
-import { loadAiFxRuntime } from "../utils/loadAiFxRuntime";
 
 const loginSchema = z.object({
   email: z.string().email("Debe ser un correo electrónico válido").min(1, "El correo es requerido"),
@@ -20,31 +19,6 @@ interface LoginFormProps {
 export function LoginForm({ onLoginSuccess, onBackToLanding }: LoginFormProps) {
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [effectAvailable, setEffectAvailable] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-
-    loadAiFxRuntime()
-      .then(() => {
-        if (active && typeof window !== "undefined" && (window as any).AIFX) {
-          try {
-            (window as any).AIFX.rescan();
-          } catch (e) {
-            console.warn("[aifx] rescan error:", e);
-          }
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setEffectAvailable(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const {
     register,
@@ -143,17 +117,17 @@ export function LoginForm({ onLoginSuccess, onBackToLanding }: LoginFormProps) {
         </div>
       </section>
 
-      {/* Panel Derecho: Pixel Grid animado y Contenido Institucional */}
-      <aside
-        className={`login-effect-panel ${
-          effectAvailable ? "" : "effect-unavailable"
-        }`}
-      >
-        <div
-          data-aifx="blocky"
-          className="login-pixel-grid"
-          aria-hidden="true"
-        />
+      {/* Panel Derecho: Animacion institucional y Contenido */}
+      <aside className="login-effect-panel">
+        <div className="login-route-map" aria-hidden="true">
+          <span className="route-line line-a" />
+          <span className="route-line line-b" />
+          <span className="route-line line-c" />
+          <span className="route-node node-a" />
+          <span className="route-node node-b" />
+          <span className="route-node node-c" />
+          <span className="route-node node-d" />
+        </div>
 
         <div className="login-effect-overlay" aria-hidden="true" />
 

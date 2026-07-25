@@ -13,9 +13,10 @@ type LoginSchemaType = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
   onLoginSuccess: (token: string) => void;
+  onBackToLanding?: () => void;
 }
 
-export function LoginForm({ onLoginSuccess }: LoginFormProps) {
+export function LoginForm({ onLoginSuccess, onBackToLanding }: LoginFormProps) {
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -44,6 +45,18 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
     <div className="login-container">
       <div className="login-bg-shapes" aria-hidden="true" />
       <div className="login-card">
+        {onBackToLanding && (
+          <div className="login-header-nav">
+            <button
+              type="button"
+              className="btn-back-landing"
+              onClick={onBackToLanding}
+            >
+              ← Volver al inicio
+            </button>
+          </div>
+        )}
+
         <div className="login-header">
           <img className="sena-login-logo" src="/logo-sena.svg" alt="SENA" />
           <p className="login-eyebrow">CGMLTI Bogotá</p>

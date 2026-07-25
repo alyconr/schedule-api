@@ -12,16 +12,47 @@ export function AnimatedSchedulePreview() {
       return;
     }
 
-    const timer = setInterval(() => {
-      setStage((prev) => (prev + 1) % 4);
-    }, 2800);
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    return () => clearInterval(timer);
+    const startTimer = () => {
+      if (!timer) {
+        timer = setInterval(() => {
+          setStage((prev) => (prev + 1) % 4);
+        }, 2800);
+      }
+    };
+
+    const stopTimer = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        stopTimer();
+      } else {
+        startTimer();
+      }
+    };
+
+    startTimer();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      stopTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return (
-    <div className="hero-preview-wrapper" aria-label="Simulación visual de programación académica CGMLTI">
-      <div className="hero-preview-card">
+    <div
+      className="hero-preview-wrapper"
+      aria-label="Simulación visual decorativa de programación académica en cuatro etapas"
+      role="img"
+    >
+      <div className="hero-preview-card" aria-hidden="true">
         {/* Cabecera del Mockup */}
         <div className="preview-topbar">
           <div className="preview-dots">
@@ -31,7 +62,7 @@ export function AnimatedSchedulePreview() {
           </div>
           <span className="preview-title">Planeación Semanal CGMLTI — Vista de Asignación</span>
           <span className="preview-badge-live">
-            <span className="pulse-dot" /> En tiempo real
+            <span className="pulse-dot" /> Simulación de programación
           </span>
         </div>
 
@@ -100,7 +131,7 @@ export function AnimatedSchedulePreview() {
                     </div>
                     <div className="block-body-text">Instructor: Laura Gómez</div>
                     <div className="block-alert-badge">
-                      ⚠️ Alerta: Conflicto de franja horaria
+                      Alerta: Conflicto de franja horaria
                     </div>
                   </div>
                 )}

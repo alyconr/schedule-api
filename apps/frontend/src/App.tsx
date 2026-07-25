@@ -211,19 +211,43 @@ const resourceConfigs: Record<string, ResourceConfig> = {
         ],
       },
       { name: "start_time", label: "Hora de Inicio", type: "text", required: true },
-      { name: "end_time", label: "Hora de Fin", type: "text", required: true },
-      { name: "duration_minutes", label: "Duración (Minutos)", type: "number", required: true },
       { name: "jornada", label: "Jornada", type: "text" },
     ],
   },
 };
+
+type PublicView = "landing" | "login";
 
 function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("schedules");
   const [isTabPending, startTabTransition] = useTransition();
-  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  const [publicView, setPublicView] = useState<PublicView>(() => {
+    return window.location.pathname === "/login" ? "login" : "landing";
+  });
+
+  const navigatePublicView = (view: PublicView) => {
+    setPublicView(view);
+    const targetPath = view === "login" ? "/login" : "/";
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ publicView: view }, "", targetPath);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.publicView) {
+        setPublicView(event.state.publicView);
+      } else {
+        setPublicView(window.location.pathname === "/login" ? "login" : "landing");
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const handleTabChange = (tab: string) => {
     startTabTransition(() => {
@@ -280,16 +304,16 @@ function AppContent() {
     localStorage.setItem("schedule_api_token", token);
     setLoadingUser(true);
     checkUserSession();
-    setShowLoginModal(false);
+    navigatePublicView("landing");
   };
 
   const handleLogout = () => {
     localStorage.removeItem("schedule_api_token");
     setCurrentUser(null);
-    setShowLoginModal(false);
+    navigatePublicView("landing");
   };
 
-const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
+  const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setValidationError("");
     setValidating(true);
@@ -344,24 +368,15 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
   }
 
   if (!currentUser) {
-    if (showLoginModal) {
+    if (publicView === "login") {
       return (
-        <div style={{ position: "relative" }}>
-          <div style={{ padding: "1rem 1.5rem", background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <button
-              type="button"
-              className="landing-btn-secondary"
-              onClick={() => setShowLoginModal(false)}
-              style={{ fontSize: "0.88rem", padding: "0.4rem 1rem", minHeight: "36px" }}
-            >
-              ← Volver a la página principal
-            </button>
-          </div>
-          <LoginForm onLoginSuccess={handleLoginSuccess} />
-        </div>
+        <LoginForm
+          onLoginSuccess={handleLoginSuccess}
+          onBackToLanding={() => navigatePublicView("landing")}
+        />
       );
     }
-    return <LandingPage onOpenLogin={() => setShowLoginModal(true)} />;
+    return <LandingPage onOpenLogin={() => navigatePublicView("login")} />;
   }
 
   const statusLabel =

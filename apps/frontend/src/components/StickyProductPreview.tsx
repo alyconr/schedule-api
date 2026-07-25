@@ -26,7 +26,10 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
 
               <div className="entity-cards-grid">
                 <div className="entity-card-item">
-                  <div className="entity-icon">👨‍🏫</div>
+                  <svg className="entity-icon-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
                   <div className="entity-info">
                     <strong>Instructores</strong>
                     <span>Planta y Contratistas</span>
@@ -34,15 +37,24 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
                 </div>
 
                 <div className="entity-card-item highlighted">
-                  <div className="entity-icon">👥</div>
+                  <svg className="entity-icon-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
                   <div className="entity-info">
-                    <strong>Fichas Academicas</strong>
+                    <strong>Fichas académicas</strong>
                     <span className="badge-trimestre">Trimestre 3</span>
                   </div>
                 </div>
 
                 <div className="entity-card-item">
-                  <div className="entity-icon">🎯</div>
+                  <svg className="entity-icon-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="6" />
+                    <circle cx="12" cy="12" r="2" />
+                  </svg>
                   <div className="entity-info">
                     <strong>Competencias & RAP</strong>
                     <span>Resultados de Aprendizaje</span>
@@ -50,7 +62,12 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
                 </div>
 
                 <div className="entity-card-item">
-                  <div className="entity-icon">🏛️</div>
+                  <svg className="entity-icon-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M9 3v18" />
+                    <path d="M14 9h3" />
+                    <path d="M14 15h3" />
+                  </svg>
                   <div className="entity-info">
                     <strong>Ambientes</strong>
                     <span>Físicos, Virtuales y Externos</span>
@@ -106,7 +123,9 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
 
               <div className="validation-list-mock">
                 <div className="val-item val-valid">
-                  <span className="val-icon">✓</span>
+                  <svg className="val-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.5" aria-hidden="true" focusable="false">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
                   <div className="val-details">
                     <strong>Disponibilidad de Instructor</strong>
                     <span>Laura Gómez no presenta solapamientos en la franja.</span>
@@ -115,7 +134,11 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
                 </div>
 
                 <div className="val-item val-warning">
-                  <span className="val-icon">⚠️</span>
+                  <svg className="val-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.5" aria-hidden="true" focusable="false">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
                   <div className="val-details">
                     <strong>Capacidad de Ambiente</strong>
                     <span>Ficha 2998451 (32 aprendices) vs Ambiente 401 (Capacidad 30).</span>
@@ -124,7 +147,10 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
                 </div>
 
                 <div className="val-item val-blocked">
-                  <span className="val-icon">🚫</span>
+                  <svg className="val-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2.5" aria-hidden="true" focusable="false">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
                   <div className="val-details">
                     <strong>Cruce de Ficha en otro Ambiente</strong>
                     <span>La Ficha 2998451 (Trimestre 3) ya tiene sesión asignada en Amb. 102.</span>
@@ -181,3 +207,4 @@ export function StickyProductPreview({ activeStep }: StickyProductPreviewProps) 
     </div>
   );
 }
+

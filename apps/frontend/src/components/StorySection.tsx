@@ -11,10 +11,10 @@ export function StorySection() {
   ];
 
   useEffect(() => {
-    const observerOptions = {
+    const observerOptions: IntersectionObserverInit = {
       root: null,
-      rootMargin: "-25% 0px -45% 0px",
-      threshold: 0.3,
+      rootMargin: "-35% 0px -45% 0px",
+      threshold: 0,
     };
 
     const handleIntersect: IntersectionObserverCallback = (entries) => {

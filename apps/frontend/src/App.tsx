@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getMe } from "./api/auth";
 import { apiRequest } from "./api/client";
 import { LoginForm } from "./components/LoginForm";
+import { LandingPage } from "./components/LandingPage";
 import { AppLayout } from "./components/AppLayout";
 import { ToastProvider } from "./components/ToastProvider";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
@@ -220,11 +221,14 @@ const resourceConfigs: Record<string, ResourceConfig> = {
 function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
-  const [activeTab, setActiveTab] = useState("schedules");
+  const [activeTab, setActiveTab] = useState<string>("schedules");
   const [isTabPending, startTabTransition] = useTransition();
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   const handleTabChange = (tab: string) => {
-    startTabTransition(() => setActiveTab(tab));
+    startTabTransition(() => {
+      setActiveTab(tab);
+    });
   };
 
   useEffect(() => {
@@ -262,7 +266,6 @@ function AppContent() {
   useEffect(() => {
     checkUserSession();
 
-    // Listen to unauthorized event
     const handleUnauthorized = () => {
       setCurrentUser(null);
     };
@@ -277,11 +280,13 @@ function AppContent() {
     localStorage.setItem("schedule_api_token", token);
     setLoadingUser(true);
     checkUserSession();
+    setShowLoginModal(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("schedule_api_token");
     setCurrentUser(null);
+    setShowLoginModal(false);
   };
 
 const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
@@ -339,7 +344,24 @@ const validateSchedule = async (event: FormEvent<HTMLFormElement>) => {
   }
 
   if (!currentUser) {
-    return <LoginForm onLoginSuccess={handleLoginSuccess} />;
+    if (showLoginModal) {
+      return (
+        <div style={{ position: "relative" }}>
+          <div style={{ padding: "1rem 1.5rem", background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button
+              type="button"
+              className="landing-btn-secondary"
+              onClick={() => setShowLoginModal(false)}
+              style={{ fontSize: "0.88rem", padding: "0.4rem 1rem", minHeight: "36px" }}
+            >
+              ← Volver a la página principal
+            </button>
+          </div>
+          <LoginForm onLoginSuccess={handleLoginSuccess} />
+        </div>
+      );
+    }
+    return <LandingPage onOpenLogin={() => setShowLoginModal(true)} />;
   }
 
   const statusLabel =

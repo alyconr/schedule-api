@@ -9,8 +9,21 @@ export function loadAiFxRuntime(): Promise<void> {
     return Promise.reject(new Error("Movimiento reducido activado"));
   }
 
+  if (typeof window !== "undefined" && (window as any).AIFX) {
+    try {
+      (window as any).AIFX.rescan();
+    } catch (e) {
+      console.warn("[aifx] rescan error:", e);
+    }
+    return Promise.resolve();
+  }
+
   if (runtimePromise) {
-    return runtimePromise;
+    return runtimePromise.then(() => {
+      if (typeof window !== "undefined" && (window as any).AIFX) {
+        (window as any).AIFX.rescan();
+      }
+    });
   }
 
   runtimePromise = new Promise((resolve, reject) => {
@@ -18,11 +31,24 @@ export function loadAiFxRuntime(): Promise<void> {
 
     if (existingScript) {
       if (existingScript.dataset.loaded === "true") {
+        if ((window as any).AIFX) {
+          (window as any).AIFX.rescan();
+        }
         resolve();
         return;
       }
 
-      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener(
+        "load",
+        () => {
+          if ((window as any).AIFX) {
+            (window as any).AIFX.rescan();
+          }
+          resolve();
+        },
+        { once: true }
+      );
+
       existingScript.addEventListener(
         "error",
         () => reject(new Error("No fue posible cargar AIFX")),
@@ -41,6 +67,9 @@ export function loadAiFxRuntime(): Promise<void> {
       "load",
       () => {
         script.dataset.loaded = "true";
+        if ((window as any).AIFX) {
+          (window as any).AIFX.rescan();
+        }
         resolve();
       },
       { once: true }
@@ -60,3 +89,4 @@ export function loadAiFxRuntime(): Promise<void> {
 
   return runtimePromise;
 }
+

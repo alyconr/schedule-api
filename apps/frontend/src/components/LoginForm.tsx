@@ -25,11 +25,21 @@ export function LoginForm({ onLoginSuccess, onBackToLanding }: LoginFormProps) {
   useEffect(() => {
     let active = true;
 
-    loadAiFxRuntime().catch(() => {
-      if (active) {
-        setEffectAvailable(false);
-      }
-    });
+    loadAiFxRuntime()
+      .then(() => {
+        if (active && typeof window !== "undefined" && (window as any).AIFX) {
+          try {
+            (window as any).AIFX.rescan();
+          } catch (e) {
+            console.warn("[aifx] rescan error:", e);
+          }
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setEffectAvailable(false);
+        }
+      });
 
     return () => {
       active = false;

@@ -1,0 +1,70 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/backend/requirements*.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r apps/backend/requirements-dev.txt
+
+      - name: Run backend tests
+        env:
+          PYTHONPATH: apps/backend
+        run: python -m unittest discover apps/backend/tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/frontend
+
+      - name: Build frontend
+        run: npm run build --prefix apps/frontend
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Build application images
+        run: docker compose build schedule-backend frontend
+
+  deploy:
+    name: Deploy to Dokploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger Dokploy deployment
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+        run: |
+          test -n "$DOKPLOY_WEBHOOK_URL" || { echo "::error::Missing DOKPLOY_WEBHOOK_URL secret"; exit 1; }
+          curl --fail --show-error --silent --retry 3 --max-time 30 --request POST "$DOKPLOY_WEBHOOK_URL"

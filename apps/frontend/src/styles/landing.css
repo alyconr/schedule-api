@@ -7,10 +7,14 @@
   --shadow-subtle: 0 8px 24px rgba(16, 35, 25, 0.08);
   --shadow-floating: 0 24px 60px rgba(16, 35, 25, 0.16);
   --radius-card: 24px;
+  --landing-header-height: 76px;
+  --sticky-top-gap: 24px;
 }
 
-html {
+html,
+body {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 .landing-page-root {
@@ -21,7 +25,7 @@ html {
   color: var(--color-text);
   font-family: var(--font-family);
   line-height: 1.5;
-  overflow-x: hidden;
+  overflow: visible;
 }
 
 /* --- LANDING HEADER --- */
@@ -750,13 +754,14 @@ html {
 
 .story-body-grid {
   display: grid;
-  grid-template-columns: 1fr 1.1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(480px, 1.1fr);
   gap: 4rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .story-steps-column {
   position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -781,17 +786,23 @@ html {
 }
 
 .story-step-card {
-  min-height: 65vh;
+  min-height: min(72vh, 680px);
   display: flex;
   flex-direction: column;
   justify-content: center;
   opacity: 0.45;
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
 .story-step-card.is-active {
   opacity: 1;
   transform: translateX(4px);
+}
+
+@media (max-height: 760px) and (min-width: 900px) {
+  .story-step-card {
+    min-height: 620px;
+  }
 }
 
 .step-badge-number {
@@ -841,21 +852,23 @@ html {
 .story-sticky-column {
   position: relative;
   align-self: stretch;
+  min-width: 0;
+  height: 100%;
 }
 
 /* STICKY PRODUCT PREVIEW CONTAINER (DESKTOP) */
 .sticky-preview-container {
   position: sticky;
-  top: 104px;
+  top: calc(var(--landing-header-height) + var(--sticky-top-gap));
   width: 100%;
-  max-height: calc(100vh - 128px);
-  display: flex;
-  align-items: center;
+  height: max-content;
+  align-self: start;
+  z-index: 2;
 }
 
 .sticky-preview-card {
   width: 100%;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - 124px);
   background: #ffffff;
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
@@ -1462,9 +1475,25 @@ html {
    RESPONSIVE DESIGN BREAKPOINTS
    ========================================================================== */
 
-@media (max-width: 900px) {
+@media (min-width: 900px) {
   .story-body-grid {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(480px, 1.1fr);
+    align-items: stretch;
+  }
+
+  .story-sticky-column {
+    display: block;
+  }
+
+  .mobile-step-visual {
+    display: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .story-body-grid {
+    display: block;
   }
 
   .story-sticky-column {
@@ -1477,6 +1506,9 @@ html {
 
   .story-step-card {
     min-height: auto;
+    margin-bottom: 4rem;
+    opacity: 1;
+    transform: none;
   }
 
   .audience-cards-grid {

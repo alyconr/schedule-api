@@ -123,8 +123,9 @@ function contractCategory(contractType?: ContractType): "planta" | "contratista"
   return "otro";
 }
 
-function formatHours(value: number): string {
-  return Number(value.toFixed(1)).toString();
+function formatHours(value: number | string | null | undefined): string {
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(1)).toString() : "0";
 }
 
 function weekStartDate(value: string): string {
@@ -457,7 +458,7 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
       const totalHours = Number(load.totalHours.toFixed(1));
-      const contractorTarget = instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40;
+      const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
       let ruleCode = "";
       let message = "";
 

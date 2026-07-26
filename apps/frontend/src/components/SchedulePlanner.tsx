@@ -38,6 +38,12 @@ interface SchedulePlannerProps {
 }
 
 type SummaryDetail = "warnings" | "instructors" | "groups" | "environments";
+type CurrentHourWarning = {
+  schedule: Schedule;
+  validations: ValidationResult[];
+  primary: string;
+  secondary: string;
+};
 
 function calculateDurationHours(startTime: string, endTime: string): number {
   if (!startTime || !endTime) return 0;
@@ -107,6 +113,18 @@ function normalizeSearchText(value: string): string {
 
 function latestValidationResults(items: ValidationResult[]): ValidationResult[] {
   return [...new Map(items.map((item) => [item.rule_code, item])).values()];
+}
+
+function contractCategory(contractType?: ContractType): "planta" | "contratista" | "otro" {
+  if (contractType?.category) return contractType.category;
+  const name = normalizeSearchText(contractType?.name || "");
+  if (name.includes("contratista")) return "contratista";
+  if (name.includes("planta") || name.includes("carrera administrativa") || name.includes("nombramiento")) return "planta";
+  return "otro";
+}
+
+function formatHours(value: number): string {
+  return Number(value.toFixed(1)).toString();
 }
 
 function normalizeRapDescription(value: string): string {
@@ -393,26 +411,76 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
     () => schedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
     [schedules]
   );
-  const latestWarningsByInstructor = useMemo(() => {
-    const latest = new Map<number, Schedule>();
-    activeSchedules
-      .filter((schedule) => schedule.status === "warning")
+  const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
+    const byInstructor = new Map<number, { totalHours: number; latestSchedule: Schedule }>();
+    [...activeSchedules]
       .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
       .forEach((schedule) => {
-        if (!latest.has(schedule.instructor_id)) latest.set(schedule.instructor_id, schedule);
+        const current = byInstructor.get(schedule.instructor_id);
+        if (current) {
+          current.totalHours += Number(schedule.duration_hours || 0);
+        } else {
+          byInstructor.set(schedule.instructor_id, {
+            totalHours: Number(schedule.duration_hours || 0),
+            latestSchedule: schedule,
+          });
+        }
       });
-    return [...latest.values()];
-  }, [activeSchedules]);
+
+    return [...byInstructor.entries()].flatMap(([instructorId, load]) => {
+      const instructor = instructorsById.get(instructorId);
+      const category = contractCategory(contractTypesById.get(instructor?.contract_type_id ?? -1));
+      const totalHours = Number(load.totalHours.toFixed(1));
+      let ruleCode = "";
+      let message = "";
+
+      if (category === "planta") {
+        if (totalHours < 30) {
+          ruleCode = "PLANT_INSTRUCTOR_MISSING_HOURS";
+          message = `El instructor de planta tiene ${formatHours(30 - totalHours)} horas pendientes para completar 30.`;
+        } else if (totalHours > 30) {
+          ruleCode = totalHours > 32 ? "PLANT_INSTRUCTOR_MAX_HOURS" : "PLANT_INSTRUCTOR_EXTRA_HOURS";
+          message = totalHours > 32
+            ? "El instructor de planta supera las 32 horas semanales permitidas."
+            : "El instructor de planta supera 30 horas; las horas adicionales deben quedar identificadas.";
+        }
+      } else if (category === "contratista") {
+        if (totalHours < 40) {
+          ruleCode = "CONTRACTOR_MISSING_HOURS";
+          message = `El contratista tiene ${formatHours(40 - totalHours)} horas pendientes para completar 40.`;
+        } else if (totalHours > 40) {
+          ruleCode = "CONTRACTOR_OVER_40_HOURS";
+          message = "El contratista supera 40 horas semanales; requiere revision de coordinacion.";
+        }
+      }
+
+      if (!ruleCode) return [];
+      const schedule = load.latestSchedule;
+      return [{
+        schedule,
+        validations: [{
+          id: -schedule.id,
+          schedule_id: schedule.id,
+          rule_code: ruleCode,
+          severity: "WARNING",
+          message,
+          is_blocking: false,
+        }],
+        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - ${formatHours(totalHours)} h programadas`,
+        secondary: message,
+      }];
+    });
+  }, [activeSchedules, contractTypesById, instructorsById]);
   const plannerStats = useMemo(() => ({
-    warnings: latestWarningsByInstructor.length,
+    warnings: currentHourWarnings.length,
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
     groups: new Set(activeSchedules.map((s) => s.group_id)).size,
     environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
-  }), [activeSchedules, latestWarningsByInstructor]);
+  }), [activeSchedules, currentHourWarnings]);
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
   queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
-  enabled: Boolean(warningSchedule?.id),
+  enabled: Boolean(warningSchedule?.id && !currentHourWarnings.some((item) => item.schedule.id === warningSchedule.id)),
   staleTime: 60 * 1000,
   refetchOnWindowFocus: false,
 });
@@ -457,15 +525,11 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   const summaryItems = useMemo(() => {
     if (!summaryDetail) return [];
     if (summaryDetail === "warnings") {
-      return latestWarningsByInstructor
-        .map((schedule) => {
-          const detail = getScheduleDisplayData(schedule);
-          return {
-            id: schedule.id,
-            primary: `${weekdayName(schedule)} · ${detail.group?.code || `Ficha ${schedule.group_id}`} · ${detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}`,
-            secondary: `${schedule.start_time.slice(0, 5)}–${schedule.end_time.slice(0, 5)} · ${detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}`,
-          };
-        });
+      return currentHourWarnings.map((warning) => ({
+        id: warning.schedule.id,
+        primary: warning.primary,
+        secondary: warning.secondary,
+      }));
     }
     if (summaryDetail === "instructors" || summaryDetail === "groups") return [];
     const ids = [...new Set(activeSchedules.map((schedule) => schedule.environment_id))];
@@ -478,7 +542,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         secondary: `${count} ${count === 1 ? "sesión programada" : "sesiones programadas"}`,
       };
     });
-  }, [summaryDetail, activeSchedules, environmentsById, latestWarningsByInstructor]);
+  }, [summaryDetail, activeSchedules, environmentsById, currentHourWarnings]);
 
   const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
     ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => ({
@@ -1508,7 +1572,8 @@ const cancelMutation = useMutation({
 
       {warningSchedule && (() => {
         const detail = getScheduleDisplayData(warningSchedule);
-        const warningItems = warningValidationsQuery.data ?? [];
+        const currentWarning = currentHourWarnings.find((item) => item.schedule.id === warningSchedule.id);
+        const warningItems = currentWarning?.validations ?? warningValidationsQuery.data ?? [];
         return (
           <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="warning-detail-title" onMouseDown={() => setWarningSchedule(null)}>
             <div className="warning-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -1534,8 +1599,8 @@ const cancelMutation = useMutation({
                 <p className="expanded-filter-empty">Este horario no tiene advertencias registradas.</p>
               ) : (
                 <div className="warning-list">
-                  {warningItems.map((validation) => (
-                    <article className={`warning-detail-item severity-${validation.severity.toLowerCase()}`} key={validation.id}>
+                  {warningItems.map((validation, index) => (
+                    <article className={`warning-detail-item severity-${validation.severity.toLowerCase()}`} key={`${validation.rule_code}-${index}`}>
                       <div className="warning-detail-heading">
                         <strong>{validationRuleLabel(validation.rule_code)}</strong>
                         <span>{validation.severity === "BLOCKING" ? "Bloqueante" : validation.severity === "WARNING" ? "Advertencia" : "Información"}</span>

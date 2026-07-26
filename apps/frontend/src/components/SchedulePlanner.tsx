@@ -127,6 +127,27 @@ function formatHours(value: number): string {
   return Number(value.toFixed(1)).toString();
 }
 
+function weekStartDate(value: string): string {
+  const date = dateFromIso(value);
+  if (!date) return value;
+  const weekday = date.getDay() || 7;
+  date.setDate(date.getDate() - weekday + 1);
+  return toLocalIsoDate(date);
+}
+
+function weekRangeLabel(startValue: string): string {
+  const start = dateFromIso(startValue);
+  if (!start) return startValue;
+  const end = new Date(start);
+  end.setDate(start.getDate() + 5);
+  return `${toLocalIsoDate(start)} a ${toLocalIsoDate(end)}`;
+}
+
+function monthLabel(value: string): string {
+  const date = dateFromIso(`${value}-01`);
+  return date ? date.toLocaleDateString("es-CO", { month: "short", year: "numeric" }) : value;
+}
+
 function normalizeRapDescription(value: string): string {
   return normalizeSearchText(value).replace(/^\s*\d+\s*[\.\-:]?\s*/, "");
 }
@@ -412,25 +433,31 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
     [schedules]
   );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
-    const byInstructor = new Map<number, { totalHours: number; latestSchedule: Schedule }>();
+    const byInstructorWeek = new Map<string, { instructorId: number; weekStart: string; totalHours: number; latestSchedule: Schedule }>();
     [...activeSchedules]
       .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
       .forEach((schedule) => {
-        const current = byInstructor.get(schedule.instructor_id);
+        const weekStart = weekStartDate(schedule.date);
+        const key = `${schedule.instructor_id}|${weekStart}`;
+        const current = byInstructorWeek.get(key);
         if (current) {
           current.totalHours += Number(schedule.duration_hours || 0);
         } else {
-          byInstructor.set(schedule.instructor_id, {
+          byInstructorWeek.set(key, {
+            instructorId: schedule.instructor_id,
+            weekStart,
             totalHours: Number(schedule.duration_hours || 0),
             latestSchedule: schedule,
           });
         }
       });
 
-    return [...byInstructor.entries()].flatMap(([instructorId, load]) => {
-      const instructor = instructorsById.get(instructorId);
-      const category = contractCategory(contractTypesById.get(instructor?.contract_type_id ?? -1));
+    return [...byInstructorWeek.values()].flatMap((load) => {
+      const instructor = instructorsById.get(load.instructorId);
+      const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
+      const category = contractCategory(contractType);
       const totalHours = Number(load.totalHours.toFixed(1));
+      const contractorTarget = instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40;
       let ruleCode = "";
       let message = "";
 
@@ -445,12 +472,12 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
             : "El instructor de planta supera 30 horas; las horas adicionales deben quedar identificadas.";
         }
       } else if (category === "contratista") {
-        if (totalHours < 40) {
+        if (totalHours < contractorTarget) {
           ruleCode = "CONTRACTOR_MISSING_HOURS";
-          message = `El contratista tiene ${formatHours(40 - totalHours)} horas pendientes para completar 40.`;
-        } else if (totalHours > 40) {
+          message = `El contratista tiene ${formatHours(contractorTarget - totalHours)} horas pendientes para completar ${formatHours(contractorTarget)}.`;
+        } else if (totalHours > contractorTarget) {
           ruleCode = "CONTRACTOR_OVER_40_HOURS";
-          message = "El contratista supera 40 horas semanales; requiere revision de coordinacion.";
+          message = `El contratista supera ${formatHours(contractorTarget)} horas semanales; requiere revision de coordinacion.`;
         }
       }
 
@@ -466,7 +493,7 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
           message,
           is_blocking: false,
         }],
-        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - ${formatHours(totalHours)} h programadas`,
+        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - semana ${weekRangeLabel(load.weekStart)} - ${formatHours(totalHours)} h programadas`,
         secondary: message,
       }];
     });
@@ -545,11 +572,20 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   }, [summaryDetail, activeSchedules, environmentsById, currentHourWarnings]);
 
   const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
-    ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => ({
-        id,
-        instructor: instructorsById.get(id),
-        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.instructor_id === id)),
-      }))
+    ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => {
+        const instructorSchedules = activeSchedules.filter((schedule) => schedule.instructor_id === id);
+        const monthlyHours = [...instructorSchedules.reduce((months, schedule) => {
+          const month = schedule.date.slice(0, 7);
+          months.set(month, (months.get(month) || 0) + Number(schedule.duration_hours || 0));
+          return months;
+        }, new Map<string, number>())].sort(([a], [b]) => a.localeCompare(b));
+        return {
+          id,
+          instructor: instructorsById.get(id),
+          monthlyHours,
+          schedules: weeklySchedules(instructorSchedules),
+        };
+      })
     : [], [summaryDetail, activeSchedules, instructorsById]);
 
   const groupScheduleGroups = useMemo(() => summaryDetail === "groups"
@@ -1180,7 +1216,18 @@ const cancelMutation = useMutation({
                             if (event.key === "Enter" || event.key === " ") setSelectedSummaryEntityId(group.id);
                           }}
                         >
-                    <header><div><span>Instructor</span><h4>{group.instructor ? instructorLabel(group.instructor) : `Instructor ${group.id}`}</h4></div><strong>{group.schedules.length} {group.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong></header>
+                    <header>
+                      <div>
+                        <span>Instructor</span>
+                        <h4>{group.instructor ? instructorLabel(group.instructor) : `Instructor ${group.id}`}</h4>
+                        <div className="monthly-hours-list" aria-label="Horas mensuales programadas">
+                          {group.monthlyHours.map(([month, hours]) => (
+                            <small key={month}>{monthLabel(month)}: {formatHours(hours)} h</small>
+                          ))}
+                        </div>
+                      </div>
+                      <strong>{group.schedules.length} {group.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong>
+                    </header>
                     <div className="instructor-session-list">
                       {group.schedules.map((schedule) => {
                         const detail = getScheduleDisplayData(schedule);

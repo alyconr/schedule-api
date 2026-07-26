@@ -162,6 +162,14 @@ function monthlyHoursText(items: [string, number][]): string {
   return items.map(([month, hours]) => `${monthLabel(month)}: ${formatHours(hours)} h`).join(" | ");
 }
 
+function weeklyIssuesText(issues: { missing: number; over: number; extra: number; count: number }): string {
+  const parts = [];
+  if (issues.missing > 0) parts.push(`faltan ${formatHours(issues.missing)} h por programar`);
+  if (issues.over > 0) parts.push(`sobran ${formatHours(issues.over)} h sobre el máximo semanal`);
+  if (issues.extra > 0) parts.push(`${formatHours(issues.extra)} h adicionales de planta por identificar`);
+  return `${parts.join("; ")} en ${issues.count} ${issues.count === 1 ? "semana" : "semanas"}`;
+}
+
 function normalizeRapDescription(value: string): string {
   return normalizeSearchText(value).replace(/^\s*\d+\s*[\.\-:]?\s*/, "");
 }
@@ -470,25 +478,27 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
       const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
-      const weeklyIssues = [...load.weeks.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .flatMap(([weekStart, hours]) => {
+      const weeklyIssues = [...load.weeks.values()].reduce(
+        (issues, hours) => {
           if (category === "planta") {
-            if (hours < 30) return [`semana ${weekRangeLabel(weekStart)}: faltan ${formatHours(30 - hours)} h`];
-            if (hours > 32) return [`semana ${weekRangeLabel(weekStart)}: supera por ${formatHours(hours - 32)} h`];
-            if (hours > 30) return [`semana ${weekRangeLabel(weekStart)}: ${formatHours(hours)} h programadas, requiere identificar horas adicionales`];
+            if (hours < 30) return { ...issues, missing: issues.missing + 30 - hours, count: issues.count + 1 };
+            if (hours > 32) return { ...issues, over: issues.over + hours - 32, count: issues.count + 1 };
+            if (hours > 30) return { ...issues, extra: issues.extra + hours - 30, count: issues.count + 1 };
           }
           if (category === "contratista") {
-            if (hours < contractorTarget) return [`semana ${weekRangeLabel(weekStart)}: faltan ${formatHours(contractorTarget - hours)} h`];
-            if (hours > contractorTarget) return [`semana ${weekRangeLabel(weekStart)}: supera por ${formatHours(hours - contractorTarget)} h`];
+            if (hours < contractorTarget) return { ...issues, missing: issues.missing + contractorTarget - hours, count: issues.count + 1 };
+            if (hours > contractorTarget) return { ...issues, over: issues.over + hours - contractorTarget, count: issues.count + 1 };
           }
-          return [];
-        });
+          return issues;
+        },
+        { missing: 0, over: 0, extra: 0, count: 0 }
+      );
 
-      if (!weeklyIssues.length) return [];
+      if (!weeklyIssues.count) return [];
       const schedule = load.latestSchedule;
       const monthTotals = monthlyHours(load.schedules);
-      const message = `${weeklyIssues.join("; ")}. Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
+      const summary = weeklyIssuesText(weeklyIssues);
+      const message = `${summary}. Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
       return [{
         schedule,
         validations: [{
@@ -500,7 +510,7 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
           is_blocking: false,
         }],
         primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - ${monthlyHoursText(monthTotals)}`,
-        secondary: weeklyIssues.join("; "),
+        secondary: summary,
         monthlyHours: monthTotals,
       }];
     });

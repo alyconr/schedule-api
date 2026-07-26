@@ -43,6 +43,7 @@ type CurrentHourWarning = {
   validations: ValidationResult[];
   primary: string;
   secondary: string;
+  monthlyHours: [string, number][];
 };
 
 function calculateDurationHours(startTime: string, endTime: string): number {
@@ -147,6 +148,18 @@ function weekRangeLabel(startValue: string): string {
 function monthLabel(value: string): string {
   const date = dateFromIso(`${value}-01`);
   return date ? date.toLocaleDateString("es-CO", { month: "short", year: "numeric" }) : value;
+}
+
+function monthlyHours(schedules: Schedule[]): [string, number][] {
+  return [...schedules.reduce((months, schedule) => {
+    const month = schedule.date.slice(0, 7);
+    months.set(month, (months.get(month) || 0) + Number(schedule.duration_hours || 0));
+    return months;
+  }, new Map<string, number>())].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function monthlyHoursText(items: [string, number][]): string {
+  return items.map(([month, hours]) => `${monthLabel(month)}: ${formatHours(hours)} h`).join(" | ");
 }
 
 function normalizeRapDescription(value: string): string {
@@ -434,68 +447,61 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
     [schedules]
   );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
-    const byInstructorWeek = new Map<string, { instructorId: number; weekStart: string; totalHours: number; latestSchedule: Schedule }>();
+    const byInstructor = new Map<number, { schedules: Schedule[]; latestSchedule: Schedule; weeks: Map<string, number> }>();
     [...activeSchedules]
       .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
       .forEach((schedule) => {
         const weekStart = weekStartDate(schedule.date);
-        const key = `${schedule.instructor_id}|${weekStart}`;
-        const current = byInstructorWeek.get(key);
+        const current = byInstructor.get(schedule.instructor_id);
         if (current) {
-          current.totalHours += Number(schedule.duration_hours || 0);
+          current.schedules.push(schedule);
+          current.weeks.set(weekStart, (current.weeks.get(weekStart) || 0) + Number(schedule.duration_hours || 0));
         } else {
-          byInstructorWeek.set(key, {
-            instructorId: schedule.instructor_id,
-            weekStart,
-            totalHours: Number(schedule.duration_hours || 0),
+          byInstructor.set(schedule.instructor_id, {
+            schedules: [schedule],
             latestSchedule: schedule,
+            weeks: new Map([[weekStart, Number(schedule.duration_hours || 0)]]),
           });
         }
       });
 
-    return [...byInstructorWeek.values()].flatMap((load) => {
-      const instructor = instructorsById.get(load.instructorId);
+    return [...byInstructor.entries()].flatMap(([instructorId, load]) => {
+      const instructor = instructorsById.get(instructorId);
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
-      const totalHours = Number(load.totalHours.toFixed(1));
       const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
-      let ruleCode = "";
-      let message = "";
+      const weeklyIssues = [...load.weeks.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([weekStart, hours]) => {
+          if (category === "planta") {
+            if (hours < 30) return [`semana ${weekRangeLabel(weekStart)}: faltan ${formatHours(30 - hours)} h`];
+            if (hours > 32) return [`semana ${weekRangeLabel(weekStart)}: supera por ${formatHours(hours - 32)} h`];
+            if (hours > 30) return [`semana ${weekRangeLabel(weekStart)}: ${formatHours(hours)} h programadas, requiere identificar horas adicionales`];
+          }
+          if (category === "contratista") {
+            if (hours < contractorTarget) return [`semana ${weekRangeLabel(weekStart)}: faltan ${formatHours(contractorTarget - hours)} h`];
+            if (hours > contractorTarget) return [`semana ${weekRangeLabel(weekStart)}: supera por ${formatHours(hours - contractorTarget)} h`];
+          }
+          return [];
+        });
 
-      if (category === "planta") {
-        if (totalHours < 30) {
-          ruleCode = "PLANT_INSTRUCTOR_MISSING_HOURS";
-          message = `El instructor de planta tiene ${formatHours(30 - totalHours)} horas pendientes para completar 30.`;
-        } else if (totalHours > 30) {
-          ruleCode = totalHours > 32 ? "PLANT_INSTRUCTOR_MAX_HOURS" : "PLANT_INSTRUCTOR_EXTRA_HOURS";
-          message = totalHours > 32
-            ? "El instructor de planta supera las 32 horas semanales permitidas."
-            : "El instructor de planta supera 30 horas; las horas adicionales deben quedar identificadas.";
-        }
-      } else if (category === "contratista") {
-        if (totalHours < contractorTarget) {
-          ruleCode = "CONTRACTOR_MISSING_HOURS";
-          message = `El contratista tiene ${formatHours(contractorTarget - totalHours)} horas pendientes para completar ${formatHours(contractorTarget)}.`;
-        } else if (totalHours > contractorTarget) {
-          ruleCode = "CONTRACTOR_OVER_40_HOURS";
-          message = `El contratista supera ${formatHours(contractorTarget)} horas semanales; requiere revision de coordinacion.`;
-        }
-      }
-
-      if (!ruleCode) return [];
+      if (!weeklyIssues.length) return [];
       const schedule = load.latestSchedule;
+      const monthTotals = monthlyHours(load.schedules);
+      const message = `${weeklyIssues.join("; ")}. Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
       return [{
         schedule,
         validations: [{
           id: -schedule.id,
           schedule_id: schedule.id,
-          rule_code: ruleCode,
+          rule_code: category === "planta" ? "PLANT_INSTRUCTOR_WEEKLY_HOURS" : "CONTRACTOR_WEEKLY_HOURS",
           severity: "WARNING",
           message,
           is_blocking: false,
         }],
-        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - semana ${weekRangeLabel(load.weekStart)} - ${formatHours(totalHours)} h programadas`,
-        secondary: message,
+        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - ${monthlyHoursText(monthTotals)}`,
+        secondary: weeklyIssues.join("; "),
+        monthlyHours: monthTotals,
       }];
     });
   }, [activeSchedules, contractTypesById, instructorsById]);
@@ -575,15 +581,10 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
     ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => {
         const instructorSchedules = activeSchedules.filter((schedule) => schedule.instructor_id === id);
-        const monthlyHours = [...instructorSchedules.reduce((months, schedule) => {
-          const month = schedule.date.slice(0, 7);
-          months.set(month, (months.get(month) || 0) + Number(schedule.duration_hours || 0));
-          return months;
-        }, new Map<string, number>())].sort(([a], [b]) => a.localeCompare(b));
         return {
           id,
           instructor: instructorsById.get(id),
-          monthlyHours,
+          monthlyHours: monthlyHours(instructorSchedules),
           schedules: weeklySchedules(instructorSchedules),
         };
       })
@@ -1104,6 +1105,13 @@ const cancelMutation = useMutation({
                           ? environmentLabel(selectedEnvironmentGroup.environment)
                           : `Ambiente ${selectedEnvironmentId}`}
                       </h4>
+                      {summaryDetail === "instructors" && selectedInstructorGroup?.monthlyHours.length ? (
+                        <div className="monthly-hours-list" aria-label="Horas mensuales programadas">
+                          {selectedInstructorGroup.monthlyHours.map(([month, hours]) => (
+                            <small key={month}>{monthLabel(month)}: {formatHours(hours)} h</small>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="weekly-chronogram-selection">
                       <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>

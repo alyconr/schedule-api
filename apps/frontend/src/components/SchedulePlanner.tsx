@@ -171,12 +171,12 @@ function monthlyHoursText(items: [string, number][]): string {
   return items.map(([month, hours]) => `${monthLabel(month)}: ${formatHours(hours)} h`).join(" | ");
 }
 
-function weeklyIssuesText(issues: { missing: number; over: number; extra: number; count: number }): string {
+function weeklyIssuesText(issues: { missing: number; over: number; extra: number; weekStart: string }): string {
   const parts = [];
   if (issues.missing > 0) parts.push(`faltan ${formatHours(issues.missing)} h por programar`);
   if (issues.over > 0) parts.push(`sobran ${formatHours(issues.over)} h sobre el máximo semanal`);
   if (issues.extra > 0) parts.push(`${formatHours(issues.extra)} h adicionales de planta por identificar`);
-  return `${parts.join("; ")} en ${issues.count} ${issues.count === 1 ? "semana" : "semanas"}`;
+  return `${parts.join("; ")} en la semana ${weekRangeLabel(issues.weekStart)}`;
 }
 
 function isEditableElement(target: EventTarget | null): boolean {
@@ -494,23 +494,21 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
       const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
-      const weeklyIssues = [...load.weeks.values()].reduce(
-        (issues, hours) => {
-          if (category === "planta") {
-            if (hours < 30) return { ...issues, missing: issues.missing + 30 - hours, count: issues.count + 1 };
-            if (hours > 32) return { ...issues, over: issues.over + hours - 32, count: issues.count + 1 };
-            if (hours > 30) return { ...issues, extra: issues.extra + hours - 30, count: issues.count + 1 };
-          }
-          if (category === "contratista") {
-            if (hours < contractorTarget) return { ...issues, missing: issues.missing + contractorTarget - hours, count: issues.count + 1 };
-            if (hours > contractorTarget) return { ...issues, over: issues.over + hours - contractorTarget, count: issues.count + 1 };
-          }
-          return issues;
-        },
-        { missing: 0, over: 0, extra: 0, count: 0 }
-      );
+      const currentWeek = [...load.weeks.entries()].sort(([a], [b]) => b.localeCompare(a))[0];
+      if (!currentWeek) return [];
+      const [weekStart, hours] = currentWeek;
+      const weeklyIssues = { missing: 0, over: 0, extra: 0, weekStart };
+      if (category === "planta") {
+        if (hours < 30) weeklyIssues.missing = 30 - hours;
+        else if (hours > 32) weeklyIssues.over = hours - 32;
+        else if (hours > 30) weeklyIssues.extra = hours - 30;
+      }
+      if (category === "contratista") {
+        if (hours < contractorTarget) weeklyIssues.missing = contractorTarget - hours;
+        else if (hours > contractorTarget) weeklyIssues.over = hours - contractorTarget;
+      }
 
-      if (!weeklyIssues.count) return [];
+      if (!weeklyIssues.missing && !weeklyIssues.over && !weeklyIssues.extra) return [];
       const schedule = load.latestSchedule;
       const monthTotals = monthlyHours(load.schedules);
       const summary = weeklyIssuesText(weeklyIssues);
@@ -1189,7 +1187,7 @@ const cancelMutation = useMutation({
                       ) : null}
                     </div>
                     <div className="weekly-chronogram-selection">
-                      <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>
+                      <strong>{summaryDetail === "instructors" && selectedInstructorGroup ? monthlyHoursText(selectedInstructorGroup.monthlyHours) : `${selectedWeeklySchedule.schedules.length} bloques`}</strong>
                       {summaryDetail === "instructors" && selectedInstructorGroup && canWrite && (
                         <button type="button" className="weekly-add-hours" onClick={() => startAdditionalHoursForInstructor(selectedInstructorGroup.id)}>
                           Agregar horas adicionales
@@ -1358,7 +1356,7 @@ const cancelMutation = useMutation({
                           ))}
                         </div>
                       </div>
-                      <strong>{group.schedules.length} {group.schedules.length === 1 ? "bloque semanal" : "bloques semanales"}</strong>
+                      <strong>{monthlyHoursText(group.monthlyHours)}</strong>
                     </header>
                     <div className="instructor-session-list">
                       {group.schedules.map((schedule) => {

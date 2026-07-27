@@ -195,6 +195,22 @@ def _additional_hours_month(value: date_type) -> date_type:
     return value.replace(day=1)
 
 
+def _sync_instructor_monthly_additional_hours(session: Session, instructor_ids: set[int | None]) -> None:
+    for instructor_id in {value for value in instructor_ids if value is not None}:
+        instructor = session.get(Instructor, instructor_id)
+        if instructor is None:
+            continue
+        rows = session.exec(
+            select(Schedule).where(
+                Schedule.instructor_id == instructor_id,
+                Schedule.is_additional_hours == True,  # noqa: E712
+                ~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES),
+            )
+        ).all()
+        instructor.monthly_additional_hours = sum((row.duration_hours for row in rows), Decimal("0"))
+        session.add(instructor)
+
+
 def _validate_topic_assignment(
     session: Session,
     learning_result_id: int | None,
@@ -449,6 +465,7 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
         session.flush()
         if result["validations"]:
             _save_validations(session, sch.id, result["validations"])
+        _sync_instructor_monthly_additional_hours(session, {sch.instructor_id})
         session.commit()
         session.refresh(sch)
     except IntegrityError:
@@ -469,6 +486,7 @@ def update_schedule(
     sch = session.get(Schedule, schedule_id)
     if not sch:
         raise HTTPException(404, detail="Schedule not found")
+    previous_instructor_id = sch.instructor_id
 
     merged_instructor_id = payload.instructor_id if payload.instructor_id is not None else sch.instructor_id
     merged_group_id = payload.group_id if "group_id" in payload.model_fields_set else sch.group_id
@@ -623,6 +641,7 @@ def update_schedule(
             session.delete(ov)
         if result["validations"]:
             _save_validations(session, sch.id, result["validations"])
+        _sync_instructor_monthly_additional_hours(session, {previous_instructor_id, sch.instructor_id})
         session.commit()
         session.refresh(sch)
     except IntegrityError:
@@ -642,6 +661,7 @@ def _mark_schedule_status(schedule_id: int, status: str, session: SessionDep) ->
         raise HTTPException(404, detail="Schedule not found")
     obj.status = status
     session.add(obj)
+    _sync_instructor_monthly_additional_hours(session, {obj.instructor_id})
     session.commit()
     return {"ok": True}
 
@@ -671,8 +691,11 @@ def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
     for e in exceptions:
         session.delete(e)
 
+    instructor_id = obj.instructor_id
+
     # Physically delete the schedule
     session.delete(obj)
+    _sync_instructor_monthly_additional_hours(session, {instructor_id})
     session.commit()
     return {"ok": True}
 

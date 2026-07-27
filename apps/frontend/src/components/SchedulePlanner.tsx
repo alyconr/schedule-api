@@ -543,6 +543,11 @@ const warningValidationsQuery = useQuery({
   refetchOnWindowFocus: false,
 });
 
+const invalidateScheduleData = () => {
+  queryClient.invalidateQueries({ queryKey: ["schedules"] });
+  queryClient.invalidateQueries({ queryKey: ["instructors"] });
+};
+
 const getScheduleDisplayData = (schedule: Schedule) => {
     const instructor = instructorsById.get(schedule.instructor_id);
     const group = schedule.group_id ? groupsById.get(schedule.group_id) : undefined;
@@ -807,7 +812,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       if (res.status === "blocked") {
         setErrorMsg("Error: La programación está bloqueada por reglas del negocio.");
       } else {
-        queryClient.invalidateQueries({ queryKey: ["schedules"] });
+        invalidateScheduleData();
         addToast(
           "success",
           res.status === "warning"
@@ -832,7 +837,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       if (res.status === "blocked") {
         setErrorMsg("Error: La actualización está bloqueada por reglas de negocio.");
       } else {
-        queryClient.invalidateQueries({ queryKey: ["schedules"] });
+        invalidateScheduleData();
         addToast(
           "success",
           res.status === "warning"
@@ -850,7 +855,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
 const cancelMutation = useMutation({
     mutationFn: cancelSchedule,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      invalidateScheduleData();
       addToast("success", "Horario cancelado correctamente.");
     },
     onError: (err: any) => {
@@ -942,7 +947,10 @@ const cancelMutation = useMutation({
     setIsBulkSubmitting(true);
     try {
       await Promise.all(confirmDeleteIds.map(deleteSchedule));
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["instructors"] }),
+      ]);
       setSelectedWeeklyBlockIds([]);
       addToast("success", `${confirmDeleteIds.length} ${confirmDeleteIds.length === 1 ? "horario eliminado" : "horarios eliminados"}.`);
     } catch (error: any) {
@@ -965,7 +973,10 @@ const cancelMutation = useMutation({
         const result = await updateSchedule(schedule.id, { date: dateForWeekday(schedule.date, targetWeekday), weekday: targetWeekday });
         if (result.status === "blocked") throw new Error(result.validations.map((item) => item.message).join(" ") || "El cambio está bloqueado por las reglas de programación.");
       }
-      await queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+        queryClient.invalidateQueries({ queryKey: ["instructors"] }),
+      ]);
       addToast("success", `Bloque movido a ${weekDays.find((day) => day.index === targetWeekday)?.label}.`);
     } catch (error: any) {
       addToast("error", error.message || "No fue posible mover la programación.");
@@ -1094,7 +1105,7 @@ const cancelMutation = useMutation({
         setValidationStatus(blockedDays.length ? "blocked" : currentValidations.length ? "warning" : "validated");
         setValidations(currentValidations);
         setShowBlockingAlert(blockedDays.length > 0);
-        queryClient.invalidateQueries({ queryKey: ["schedules"] });
+        invalidateScheduleData();
         if (blockedDays.length) {
           setErrorMsg(`No se pudieron programar estos días por reglas de negocio: ${blockedDays.join(", ")}.`);
         } else {

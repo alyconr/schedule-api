@@ -4,7 +4,14 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.api.routes.schedules import create_schedule, list_schedules, list_schedules_detailed
+from app.api.routes.schedules import (
+    cancel_schedule,
+    create_schedule,
+    delete_schedule,
+    list_schedules,
+    list_schedules_detailed,
+    update_schedule,
+)
 from app.main import app
 from app.models import (
     Competency,
@@ -16,7 +23,7 @@ from app.models import (
     Topic,
     TrainingProgram,
 )
-from app.schemas.schedules import ScheduleCreate
+from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
 from datetime import date
 from app.services.schedule_service import derive_contract_type, get_week_range
 
@@ -179,6 +186,18 @@ def _seed_topic_fixtures(session: Session) -> dict[str, int]:
         "other_lr_relation": other_lr_relation.id,
         "other_program_relation": other_program_relation.id,
     }
+
+
+def _additional_payload(instructor_id: int, hours: int = 12) -> ScheduleCreate:
+    return ScheduleCreate(
+        instructor_id=instructor_id,
+        date=date(2026, 7, 10),
+        start_time="00:00",
+        end_time="00:00",
+        duration_hours=hours,
+        is_additional_hours=True,
+        additional_hours_type="Apoyo a alistamiento mensual",
+    )
 
 
 class ScheduleTopicAssignmentTest(unittest.TestCase):
@@ -395,6 +414,64 @@ class ScheduleListingTest(unittest.TestCase):
                 self._list_schedules_detailed(session)
         self.assertEqual(context.exception.status_code, 422)
         self.assertIn("instructor o ficha", context.exception.detail)
+
+
+class ScheduleAdditionalHoursSyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        SQLModel.metadata.create_all(self.engine)
+        with Session(self.engine) as session:
+            self.ids = _seed_topic_fixtures(session)
+
+    def tearDown(self) -> None:
+        self.engine.dispose()
+
+    def test_create_updates_instructor_monthly_additional_hours(self) -> None:
+        with Session(self.engine) as session:
+            create_schedule(_additional_payload(self.ids["instructor"], hours=8), session)
+            instructor = session.get(Instructor, self.ids["instructor"])
+
+        self.assertEqual(float(instructor.monthly_additional_hours), 8)
+
+    def test_update_resyncs_previous_and_new_instructor(self) -> None:
+        with Session(self.engine) as session:
+            other = Instructor(
+                document_type="CC",
+                document_number="200",
+                first_name="Luis",
+                last_name="Gomez",
+                email="luis@example.com",
+            )
+            session.add(other)
+            session.commit()
+            session.refresh(other)
+
+            result = create_schedule(_additional_payload(self.ids["instructor"], hours=8), session)
+            schedule_id = result.schedule["id"]
+            update_schedule(schedule_id, ScheduleUpdate(instructor_id=other.id, duration_hours=5), session)
+
+            original = session.get(Instructor, self.ids["instructor"])
+            moved = session.get(Instructor, other.id)
+
+        self.assertEqual(float(original.monthly_additional_hours), 0)
+        self.assertEqual(float(moved.monthly_additional_hours), 5)
+
+    def test_cancel_and_delete_remove_hours_from_instructor_total(self) -> None:
+        with Session(self.engine) as session:
+            first = create_schedule(_additional_payload(self.ids["instructor"], hours=8), session)
+            cancel_schedule(first.schedule["id"], session)
+            instructor = session.get(Instructor, self.ids["instructor"])
+            self.assertEqual(float(instructor.monthly_additional_hours), 0)
+
+            second = create_schedule(_additional_payload(self.ids["instructor"], hours=6), session)
+            delete_schedule(second.schedule["id"], session)
+            instructor = session.get(Instructor, self.ids["instructor"])
+
+        self.assertEqual(float(instructor.monthly_additional_hours), 0)
 
 
 if __name__ == "__main__":

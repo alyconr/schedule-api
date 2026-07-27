@@ -33,7 +33,7 @@ export function ScheduleMatrixPage() {
     queryFn: () => fetchSchedulesDetailed(filters),
     enabled: hasFilter,
   });
-  const schedules = schedulesQuery.data ?? [];
+  const schedules = (schedulesQuery.data ?? []).filter((schedule) => !schedule.is_additional_hours);
 
   useEffect(() => {
     const firstDate = filters.date_from || schedules[0]?.date;

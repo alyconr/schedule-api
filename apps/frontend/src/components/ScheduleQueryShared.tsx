@@ -181,10 +181,10 @@ export function ScheduleWarningDialog({ schedule, onClose }: ScheduleWarningDial
         <div className="warning-schedule-summary">
           <span><strong>Fecha:</strong> {schedule.date}</span>
           <span><strong>Horario:</strong> {schedule.start_time} - {schedule.end_time}</span>
-          <span><strong>Ficha:</strong> {schedule.group_code}</span>
+          <span><strong>Ficha:</strong> {schedule.is_additional_hours ? "Horas adicionales" : schedule.group_code || "-"}</span>
           <span><strong>Trimestre:</strong> {schedule.group_trimester || "Sin trimestre"}</span>
           <span><strong>Instructor:</strong> {schedule.instructor_name}</span>
-          <span><strong>Ambiente:</strong> {schedule.environment_name}</span>
+          <span><strong>Ambiente:</strong> {schedule.environment_name || "-"}</span>
         </div>
         {validationsQuery.isLoading ? (
           <p className="expanded-filter-empty">Cargando advertencias...</p>

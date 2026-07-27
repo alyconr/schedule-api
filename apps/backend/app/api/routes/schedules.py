@@ -43,9 +43,9 @@ INACTIVE_SCHEDULE_STATUSES = ["cancelled", "deleted"]
 def _build_validation_payload(
     payload: ScheduleCreate | ScheduleUpdate,
     instructor: Instructor,
-    group: Group,
-    environment: Environment,
-    learning_result: LearningResult,
+    group: Group | None,
+    environment: Environment | None,
+    learning_result: LearningResult | None,
     competency: Competency | None,
     program: TrainingProgram | None,
     existing_schedules_raw: list[Schedule],
@@ -80,7 +80,9 @@ def _build_validation_payload(
 
     existing_list = []
     for sch in existing_schedules_raw:
-        env = session.get(Environment, sch.environment_id)
+        if sch.is_additional_hours:
+            continue
+        env = session.get(Environment, sch.environment_id) if sch.environment_id is not None else None
         existing_list.append({
             "instructor_id": str(sch.instructor_id),
             "group_id": str(sch.group_id),
@@ -104,37 +106,39 @@ def _build_validation_payload(
         "duration_hours": float(payload.duration_hours),
         "instructor_contract_type": instructor_contract_type,
         "instructor_weekly_hours": instructor_weekly_hours,
-        "group_learners": group.learners_count,
-        "environment_capacity": environment.capacity,
-        "environment_type": environment.environment_type,
+        "group_learners": group.learners_count if group else 0,
+        "environment_capacity": environment.capacity if environment else 0,
+        "environment_type": environment.environment_type if environment else "fisico",
         "instructor_active": instructor.is_active,
-        "group_active": group.is_active,
-        "environment_active": environment.is_active,
+        "group_active": group.is_active if group else True,
+        "environment_active": environment.is_active if environment else True,
         "existing_schedules": existing_list,
+        "is_additional_hours": bool(getattr(payload, "is_additional_hours", False)),
     }
 
 
 def _check_entities(
     session: Session, payload: ScheduleCreate | ScheduleUpdate
-) -> tuple[Instructor, Group, Environment, LearningResult, Competency | None, TrainingProgram | None]:
+) -> tuple[Instructor, Group | None, Environment | None, LearningResult | None, Competency | None, TrainingProgram | None]:
     instructor = session.get(Instructor, payload.instructor_id)
     if not instructor:
         raise HTTPException(404, detail="Instructor not found")
 
-    group = session.get(Group, payload.group_id)
-    if not group:
+    is_additional_hours = bool(getattr(payload, "is_additional_hours", False))
+    group = session.get(Group, payload.group_id) if payload.group_id is not None else None
+    if not is_additional_hours and not group:
         raise HTTPException(404, detail="Group not found")
 
-    environment = session.get(Environment, payload.environment_id)
-    if not environment:
+    environment = session.get(Environment, payload.environment_id) if payload.environment_id is not None else None
+    if not is_additional_hours and not environment:
         raise HTTPException(404, detail="Environment not found")
 
-    learning_result = session.get(LearningResult, payload.learning_result_id)
-    if not learning_result:
+    learning_result = session.get(LearningResult, payload.learning_result_id) if payload.learning_result_id is not None else None
+    if not is_additional_hours and not learning_result:
         raise HTTPException(404, detail="Learning result not found")
 
     program: TrainingProgram | None = None
-    if group.training_program_id is not None:
+    if group and group.training_program_id is not None:
         program = session.get(TrainingProgram, group.training_program_id)
         if payload.training_program_id is not None and payload.training_program_id != group.training_program_id:
             raise HTTPException(422, detail="training_program_id does not match group training program")
@@ -148,7 +152,7 @@ def _check_entities(
         competency = session.get(Competency, payload.competency_id)
         if not competency:
             raise HTTPException(404, detail="Competency not found")
-    elif learning_result.competency_id is not None:
+    elif learning_result and learning_result.competency_id is not None:
         competency = session.get(Competency, learning_result.competency_id)
 
     if program is None and competency is not None and competency.training_program_id is not None:
@@ -174,6 +178,7 @@ def _existing_for_date(
 ) -> list[Schedule]:
     stmt = select(Schedule).where(
         Schedule.date == payload.date,
+        Schedule.is_additional_hours == False,  # noqa: E712
         ~Schedule.status.in_(INACTIVE_SCHEDULE_STATUSES),
     )
     if exclude_id is not None:
@@ -188,11 +193,13 @@ def _clean_manual_topic(value: str | None) -> str | None:
 
 def _validate_topic_assignment(
     session: Session,
-    learning_result_id: int,
+    learning_result_id: int | None,
     training_program_id: int | None,
     learning_result_topic_id: int | None,
     manual_topic_name: str | None,
 ) -> None:
+    if learning_result_id is None:
+        return
     manual_topic_name = _clean_manual_topic(manual_topic_name)
     if learning_result_topic_id and manual_topic_name:
         raise HTTPException(422, detail="Use learning_result_topic_id or manual_topic_name, not both")
@@ -271,10 +278,10 @@ def list_schedules_detailed(
     stmt = (
         select(Schedule, Instructor, Group, TrainingProgram, LearningResult, Environment)
         .join(Instructor, Instructor.id == Schedule.instructor_id)
-        .join(Group, Group.id == Schedule.group_id)
+        .outerjoin(Group, Group.id == Schedule.group_id)
         .outerjoin(TrainingProgram, TrainingProgram.id == Schedule.training_program_id)
         .outerjoin(LearningResult, LearningResult.id == Schedule.learning_result_id)
-        .join(Environment, Environment.id == Schedule.environment_id)
+        .outerjoin(Environment, Environment.id == Schedule.environment_id)
         .where(Schedule.status != "deleted")
     )
     if not (include_inactive or include_cancelled):
@@ -311,7 +318,7 @@ def list_schedules_detailed(
     results: list[ScheduleDetailedRead] = []
     for sch, instructor, group, program, learning_result, environment in rows:
         resolved_program = program
-        if resolved_program is None and group.training_program_id is not None:
+        if resolved_program is None and group and group.training_program_id is not None:
             resolved_program = session.get(TrainingProgram, group.training_program_id)
         topic_name = sch.manual_topic_name or (
             topics_by_relation_id.get(sch.learning_result_topic_id) if sch.learning_result_topic_id else None
@@ -325,18 +332,20 @@ def list_schedules_detailed(
                 end_time=sch.end_time,
                 instructor_id=instructor.id,
                 instructor_name=f"{instructor.first_name} {instructor.last_name}",
-                group_id=group.id,
-                group_code=group.code,
-                group_name=group.name,
-                group_trimester=group.trimester,
+                group_id=group.id if group else None,
+                group_code=group.code if group else None,
+                group_name=group.name if group else None,
+                group_trimester=group.trimester if group else None,
                 training_program_id=resolved_program.id if resolved_program else None,
                 training_program_name=resolved_program.name if resolved_program else None,
                 learning_result_id=learning_result.id if learning_result else None,
                 learning_result_code=learning_result.code if learning_result else None,
                 learning_result_description=learning_result.description if learning_result else None,
                 topic_name=topic_name,
-                environment_id=environment.id,
-                environment_name=environment.name,
+                environment_id=environment.id if environment else None,
+                environment_name=environment.name if environment else None,
+                is_additional_hours=sch.is_additional_hours,
+                additional_hours_type=sch.additional_hours_type,
                 status=sch.status,
             )
         )
@@ -390,13 +399,14 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
     if competency_id is None and competency is not None:
         competency_id = competency.id
     manual_topic_name = _clean_manual_topic(payload.manual_topic_name)
-    _validate_topic_assignment(
-        session,
-        payload.learning_result_id,
-        training_program_id,
-        payload.learning_result_topic_id,
-        manual_topic_name,
-    )
+    if not payload.is_additional_hours:
+        _validate_topic_assignment(
+            session,
+            payload.learning_result_id,
+            training_program_id,
+            payload.learning_result_topic_id,
+            manual_topic_name,
+        )
 
     if result["status"] == "warning":
         db_status = "warning"
@@ -419,6 +429,8 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
         block_id=payload.block_id,
         subblock_id=payload.subblock_id,
         duration_hours=Decimal(str(payload.duration_hours)),
+        is_additional_hours=payload.is_additional_hours,
+        additional_hours_type=_clean_manual_topic(payload.additional_hours_type),
         status=db_status,
         notes=payload.notes,
     )
@@ -468,6 +480,12 @@ def update_schedule(
     merged_start = payload.start_time if payload.start_time is not None else sch.start_time
     merged_end = payload.end_time if payload.end_time is not None else sch.end_time
     merged_duration = payload.duration_hours if payload.duration_hours is not None else float(sch.duration_hours)
+    merged_is_additional_hours = payload.is_additional_hours if payload.is_additional_hours is not None else sch.is_additional_hours
+    merged_additional_hours_type = (
+        payload.additional_hours_type
+        if "additional_hours_type" in payload.model_fields_set
+        else sch.additional_hours_type
+    )
 
     class MergedPayload:
         instructor_id = merged_instructor_id
@@ -482,8 +500,12 @@ def update_schedule(
         start_time = merged_start
         end_time = merged_end
         duration_hours = merged_duration
+        is_additional_hours = merged_is_additional_hours
+        additional_hours_type = merged_additional_hours_type
 
     instructor, group, environment, learning_result, competency, program = _check_entities(session, MergedPayload())
+    if MergedPayload().is_additional_hours and not _clean_manual_topic(MergedPayload().additional_hours_type):
+        raise HTTPException(422, detail="additional_hours_type is required for additional hours")
 
     existing = _existing_for_date(session, MergedPayload(), exclude_id=schedule_id)
     vpayload = _build_validation_payload(
@@ -510,16 +532,27 @@ def update_schedule(
     merged_training_program_id = MergedPayload().training_program_id
     if merged_training_program_id is None and program is not None:
         merged_training_program_id = program.id
-    _validate_topic_assignment(
-        session,
-        MergedPayload().learning_result_id,
-        merged_training_program_id,
-        MergedPayload().learning_result_topic_id,
-        _clean_manual_topic(MergedPayload().manual_topic_name),
-    )
+    if not MergedPayload().is_additional_hours:
+        _validate_topic_assignment(
+            session,
+            MergedPayload().learning_result_id,
+            merged_training_program_id,
+            MergedPayload().learning_result_topic_id,
+            _clean_manual_topic(MergedPayload().manual_topic_name),
+        )
     for key, value in update_data.items():
-        if key in ("learning_result_topic_id", "manual_topic_name"):
-            setattr(sch, key, _clean_manual_topic(value) if key == "manual_topic_name" else value)
+        if key in ("learning_result_topic_id", "manual_topic_name", "additional_hours_type"):
+            setattr(sch, key, _clean_manual_topic(value) if key in ("manual_topic_name", "additional_hours_type") else value)
+        elif key in {
+            "group_id",
+            "training_program_id",
+            "competency_id",
+            "learning_result_id",
+            "environment_id",
+            "block_id",
+            "subblock_id",
+        }:
+            setattr(sch, key, value)
         elif value is not None:
             if key == "duration_hours":
                 setattr(sch, key, Decimal(str(value)))

@@ -20,13 +20,13 @@ export type ValidationResult = {
 export type Schedule = {
   id: number;
   instructor_id: number;
-  group_id: number;
+  group_id?: number | null;
   training_program_id?: number | null;
   competency_id?: number | null;
-  learning_result_id: number;
+  learning_result_id?: number | null;
   learning_result_topic_id?: number | null;
   manual_topic_name?: string | null;
-  environment_id: number;
+  environment_id?: number | null;
   date: string;
   weekday?: number | null;
   start_time: string;
@@ -34,19 +34,21 @@ export type Schedule = {
   block_id?: number | null;
   subblock_id?: number | null;
   duration_hours: number;
+  is_additional_hours?: boolean;
+  additional_hours_type?: string | null;
   status: ScheduleStatus;
   notes?: string | null;
 };
 
 export type ScheduleCreate = {
   instructor_id: number;
-  group_id: number;
+  group_id?: number | null;
   training_program_id?: number | null;
   competency_id?: number | null;
-  learning_result_id: number;
+  learning_result_id?: number | null;
   learning_result_topic_id?: number | null;
   manual_topic_name?: string | null;
-  environment_id: number;
+  environment_id?: number | null;
   date: string;
   weekday?: number | null;
   start_time: string;
@@ -54,6 +56,8 @@ export type ScheduleCreate = {
   block_id?: number | null;
   subblock_id?: number | null;
   duration_hours: number;
+  is_additional_hours?: boolean;
+  additional_hours_type?: string | null;
   notes?: string | null;
 };
 
@@ -88,8 +92,8 @@ export type ScheduleDetailed = {
   end_time: string;
   instructor_id: number;
   instructor_name: string;
-  group_id: number;
-  group_code: string;
+  group_id?: number | null;
+  group_code?: string | null;
   group_name?: string | null;
   group_trimester?: string | null;
   training_program_id?: number | null;
@@ -98,8 +102,10 @@ export type ScheduleDetailed = {
   learning_result_code?: string | null;
   learning_result_description?: string | null;
   topic_name?: string | null;
-  environment_id: number;
-  environment_name: string;
+  environment_id?: number | null;
+  environment_name?: string | null;
+  is_additional_hours?: boolean;
+  additional_hours_type?: string | null;
   status: ScheduleStatus;
 };
 

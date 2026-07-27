@@ -72,11 +72,12 @@ function weekdayName(schedule: Schedule): string {
 }
 
 function weeklyBlockKey(schedule: Schedule): string {
+  if (schedule.is_additional_hours) return ["extra", schedule.id].join("|");
   return [schedule.group_id, schedule.instructor_id, schedule.environment_id, schedule.learning_result_id, schedule.learning_result_topic_id, schedule.manual_topic_name, schedule.start_time, schedule.end_time].join("|");
 }
 
 function weeklySchedules(schedules: Schedule[]): Schedule[] {
-  return [...new Map(schedules.map((schedule) => [
+  return [...new Map(schedules.filter((schedule) => !schedule.is_additional_hours).map((schedule) => [
     `${schedule.weekday || weekdayName(schedule)}|${weeklyBlockKey(schedule)}`,
     schedule,
   ])).values()].sort((a, b) => weekdayIndex(a) - weekdayIndex(b) || a.start_time.localeCompare(b.start_time));
@@ -170,6 +171,10 @@ function weeklyIssuesText(issues: { missing: number; over: number; extra: number
   return `${parts.join("; ")} en ${issues.count} ${issues.count === 1 ? "semana" : "semanas"}`;
 }
 
+function isEditableElement(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest("button, input, label, select, textarea, a"));
+}
+
 function normalizeRapDescription(value: string): string {
   return normalizeSearchText(value).replace(/^\s*\d+\s*[\.\-:]?\s*/, "");
 }
@@ -223,6 +228,8 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [durationHours, setDurationHours] = useState<number | "">("");
+  const [isAdditionalHours, setIsAdditionalHours] = useState(false);
+  const [additionalHoursType, setAdditionalHoursType] = useState("");
   const [notes, setNotes] = useState("");
   const [rapSearch, setRapSearch] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
@@ -518,8 +525,8 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
   const plannerStats = useMemo(() => ({
     warnings: currentHourWarnings.length,
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
-    groups: new Set(activeSchedules.map((s) => s.group_id)).size,
-    environments: new Set(activeSchedules.map((s) => s.environment_id)).size,
+    groups: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.group_id).map((s) => s.group_id)).size,
+    environments: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.environment_id).map((s) => s.environment_id)).size,
   }), [activeSchedules, currentHourWarnings]);
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
@@ -531,9 +538,9 @@ const warningValidationsQuery = useQuery({
 
 const getScheduleDisplayData = (schedule: Schedule) => {
     const instructor = instructorsById.get(schedule.instructor_id);
-    const group = groupsById.get(schedule.group_id);
-    const environment = environmentsById.get(schedule.environment_id);
-    const rap = learningResultsById.get(schedule.learning_result_id);
+    const group = schedule.group_id ? groupsById.get(schedule.group_id) : undefined;
+    const environment = schedule.environment_id ? environmentsById.get(schedule.environment_id) : undefined;
+    const rap = schedule.learning_result_id ? learningResultsById.get(schedule.learning_result_id) : undefined;
     const topicName =
       schedule.manual_topic_name ||
       (schedule.learning_result_topic_id ? topicsByRelationId.get(schedule.learning_result_topic_id) : "") ||
@@ -576,7 +583,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       }));
     }
     if (summaryDetail === "instructors" || summaryDetail === "groups") return [];
-    const ids = [...new Set(activeSchedules.map((schedule) => schedule.environment_id))];
+    const ids = [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))];
     return ids.map((id) => {
       const count = activeSchedules.filter((schedule) => schedule.environment_id === id).length;
       const entity = environmentsById.get(id);
@@ -596,12 +603,13 @@ const getScheduleDisplayData = (schedule: Schedule) => {
           instructor: instructorsById.get(id),
           monthlyHours: monthlyHours(instructorSchedules),
           schedules: weeklySchedules(instructorSchedules),
+          additionalHours: instructorSchedules.filter((schedule) => schedule.is_additional_hours).sort((a, b) => a.date.localeCompare(b.date)),
         };
       })
     : [], [summaryDetail, activeSchedules, instructorsById]);
 
   const groupScheduleGroups = useMemo(() => summaryDetail === "groups"
-    ? [...new Set(activeSchedules.map((schedule) => schedule.group_id))].map((id) => ({
+    ? [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.group_id).map((schedule) => Number(schedule.group_id)))].map((id) => ({
         id,
         group: groupsById.get(id),
         schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.group_id === id)),
@@ -609,7 +617,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     : [], [summaryDetail, activeSchedules, groupsById]);
 
   const environmentScheduleGroups = useMemo(() => summaryDetail === "environments"
-    ? [...new Set(activeSchedules.map((schedule) => schedule.environment_id))].map((id) => ({
+    ? [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))].map((id) => ({
         id,
         environment: environmentsById.get(id),
         schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.environment_id === id)),
@@ -694,6 +702,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setStartTime("");
     setEndTime("");
     setDurationHours("");
+    setIsAdditionalHours(false);
+    setAdditionalHoursType("");
     setNotes("");
     setRapSearch("");
     setGroupSearch("");
@@ -719,28 +729,30 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setValidations([]);
     setEditingSchedule(sch);
     setDateVal(sch.date);
-    setGroupId(sch.group_id);
+    setGroupId(sch.group_id || "");
     setProgramId(sch.training_program_id || "");
     setCompetencyId(sch.competency_id || "");
-    setLearningResultId(sch.learning_result_id);
+    setLearningResultId(sch.learning_result_id || "");
     setInstructorId(sch.instructor_id);
-    setEnvironmentId(sch.environment_id);
+    setEnvironmentId(sch.environment_id || "");
     setBlockId(sch.block_id || "");
     setStartTime(sch.start_time);
     setEndTime(sch.end_time);
     setDurationHours(sch.duration_hours);
+    setIsAdditionalHours(Boolean(sch.is_additional_hours));
+    setAdditionalHoursType(sch.additional_hours_type || "");
     setNotes(sch.notes || "");
     setLearningResultTopicId(sch.learning_result_topic_id || "");
     setManualTopicName(sch.manual_topic_name || "");
     setSelectedWeekdays([getWeekdayFromDate(sch.date)]);
-    const rap = learningResultsById.get(sch.learning_result_id);
-    const group = groupsById.get(sch.group_id);
+    const rap = sch.learning_result_id ? learningResultsById.get(sch.learning_result_id) : undefined;
+    const group = sch.group_id ? groupsById.get(sch.group_id) : undefined;
     if (group?.start_date && !trimesterStartDate) setTrimesterStartDate(group.start_date);
     if (group?.end_date && !trimesterEndDate) setTrimesterEndDate(group.end_date);
     const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
     const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
     const instructor = instructorsById.get(sch.instructor_id);
-    const environment = environmentsById.get(sch.environment_id);
+    const environment = sch.environment_id ? environmentsById.get(sch.environment_id) : undefined;
     const block = sch.block_id ? timeBlocks.find((tb) => tb.id === sch.block_id) : undefined;
     setGroupSearch(group ? groupLabel(group) : "");
     setProgramSearch(program ? `${program.code} - ${program.name}` : "");
@@ -749,6 +761,28 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setEnvironmentSearch(environment ? environmentLabel(environment) : "");
     setBlockSearch(block ? `${block.name} ${block.start_time} - ${block.end_time}` : "");
     setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
+  };
+
+  const editFromSummary = (schedule: Schedule) => {
+    if (!canWrite) return;
+    handleEditInit(schedule);
+    setSummaryDetail(null);
+    setSelectedWeeklyBlockIds([]);
+  };
+
+  const startAdditionalHoursFromWarning = (schedule: Schedule) => {
+    if (!canWrite) return;
+    resetForm();
+    setIsAdditionalHours(true);
+    setInstructorId(schedule.instructor_id);
+    setDateVal(schedule.date);
+    setTrimesterStartDate(schedule.date);
+    setTrimesterEndDate(schedule.date);
+    setSelectedWeekdays([weekdayIndex(schedule)]);
+    const instructor = instructorsById.get(schedule.instructor_id);
+    setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+    setWarningSchedule(null);
+    setSummaryDetail(null);
   };
 
 // Mutations
@@ -950,7 +984,11 @@ const cancelMutation = useMutation({
       return;
     }
 
-    if (!groupId || !learningResultId || !instructorId || !environmentId || (editingSchedule && !dateVal) || !startTime || !endTime) {
+    if (!instructorId || (editingSchedule && !dateVal)) {
+      setErrorMsg("Por favor, rellene todos los campos obligatorios.");
+      return;
+    }
+    if (!isAdditionalHours && (!groupId || !learningResultId || !environmentId || !startTime || !endTime)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
@@ -960,20 +998,25 @@ const cancelMutation = useMutation({
     }
 
     const calculatedDur = Number(durationHours) || calculateDurationHours(startTime, endTime);
+    const cleanedAdditionalType = additionalHoursType.trim();
+    if (isAdditionalHours && !cleanedAdditionalType) {
+      setErrorMsg("Escriba el tipo de horas adicionales.");
+      return;
+    }
     if (calculatedDur <= 0) {
       setErrorMsg("Error: La hora final debe ser posterior a la de inicio.");
       return;
     }
     const cleanedManualTopic = manualTopicName.trim();
-    if (!selectedProgramId) {
+    if (!isAdditionalHours && !selectedProgramId) {
       setErrorMsg("Seleccione primero una ficha o programa de formación para consultar la temática del RAP.");
       return;
     }
-    if (rapTopics.length > 0 && !learningResultTopicId) {
+    if (!isAdditionalHours && rapTopics.length > 0 && !learningResultTopicId) {
       setErrorMsg("Seleccione la temática asociada al RAP.");
       return;
     }
-    if (rapTopics.length === 0 && !cleanedManualTopic) {
+    if (!isAdditionalHours && rapTopics.length === 0 && !cleanedManualTopic) {
       setErrorMsg("Registre una temática manual para este RAP.");
       return;
     }
@@ -988,17 +1031,19 @@ const cancelMutation = useMutation({
 
     const basePayload: any = {
       instructor_id: Number(instructorId),
-      group_id: Number(groupId),
-      training_program_id: programId ? Number(programId) : null,
-      competency_id: competencyId ? Number(competencyId) : null,
-      learning_result_id: Number(learningResultId),
-      learning_result_topic_id: learningResultTopicId ? Number(learningResultTopicId) : null,
-      manual_topic_name: learningResultTopicId ? null : cleanedManualTopic,
-      environment_id: Number(environmentId),
-      start_time: startTime,
-      end_time: endTime,
+      group_id: isAdditionalHours ? null : Number(groupId),
+      training_program_id: isAdditionalHours ? null : programId ? Number(programId) : null,
+      competency_id: isAdditionalHours ? null : competencyId ? Number(competencyId) : null,
+      learning_result_id: isAdditionalHours ? null : Number(learningResultId),
+      learning_result_topic_id: isAdditionalHours ? null : learningResultTopicId ? Number(learningResultTopicId) : null,
+      manual_topic_name: isAdditionalHours ? null : learningResultTopicId ? null : cleanedManualTopic,
+      environment_id: isAdditionalHours ? null : Number(environmentId),
+      start_time: isAdditionalHours ? "00:00" : startTime,
+      end_time: isAdditionalHours ? "00:00" : endTime,
       duration_hours: calculatedDur,
-      block_id: blockId ? Number(blockId) : null,
+      block_id: isAdditionalHours ? null : blockId ? Number(blockId) : null,
+      is_additional_hours: isAdditionalHours,
+      additional_hours_type: isAdditionalHours ? cleanedAdditionalType : null,
       notes: notes || null,
     };
 
@@ -1174,7 +1219,18 @@ const cancelMutation = useMutation({
                                   <article
                                     className="weekly-chronogram-block"
                                     key={schedule.id}
+                                    role={canWrite ? "button" : undefined}
+                                    tabIndex={canWrite ? 0 : undefined}
                                     draggable={canWrite && !isBulkSubmitting}
+                                    onClick={(event) => {
+                                      if (!isEditableElement(event.target)) editFromSummary(schedule);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if ((event.key === "Enter" || event.key === " ") && !isEditableElement(event.target)) {
+                                        event.preventDefault();
+                                        editFromSummary(schedule);
+                                      }
+                                    }}
                                     onDragStart={(event) => {
                                       setDraggedScheduleId(schedule.id);
                                       event.dataTransfer.effectAllowed = "move";
@@ -1221,6 +1277,38 @@ const cancelMutation = useMutation({
                       })}
                     </div>
                   </div>
+                  {summaryDetail === "instructors" && selectedInstructorGroup?.additionalHours.length ? (
+                    <section className="additional-hours-panel" aria-label="Horas adicionales del instructor">
+                      <header>
+                        <span>Horas adicionales</span>
+                        <strong>{formatHours(selectedInstructorGroup.additionalHours.reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0))} h</strong>
+                      </header>
+                      <div className="additional-hours-list">
+                        {selectedInstructorGroup.additionalHours.map((schedule) => (
+                          <article
+                            key={schedule.id}
+                            role={canWrite ? "button" : undefined}
+                            tabIndex={canWrite ? 0 : undefined}
+                            onClick={(event) => {
+                              if (!isEditableElement(event.target)) editFromSummary(schedule);
+                            }}
+                            onKeyDown={(event) => {
+                              if ((event.key === "Enter" || event.key === " ") && !isEditableElement(event.target)) {
+                                event.preventDefault();
+                                editFromSummary(schedule);
+                              }
+                            }}
+                          >
+                            <div>
+                              <strong>{schedule.additional_hours_type || "Horas adicionales"}</strong>
+                              <span>{schedule.date} · {formatHours(schedule.duration_hours)} h</span>
+                            </div>
+                            <small>{schedule.notes || "Sin observaciones"}</small>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               ) : summaryDetail === "instructors" && filteredInstructorScheduleGroups.length ? (
               <div className="instructor-schedule-groups">
@@ -1437,9 +1525,32 @@ const cancelMutation = useMutation({
                             </div>
                           </fieldset>
                         )}
+                        <label className="additional-hours-toggle">
+                          <input
+                            type="checkbox"
+                            checked={isAdditionalHours}
+                            onChange={(event) => setIsAdditionalHours(event.target.checked)}
+                          />
+                          <span>
+                            <strong>Programar horas adicionales</strong>
+                            <small>No se dibujan en calendarios; cuentan en la carga del instructor.</small>
+                          </span>
+                        </label>
+                        {isAdditionalHours && (
+                          <label className="form-label">
+                            Tipo de horas adicionales <span className="req">*</span>
+                            <input
+                              type="text"
+                              value={additionalHoursType}
+                              onChange={(event) => setAdditionalHoursType(event.target.value)}
+                              placeholder="Ej. Complementarias, atención a aprendices, alistamiento..."
+                              required
+                            />
+                          </label>
+                        )}
                       </div>
 
-                      <div className="schedule-form-group">
+                      {!isAdditionalHours && <div className="schedule-form-group">
                         <p className="form-group-title">Datos académicos</p>
                         <SearchableSelect label="Ficha / Grupo" value={groupId} required placeholder="Seleccione ficha..." searchPlaceholder="Buscar ficha..." options={groups.map((group) => ({ value: group.id, label: groupLabel(group) }))} onChange={(value) => handleFichaChange(value === "" ? "" : Number(value))} />
                         <SearchableSelect
@@ -1532,26 +1643,26 @@ const cancelMutation = useMutation({
                         )}
 
                         <SearchableSelect label="Competencia Asociada" value={competencyId} placeholder="Auto-detectado por RAP" searchPlaceholder="Buscar competencia..." options={competencies.map((competency) => ({ value: competency.id, label: `${competency.code} - ${competency.name}` }))} onChange={(value) => setCompetencyId(value === "" ? "" : Number(value))} />
-                      </div>
+                      </div>}
 
                       <div className="schedule-form-group">
                         <p className="form-group-title">Asignación</p>
                         <SearchableSelect label="Instructor" value={instructorId} required placeholder="Seleccione instructor..." searchPlaceholder="Buscar instructor..." options={instructors.map((instructor) => ({ value: instructor.id, label: instructorLabel(instructor) }))} onChange={(value) => setInstructorId(value === "" ? "" : Number(value))} />
-                        <SearchableSelect label="Ambiente" value={environmentId} required placeholder="Seleccione ambiente..." searchPlaceholder="Buscar ambiente..." options={environments.map((environment) => ({ value: environment.id, label: environmentLabel(environment) }))} onChange={(value) => setEnvironmentId(value === "" ? "" : Number(value))} />
+                        {!isAdditionalHours && <SearchableSelect label="Ambiente" value={environmentId} required placeholder="Seleccione ambiente..." searchPlaceholder="Buscar ambiente..." options={environments.map((environment) => ({ value: environment.id, label: environmentLabel(environment) }))} onChange={(value) => setEnvironmentId(value === "" ? "" : Number(value))} />}
                       </div>
 
                 <div className="schedule-form-group">
                   <p className="form-group-title">Bloque y duración</p>
-                <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque..." options={timeBlocks.map((block) => ({ value: block.id, label: `${block.name} (${block.start_time} - ${block.end_time})` }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />
+                {!isAdditionalHours && <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque..." options={timeBlocks.map((block) => ({ value: block.id, label: `${block.name} (${block.start_time} - ${block.end_time})` }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />}
 
-                <div className="form-row-compact">
+                <div className={isAdditionalHours ? "form-row-compact additional-hours-row" : "form-row-compact"}>
                   <label className="form-label">
                     Inicio <span className="req">*</span>
                     <input
                       type="time"
                       value={startTime}
                       onChange={(e) => handleTimeChange(e.target.value, endTime)}
-                      required
+                      required={!isAdditionalHours}
                     />
                   </label>
                   <label className="form-label">
@@ -1560,7 +1671,7 @@ const cancelMutation = useMutation({
                       type="time"
                       value={endTime}
                       onChange={(e) => handleTimeChange(startTime, e.target.value)}
-                      required
+                      required={!isAdditionalHours}
                     />
                   </label>
                   <label className="form-label">
@@ -1568,10 +1679,12 @@ const cancelMutation = useMutation({
                     <input
                       type="number"
                       step="0.1"
+                      min="0.1"
                       value={durationHours}
                       onChange={(e) => setDurationHours(e.target.value ? Number(e.target.value) : "")}
-                      readOnly
-                      className="readonly-input"
+                      readOnly={!isAdditionalHours}
+                      className={!isAdditionalHours ? "readonly-input" : undefined}
+                      required={isAdditionalHours}
                     />
                   </label>
                 </div>
@@ -1648,7 +1761,14 @@ const cancelMutation = useMutation({
                   <span className="eyebrow">Advertencias del horario</span>
                   <h3 id="warning-detail-title">Horario #{warningSchedule.id}</h3>
                 </div>
-                <button type="button" className="btn-secondary" onClick={() => setWarningSchedule(null)}>Cerrar</button>
+                <div className="warning-detail-actions">
+                  {canWrite && (
+                    <button type="button" className="btn-primary" onClick={() => startAdditionalHoursFromWarning(warningSchedule)}>
+                      Registrar horas adicionales
+                    </button>
+                  )}
+                  <button type="button" className="btn-secondary" onClick={() => setWarningSchedule(null)}>Cerrar</button>
+                </div>
               </div>
               <div className="warning-schedule-summary">
                 <span><strong>Fecha:</strong> {warningSchedule.date}</span>

@@ -102,6 +102,36 @@ class ScheduleValidationTest(unittest.TestCase):
         self.assertEqual(result["status"], "valid")
         self.assertNotIn("CONTRACTOR_MISSING_HOURS", {item["rule_code"] for item in result["validations"]})
 
+    def test_additional_hours_skip_calendar_requirements(self) -> None:
+        payload = base_payload()
+        payload.update(
+            {
+                "is_additional_hours": True,
+                "group_id": "None",
+                "environment_id": "None",
+                "learning_result_id": "None",
+                "start_time": time(0, 0),
+                "end_time": time(0, 0),
+                "existing_schedules": [
+                    {
+                        "instructor_id": "inst-1",
+                        "group_id": "ficha-1",
+                        "environment_id": "amb-1",
+                        "learning_result_id": "rap-1",
+                        "date": date(2026, 7, 6),
+                        "start_time": time(8, 0),
+                        "end_time": time(10, 0),
+                        "environment_type": "fisico",
+                    }
+                ],
+            }
+        )
+        result = validate_schedule(payload)
+        rules = {item["rule_code"] for item in result["validations"]}
+        self.assertNotIn("INVALID_TIME_RANGE", rules)
+        self.assertNotIn("INSTRUCTOR_OVERLAP", rules)
+        self.assertNotIn("LEARNING_RESULT_NOT_IN_PROGRAM", rules)
+
 
 if __name__ == "__main__":
     unittest.main()

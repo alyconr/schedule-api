@@ -294,6 +294,18 @@ class ScheduleListingTest(unittest.TestCase):
         )
         create_schedule(manual_topic, session)
 
+        additional_hours = ScheduleCreate(
+            instructor_id=self.ids["instructor"],
+            date=date(2026, 7, 10),
+            start_time="00:00",
+            end_time="00:00",
+            duration_hours=2,
+            is_additional_hours=True,
+            additional_hours_type="Complementarias",
+            notes="Apoyo alistamiento",
+        )
+        create_schedule(additional_hours, session)
+
     def _list_schedules(self, session: Session, **overrides):
         params = dict(
             instructor_id=None,
@@ -332,6 +344,14 @@ class ScheduleListingTest(unittest.TestCase):
         with Session(self.engine) as session:
             rows = self._list_schedules(session, learning_result_id=self.ids["learning_result"] + 999)
         self.assertEqual(len(rows), 0)
+
+    def test_additional_hours_visible_by_instructor(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules(session, instructor_id=self.ids["instructor"])
+        additional = [row for row in rows if row.is_additional_hours]
+        self.assertEqual(len(additional), 1)
+        self.assertIsNone(additional[0].group_id)
+        self.assertEqual(additional[0].additional_hours_type, "Complementarias")
 
     def test_list_schedules_detailed_enriches_names(self) -> None:
         with Session(self.engine) as session:

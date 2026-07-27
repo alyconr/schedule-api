@@ -95,12 +95,12 @@ export function ScheduleDetailPage() {
                     <td className="day-cell">{formatProgrammedDay(schedule.date)}</td>
                     <td className="time-cell">{schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}</td>
                     <td className="instructor-cell">{schedule.instructor_name}</td>
-                    <td><strong className="group-code">{schedule.group_code}</strong></td>
+                    <td><strong className="group-code">{schedule.is_additional_hours ? "Horas adicionales" : schedule.group_code}</strong></td>
                     <td>{schedule.group_trimester || "Sin trimestre"}</td>
                     <td>{schedule.training_program_name || "-"}</td>
-                    <td>{schedule.learning_result_code || "-"}</td>
+                    <td>{schedule.is_additional_hours ? schedule.additional_hours_type || "-" : schedule.learning_result_code || "-"}</td>
                     <td>{schedule.topic_name || "-"}</td>
-                    <td>{schedule.environment_name}</td>
+                    <td>{schedule.environment_name || "-"}</td>
                     <td><span className={`schedule-status ${statusClass(schedule.status)}`}>{statusLabel(schedule.status)}</span></td>
                     <td>
                       {schedule.status === "warning" ? (

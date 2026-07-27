@@ -18,8 +18,9 @@ def _validation(rule_code: str, severity: str, message: str, field: str | None =
 
 def validate_schedule(payload: dict[str, Any]) -> dict[str, Any]:
     validations: list[dict[str, Any]] = []
+    is_additional_hours = payload.get("is_additional_hours", False)
 
-    if payload["end_time"] <= payload["start_time"]:
+    if not is_additional_hours and payload["end_time"] <= payload["start_time"]:
         validations.append(
             _validation("INVALID_TIME_RANGE", "BLOCKING", "La hora final debe ser mayor a la hora inicial.", "end_time")
         )
@@ -30,10 +31,12 @@ def validate_schedule(payload: dict[str, Any]) -> dict[str, Any]:
         ("environment_active", "ENVIRONMENT_INACTIVE", "El ambiente esta inactivo."),
     )
     for field, code, message in inactive_checks:
+        if is_additional_hours and field in {"group_active", "environment_active"}:
+            continue
         if not payload[field]:
             validations.append(_validation(code, "BLOCKING", message, field))
 
-    if payload["learning_result_id"] not in payload["program_learning_result_ids"]:
+    if not is_additional_hours and payload["learning_result_id"] not in payload["program_learning_result_ids"]:
         validations.append(
             _validation(
                 "LEARNING_RESULT_NOT_IN_PROGRAM",
@@ -43,11 +46,12 @@ def validate_schedule(payload: dict[str, Any]) -> dict[str, Any]:
             )
         )
 
-    _validate_overlaps(payload, validations)
-    _validate_plant_schedule_window(payload, validations)
+    if not is_additional_hours:
+        _validate_overlaps(payload, validations)
+        _validate_plant_schedule_window(payload, validations)
     _validate_weekly_hours(payload, validations)
 
-    if payload["environment_capacity"] < payload["group_learners"]:
+    if not is_additional_hours and payload["environment_capacity"] < payload["group_learners"]:
         validations.append(
             _validation(
                 "ENVIRONMENT_CAPACITY_LOW",

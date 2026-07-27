@@ -2,7 +2,7 @@ from datetime import date as date_type, datetime, time
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ContractType = Literal["planta", "contratista", "otro"]
@@ -80,13 +80,13 @@ class ScheduleCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     instructor_id: int
-    group_id: int
+    group_id: int | None = None
     training_program_id: int | None = None
     competency_id: int | None = None
-    learning_result_id: int
+    learning_result_id: int | None = None
     learning_result_topic_id: int | None = None
     manual_topic_name: str | None = Field(default=None, max_length=500)
-    environment_id: int
+    environment_id: int | None = None
     date: date_type
     weekday: int | None = None
     start_time: time
@@ -94,7 +94,28 @@ class ScheduleCreate(BaseModel):
     block_id: int | None = None
     subblock_id: int | None = None
     duration_hours: float = Field(gt=0)
+    is_additional_hours: bool = False
+    additional_hours_type: str | None = Field(default=None, max_length=120)
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def validate_schedule_kind(self) -> "ScheduleCreate":
+        if self.is_additional_hours:
+            if not (self.additional_hours_type or "").strip():
+                raise ValueError("additional_hours_type is required for additional hours")
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("group_id", self.group_id),
+                ("learning_result_id", self.learning_result_id),
+                ("environment_id", self.environment_id),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} required for academic schedules")
+        return self
 
 
 class ScheduleUpdate(BaseModel):
@@ -115,6 +136,8 @@ class ScheduleUpdate(BaseModel):
     block_id: int | None = None
     subblock_id: int | None = None
     duration_hours: float | None = Field(default=None, gt=0)
+    is_additional_hours: bool | None = None
+    additional_hours_type: str | None = Field(default=None, max_length=120)
     notes: str | None = None
     status: str | None = None
 
@@ -137,8 +160,8 @@ class ScheduleDetailedRead(BaseModel):
     end_time: time
     instructor_id: int
     instructor_name: str
-    group_id: int
-    group_code: str
+    group_id: int | None = None
+    group_code: str | None = None
     group_name: str | None = None
     group_trimester: str | None = None
     training_program_id: int | None = None
@@ -147,6 +170,8 @@ class ScheduleDetailedRead(BaseModel):
     learning_result_code: str | None = None
     learning_result_description: str | None = None
     topic_name: str | None = None
-    environment_id: int
-    environment_name: str
+    environment_id: int | None = None
+    environment_name: str | None = None
+    is_additional_hours: bool = False
+    additional_hours_type: str | None = None
     status: str

@@ -407,9 +407,9 @@ function AppContent() {
       ) : visibleTab === "schedules" ? (
         <SchedulePlanner currentUser={currentUser} setActiveTab={handleTabChange} />
       ) : visibleTab === "schedule-matrix" ? (
-        <ScheduleMatrixPage />
+        <ScheduleMatrixPage currentUser={currentUser} />
       ) : visibleTab === "schedule-detail" ? (
-        <ScheduleDetailPage />
+        <ScheduleDetailPage currentUser={currentUser} />
       ) : visibleTab === "validation" ? (
         !canValidate ? (
           <div className="error-panel">

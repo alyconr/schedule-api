@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
-import { fetchSchedulesDetailed } from "../api/schedules";
+import { deleteSchedule, fetchSchedulesDetailed } from "../api/schedules";
+import { CurrentUser } from "../types/auth";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { formatProgrammedDay, ScheduleFilterBar, ScheduleQueryStatus, ScheduleWarningDialog } from "./ScheduleQueryShared";
+import { useToast } from "./ToastProvider";
 
 const STATUS_LABELS: Record<string, string> = {
   validated: "Válido",
@@ -24,9 +27,17 @@ function statusClass(status: string): string {
   return `status-${status in STATUS_LABELS ? status : "idle"}`;
 }
 
-export function ScheduleDetailPage() {
+type ScheduleDetailPageProps = {
+  currentUser: CurrentUser;
+};
+
+export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [filters, setFilters] = useState<ScheduleFilters>({});
   const [warningSchedule, setWarningSchedule] = useState<ScheduleDetailed | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ScheduleDetailed | null>(null);
+  const canDelete = currentUser.roles?.includes("admin") || currentUser.roles?.includes("coordinador");
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
@@ -39,6 +50,19 @@ export function ScheduleDetailPage() {
     enabled: hasFilter,
   });
   const schedules = schedulesQuery.data ?? [];
+  const deleteMutation = useMutation({
+    mutationFn: deleteSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schedules-detailed"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["instructors"] });
+      addToast("success", "Horario eliminado con sus registros relacionados.");
+      setDeleteTarget(null);
+    },
+    onError: (error: any) => {
+      addToast("error", error.message || "No fue posible eliminar el horario.");
+    },
+  });
   const visibleSchedules = useMemo(() => {
     const latestWarning = schedules
       .filter((schedule) => schedule.status === "warning")
@@ -88,6 +112,7 @@ export function ScheduleDetailPage() {
                   <th>Ambiente</th>
                   <th>Estado</th>
                   <th>Advertencias</th>
+                  {canDelete && <th>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +143,13 @@ export function ScheduleDetailPage() {
                         "-"
                       )}
                     </td>
+                    {canDelete && (
+                      <td>
+                        <button type="button" className="btn-delete btn-table-action" onClick={() => setDeleteTarget(schedule)}>
+                          Eliminar
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -129,6 +161,15 @@ export function ScheduleDetailPage() {
       {warningSchedule && (
         <ScheduleWarningDialog schedule={warningSchedule} onClose={() => setWarningSchedule(null)} />
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget?.is_additional_hours ? "Eliminar horas adicionales" : "Eliminar horario"}
+        message="Se eliminará el horario y todo lo relacionado: validaciones, excepciones y acumulados del instructor."
+        confirmLabel={deleteMutation.isPending ? "Eliminando..." : "Eliminar todo"}
+        confirmDanger
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </section>
   );
 }

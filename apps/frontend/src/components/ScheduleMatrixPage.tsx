@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
-import { fetchSchedulesDetailed } from "../api/schedules";
+import { deleteSchedule, fetchSchedulesDetailed } from "../api/schedules";
+import { CurrentUser } from "../types/auth";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { groupLabel, instructorLabel, rapLabel, ScheduleFilterBar, ScheduleQueryStatus } from "./ScheduleQueryShared";
+import { useToast } from "./ToastProvider";
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -19,10 +22,18 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Borrador",
 };
 
-export function ScheduleMatrixPage() {
+type ScheduleMatrixPageProps = {
+  currentUser: CurrentUser;
+};
+
+export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [filters, setFilters] = useState<ScheduleFilters>({});
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleDetailed | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ScheduleDetailed | null>(null);
+  const canDelete = currentUser.roles?.includes("admin") || currentUser.roles?.includes("coordinador");
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
@@ -36,6 +47,20 @@ export function ScheduleMatrixPage() {
   const allSchedules = schedulesQuery.data ?? [];
   const schedules = allSchedules.filter((schedule) => !schedule.is_additional_hours);
   const additionalHours = allSchedules.filter((schedule) => schedule.is_additional_hours);
+  const deleteMutation = useMutation({
+    mutationFn: deleteSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schedules-detailed"] });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["instructors"] });
+      addToast("success", "Horario eliminado con sus registros relacionados.");
+      setDeleteTarget(null);
+      setSelectedSchedule(null);
+    },
+    onError: (error: any) => {
+      addToast("error", error.message || "No fue posible eliminar el horario.");
+    },
+  });
 
   useEffect(() => {
     const firstDate = filters.date_from || schedules[0]?.date;
@@ -107,6 +132,11 @@ export function ScheduleMatrixPage() {
                   <strong>{schedule.date.slice(0, 7)} - {Number(schedule.duration_hours || 0).toFixed(1)} h</strong>
                   <span>{schedule.additional_hours_type || "Sin justificaciÃ³n"}</span>
                 </div>
+                {canDelete && (
+                  <button type="button" className="btn-delete btn-table-action" onClick={() => setDeleteTarget(schedule)}>
+                    Eliminar
+                  </button>
+                )}
               </article>
             ))}
           </div>
@@ -170,10 +200,26 @@ export function ScheduleMatrixPage() {
               <span className="calendar-detail-wide"><strong>RAP</strong>{selectedSchedule.learning_result_code || "Sin RAP"}{selectedSchedule.learning_result_description ? ` · ${selectedSchedule.learning_result_description}` : ""}</span>
               <span className="calendar-detail-wide"><strong>Temática</strong>{selectedSchedule.topic_name || "Sin temática registrada"}</span>
             </div>
-            <footer className="calendar-detail-footer"><button type="button" className="btn-primary" onClick={() => setSelectedSchedule(null)}>Cerrar detalle</button></footer>
+            <footer className="calendar-detail-footer">
+              {canDelete && (
+                <button type="button" className="btn-delete" onClick={() => setDeleteTarget(selectedSchedule)}>
+                  Eliminar horario
+                </button>
+              )}
+              <button type="button" className="btn-primary" onClick={() => setSelectedSchedule(null)}>Cerrar detalle</button>
+            </footer>
           </section>
         </div>
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget?.is_additional_hours ? "Eliminar horas adicionales" : "Eliminar horario"}
+        message="Se eliminará el horario y todo lo relacionado: validaciones, excepciones y acumulados del instructor."
+        confirmLabel={deleteMutation.isPending ? "Eliminando..." : "Eliminar todo"}
+        confirmDanger
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </section>
   );
 }

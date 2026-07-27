@@ -1338,6 +1338,18 @@ const cancelMutation = useMutation({
                               <span>{schedule.additional_hours_type || "Sin justificaciÃ³n"}</span>
                               <span>{schedule.date} · {formatHours(schedule.duration_hours)} h</span>
                             </div>
+                            {canDelete && (
+                              <button
+                                type="button"
+                                className="btn-delete btn-table-action"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteClick(schedule.id);
+                                }}
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </article>
                         ))}
                       </div>

@@ -16,10 +16,12 @@ from app.main import app
 from app.models import (
     Competency,
     Environment,
+    ExceptionRequest,
     Group,
     Instructor,
     LearningResult,
     LearningResultTopic,
+    ScheduleValidation,
     Topic,
     TrainingProgram,
 )
@@ -472,6 +474,32 @@ class ScheduleAdditionalHoursSyncTest(unittest.TestCase):
             instructor = session.get(Instructor, self.ids["instructor"])
 
         self.assertEqual(float(instructor.monthly_additional_hours), 0)
+
+    def test_delete_removes_validations_and_exceptions(self) -> None:
+        with Session(self.engine) as session:
+            result = create_schedule(_additional_payload(self.ids["instructor"], hours=4), session)
+            schedule_id = result.schedule["id"]
+            validation = ScheduleValidation(
+                schedule_id=schedule_id,
+                rule_code="TEST_RULE",
+                severity="WARNING",
+                message="Prueba",
+            )
+            exception = ExceptionRequest(
+                schedule_id=schedule_id,
+                rule_code="TEST_RULE",
+                justification="Prueba",
+            )
+            session.add(validation)
+            session.add(exception)
+            session.commit()
+            session.refresh(validation)
+            session.refresh(exception)
+
+            delete_schedule(schedule_id, session)
+
+            self.assertIsNone(session.get(ScheduleValidation, validation.id))
+            self.assertIsNone(session.get(ExceptionRequest, exception.id))
 
 
 if __name__ == "__main__":

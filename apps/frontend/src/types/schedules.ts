@@ -90,6 +90,7 @@ export type ScheduleDetailed = {
   weekday_label: string;
   start_time: string;
   end_time: string;
+  duration_hours: number;
   instructor_id: number;
   instructor_name: string;
   group_id?: number | null;

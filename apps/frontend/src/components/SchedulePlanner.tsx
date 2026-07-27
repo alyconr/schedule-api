@@ -151,6 +151,14 @@ function monthLabel(value: string): string {
   return date ? date.toLocaleDateString("es-CO", { month: "short", year: "numeric" }) : value;
 }
 
+function monthValue(value: string): string {
+  return value.slice(0, 7);
+}
+
+function monthStartDate(value: string): string {
+  return `${value}-01`;
+}
+
 function monthlyHours(schedules: Schedule[]): [string, number][] {
   return [...schedules.reduce((months, schedule) => {
     const month = schedule.date.slice(0, 7);
@@ -218,6 +226,7 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
   // Form states
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [dateVal, setDateVal] = useState("");
+  const [additionalMonth, setAdditionalMonth] = useState("");
   const [groupId, setGroupId] = useState<number | "">("");
   const [programId, setProgramId] = useState<number | "">("");
   const [competencyId, setCompetencyId] = useState<number | "">("");
@@ -470,12 +479,12 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
         const current = byInstructor.get(schedule.instructor_id);
         if (current) {
           current.schedules.push(schedule);
-          current.weeks.set(weekStart, (current.weeks.get(weekStart) || 0) + Number(schedule.duration_hours || 0));
+          if (!schedule.is_additional_hours) current.weeks.set(weekStart, (current.weeks.get(weekStart) || 0) + Number(schedule.duration_hours || 0));
         } else {
           byInstructor.set(schedule.instructor_id, {
             schedules: [schedule],
             latestSchedule: schedule,
-            weeks: new Map([[weekStart, Number(schedule.duration_hours || 0)]]),
+            weeks: schedule.is_additional_hours ? new Map() : new Map([[weekStart, Number(schedule.duration_hours || 0)]]),
           });
         }
       });
@@ -631,6 +640,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     const program = schedule.training_program_id ? programsById.get(schedule.training_program_id) : undefined;
     return normalizeSearchText([
       weekdayName(schedule), schedule.start_time, schedule.end_time,
+      schedule.is_additional_hours ? `horas adicionales ${schedule.additional_hours_type || ""} ${formatHours(schedule.duration_hours)} ${monthLabel(monthValue(schedule.date))}` : "",
       detail.instructor ? instructorLabel(detail.instructor) : "",
       detail.group ? groupLabel(detail.group) : "",
       detail.environment ? environmentLabel(detail.environment) : "",
@@ -692,6 +702,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   const resetForm = (keepValidation = false) => {
     setEditingSchedule(null);
     setDateVal("");
+    setAdditionalMonth("");
     setGroupId("");
     setProgramId("");
     setCompetencyId("");
@@ -729,6 +740,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setValidations([]);
     setEditingSchedule(sch);
     setDateVal(sch.date);
+    setAdditionalMonth(monthValue(sch.date));
     setGroupId(sch.group_id || "");
     setProgramId(sch.training_program_id || "");
     setCompetencyId(sch.competency_id || "");
@@ -770,19 +782,20 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setSelectedWeeklyBlockIds([]);
   };
 
-  const startAdditionalHoursFromWarning = (schedule: Schedule) => {
+  const startAdditionalHoursForInstructor = (instructorId: number, date = new Date().toLocaleDateString("en-CA")) => {
     if (!canWrite) return;
     resetForm();
     setIsAdditionalHours(true);
-    setInstructorId(schedule.instructor_id);
-    setDateVal(schedule.date);
-    setTrimesterStartDate(schedule.date);
-    setTrimesterEndDate(schedule.date);
-    setSelectedWeekdays([weekdayIndex(schedule)]);
-    const instructor = instructorsById.get(schedule.instructor_id);
+    setInstructorId(instructorId);
+    setAdditionalMonth(monthValue(date));
+    const instructor = instructorsById.get(instructorId);
     setInstructorSearch(instructor ? instructorLabel(instructor) : "");
-    setWarningSchedule(null);
     setSummaryDetail(null);
+  };
+
+  const startAdditionalHoursFromWarning = (schedule: Schedule) => {
+    startAdditionalHoursForInstructor(schedule.instructor_id, schedule.date);
+    setWarningSchedule(null);
   };
 
 // Mutations
@@ -975,36 +988,40 @@ const cancelMutation = useMutation({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!trimesterStartDate || !trimesterEndDate) {
+    if (!isAdditionalHours && (!trimesterStartDate || !trimesterEndDate)) {
       setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
       return;
     }
-    if (trimesterStartDate > trimesterEndDate) {
+    if (!isAdditionalHours && trimesterStartDate > trimesterEndDate) {
       setErrorMsg("La fecha de inicio del trimestre no puede ser mayor a la fecha fin.");
       return;
     }
 
-    if (!instructorId || (editingSchedule && !dateVal)) {
+    if (!instructorId || (editingSchedule && !isAdditionalHours && !dateVal)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
+      return;
+    }
+    if (isAdditionalHours && !additionalMonth) {
+      setErrorMsg("Seleccione el mes de las horas adicionales.");
       return;
     }
     if (!isAdditionalHours && (!groupId || !learningResultId || !environmentId || !startTime || !endTime)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
-    if (!editingSchedule && selectedWeekdays.length === 0) {
+    if (!editingSchedule && !isAdditionalHours && selectedWeekdays.length === 0) {
       setErrorMsg("Seleccione al menos un día de lunes a sábado para programar el RAP.");
       return;
     }
 
-    const calculatedDur = Number(durationHours) || calculateDurationHours(startTime, endTime);
+    const calculatedDur = isAdditionalHours ? Number(durationHours) : Number(durationHours) || calculateDurationHours(startTime, endTime);
     const cleanedAdditionalType = additionalHoursType.trim();
     if (isAdditionalHours && !cleanedAdditionalType) {
-      setErrorMsg("Escriba el tipo de horas adicionales.");
+      setErrorMsg("Escriba la justificaciÃ³n de las horas adicionales.");
       return;
     }
     if (calculatedDur <= 0) {
-      setErrorMsg("Error: La hora final debe ser posterior a la de inicio.");
+      setErrorMsg(isAdditionalHours ? "Ingrese una cantidad de horas mayor a cero." : "Error: La hora final debe ser posterior a la de inicio.");
       return;
     }
     const cleanedManualTopic = manualTopicName.trim();
@@ -1021,7 +1038,9 @@ const cancelMutation = useMutation({
       return;
     }
 
-    const targetDates = editingSchedule
+    const targetDates = isAdditionalHours
+      ? [monthStartDate(additionalMonth)]
+      : editingSchedule
       ? [dateVal]
       : datesForWeekdays(trimesterStartDate, trimesterEndDate, selectedWeekdays);
     if (targetDates.length === 0) {
@@ -1044,11 +1063,12 @@ const cancelMutation = useMutation({
       block_id: isAdditionalHours ? null : blockId ? Number(blockId) : null,
       is_additional_hours: isAdditionalHours,
       additional_hours_type: isAdditionalHours ? cleanedAdditionalType : null,
-      notes: notes || null,
+      notes: isAdditionalHours ? null : notes || null,
     };
 
     if (editingSchedule) {
-      const payload = { ...basePayload, date: dateVal, weekday: getWeekdayFromDate(dateVal) };
+      const date = isAdditionalHours ? monthStartDate(additionalMonth) : dateVal;
+      const payload = { ...basePayload, date, weekday: getWeekdayFromDate(date) };
       updateMutation.mutate({ id: editingSchedule.id, payload });
     } else if (targetDates.length === 1) {
       const payload = { ...basePayload, date: targetDates[0], weekday: getWeekdayFromDate(targetDates[0]) };
@@ -1170,6 +1190,11 @@ const cancelMutation = useMutation({
                     </div>
                     <div className="weekly-chronogram-selection">
                       <strong>{selectedWeeklySchedule.schedules.length} bloques</strong>
+                      {summaryDetail === "instructors" && selectedInstructorGroup && canWrite && (
+                        <button type="button" className="weekly-add-hours" onClick={() => startAdditionalHoursForInstructor(selectedInstructorGroup.id)}>
+                          Agregar horas adicionales
+                        </button>
+                      )}
                       {canDelete && (
                         <>
                           <label>
@@ -1300,10 +1325,10 @@ const cancelMutation = useMutation({
                             }}
                           >
                             <div>
-                              <strong>{schedule.additional_hours_type || "Horas adicionales"}</strong>
+                              <strong>{monthLabel(monthValue(schedule.date))} - {formatHours(schedule.duration_hours)} h</strong>
+                              <span>{schedule.additional_hours_type || "Sin justificaciÃ³n"}</span>
                               <span>{schedule.date} · {formatHours(schedule.duration_hours)} h</span>
                             </div>
-                            <small>{schedule.notes || "Sin observaciones"}</small>
                           </article>
                         ))}
                       </div>
@@ -1488,8 +1513,8 @@ const cancelMutation = useMutation({
                     <form onSubmit={handleFormSubmit} className="schedule-form">
                       <div className="schedule-form-group">
                         <p className="form-group-title">Horario</p>
-                        <p className="form-section-subtitle">Periodo del trimestre</p>
-                        <div className="form-row-compact">
+                        <p className="form-section-subtitle">{isAdditionalHours ? "AsignaciÃ³n mensual" : "Periodo del trimestre"}</p>
+                        {!isAdditionalHours && <div className="form-row-compact">
                           <label className="form-label">
                             Fecha inicio trimestre <span className="req">*</span>
                             <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
@@ -1498,14 +1523,14 @@ const cancelMutation = useMutation({
                             Fecha fin trimestre <span className="req">*</span>
                             <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
                           </label>
-                        </div>
-                        {editingSchedule && (
+                        </div>}
+                        {editingSchedule && !isAdditionalHours && (
                           <label className="form-label">
                             Fecha programada <span className="req">*</span>
                             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
                           </label>
                         )}
-                        {!editingSchedule && (
+                        {!editingSchedule && !isAdditionalHours && (
                           <fieldset className="weekday-selector">
                             <legend>Días a programar</legend>
                             <div className="weekday-options" role="group" aria-label="Días de la semana a programar">
@@ -1538,7 +1563,13 @@ const cancelMutation = useMutation({
                         </label>
                         {isAdditionalHours && (
                           <label className="form-label">
-                            Tipo de horas adicionales <span className="req">*</span>
+                            Mes <span className="req">*</span>
+                            <input type="month" value={additionalMonth} onChange={(event) => setAdditionalMonth(event.target.value)} required />
+                          </label>
+                        )}
+                        {isAdditionalHours && (
+                          <label className="form-label">
+                            JustificaciÃ³n <span className="req">*</span>
                             <input
                               type="text"
                               value={additionalHoursType}
@@ -1656,7 +1687,7 @@ const cancelMutation = useMutation({
                 {!isAdditionalHours && <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque..." options={timeBlocks.map((block) => ({ value: block.id, label: `${block.name} (${block.start_time} - ${block.end_time})` }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />}
 
                 <div className={isAdditionalHours ? "form-row-compact additional-hours-row" : "form-row-compact"}>
-                  <label className="form-label">
+                  {!isAdditionalHours && <label className="form-label">
                     Inicio <span className="req">*</span>
                     <input
                       type="time"
@@ -1664,8 +1695,8 @@ const cancelMutation = useMutation({
                       onChange={(e) => handleTimeChange(e.target.value, endTime)}
                       required={!isAdditionalHours}
                     />
-                  </label>
-                  <label className="form-label">
+                  </label>}
+                  {!isAdditionalHours && <label className="form-label">
                     Fin <span className="req">*</span>
                     <input
                       type="time"
@@ -1673,9 +1704,9 @@ const cancelMutation = useMutation({
                       onChange={(e) => handleTimeChange(startTime, e.target.value)}
                       required={!isAdditionalHours}
                     />
-                  </label>
+                  </label>}
                   <label className="form-label">
-                    Horas
+                    {isAdditionalHours ? "Total de horas del mes" : "Horas"}
                     <input
                       type="number"
                       step="0.1"
@@ -1690,14 +1721,14 @@ const cancelMutation = useMutation({
                 </div>
                 </div>
 
-                <label className="form-label">
+                {!isAdditionalHours && <label className="form-label">
                   Notas / Observaciones
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Detalles de la programación..."
                   />
-                </label>
+                </label>}
 
                 <div className="form-actions-inline">
                   {editingSchedule && (
@@ -1809,9 +1840,18 @@ const cancelMutation = useMutation({
 
       <DetailDialog
         open={detailSchedule !== null}
-        title={detailSchedule ? `Horario #${detailSchedule.id}` : "Horario"}
+        title={detailSchedule ? detailSchedule.is_additional_hours ? `Horas adicionales #${detailSchedule.id}` : `Horario #${detailSchedule.id}` : "Horario"}
         fields={detailSchedule ? (() => {
           const detail = getScheduleDisplayData(detailSchedule);
+          if (detailSchedule.is_additional_hours) {
+            return [
+              { label: "Mes", value: monthLabel(monthValue(detailSchedule.date)) },
+              { label: "Horas", value: `${formatHours(detailSchedule.duration_hours)} horas` },
+              { label: "Instructor", value: detail.instructor ? `${detail.instructor.first_name} ${detail.instructor.last_name}` : detailSchedule.instructor_id },
+              { label: "JustificaciÃ³n", value: detailSchedule.additional_hours_type },
+              { label: "Estado", value: detail.statusName },
+            ];
+          }
           return [
             { label: "Fecha", value: detailSchedule.date },
             { label: "Horario", value: `${detailSchedule.start_time} - ${detailSchedule.end_time}` },

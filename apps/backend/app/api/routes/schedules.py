@@ -1,4 +1,4 @@
-from datetime import date as date_type
+from datetime import date as date_type, time
 from decimal import Decimal
 from typing import Annotated
 
@@ -191,6 +191,10 @@ def _clean_manual_topic(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _additional_hours_month(value: date_type) -> date_type:
+    return value.replace(day=1)
+
+
 def _validate_topic_assignment(
     session: Session,
     learning_result_id: int | None,
@@ -330,6 +334,7 @@ def list_schedules_detailed(
                 weekday_label=weekday_label(sch.weekday or sch.date.isoweekday()),
                 start_time=sch.start_time,
                 end_time=sch.end_time,
+                duration_hours=float(sch.duration_hours),
                 instructor_id=instructor.id,
                 instructor_name=f"{instructor.first_name} {instructor.last_name}",
                 group_id=group.id if group else None,
@@ -413,26 +418,31 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
     else:
         db_status = "validated"
 
+    is_additional_hours = payload.is_additional_hours
+    schedule_date = _additional_hours_month(payload.date) if is_additional_hours else payload.date
+    schedule_start = time(0, 0) if is_additional_hours else payload.start_time
+    schedule_end = time(0, 0) if is_additional_hours else payload.end_time
+
     sch = Schedule(
         instructor_id=payload.instructor_id,
-        group_id=payload.group_id,
-        training_program_id=training_program_id,
-        competency_id=competency_id,
-        learning_result_id=payload.learning_result_id,
-        learning_result_topic_id=payload.learning_result_topic_id,
-        manual_topic_name=manual_topic_name,
-        environment_id=payload.environment_id,
-        date=payload.date,
-        weekday=payload.weekday or payload.date.isoweekday(),
-        start_time=payload.start_time,
-        end_time=payload.end_time,
-        block_id=payload.block_id,
-        subblock_id=payload.subblock_id,
+        group_id=None if is_additional_hours else payload.group_id,
+        training_program_id=None if is_additional_hours else training_program_id,
+        competency_id=None if is_additional_hours else competency_id,
+        learning_result_id=None if is_additional_hours else payload.learning_result_id,
+        learning_result_topic_id=None if is_additional_hours else payload.learning_result_topic_id,
+        manual_topic_name=None if is_additional_hours else manual_topic_name,
+        environment_id=None if is_additional_hours else payload.environment_id,
+        date=schedule_date,
+        weekday=schedule_date.isoweekday(),
+        start_time=schedule_start,
+        end_time=schedule_end,
+        block_id=None if is_additional_hours else payload.block_id,
+        subblock_id=None if is_additional_hours else payload.subblock_id,
         duration_hours=Decimal(str(payload.duration_hours)),
-        is_additional_hours=payload.is_additional_hours,
+        is_additional_hours=is_additional_hours,
         additional_hours_type=_clean_manual_topic(payload.additional_hours_type),
         status=db_status,
-        notes=payload.notes,
+        notes=None if is_additional_hours else payload.notes,
     )
     try:
         session.add(sch)
@@ -461,9 +471,9 @@ def update_schedule(
         raise HTTPException(404, detail="Schedule not found")
 
     merged_instructor_id = payload.instructor_id if payload.instructor_id is not None else sch.instructor_id
-    merged_group_id = payload.group_id if payload.group_id is not None else sch.group_id
-    merged_environment_id = payload.environment_id if payload.environment_id is not None else sch.environment_id
-    merged_learning_result_id = payload.learning_result_id if payload.learning_result_id is not None else sch.learning_result_id
+    merged_group_id = payload.group_id if "group_id" in payload.model_fields_set else sch.group_id
+    merged_environment_id = payload.environment_id if "environment_id" in payload.model_fields_set else sch.environment_id
+    merged_learning_result_id = payload.learning_result_id if "learning_result_id" in payload.model_fields_set else sch.learning_result_id
     merged_learning_result_topic_id = (
         payload.learning_result_topic_id
         if "learning_result_topic_id" in payload.model_fields_set
@@ -474,8 +484,8 @@ def update_schedule(
         if "manual_topic_name" in payload.model_fields_set
         else sch.manual_topic_name
     )
-    merged_training_program_id = payload.training_program_id if payload.training_program_id is not None else sch.training_program_id
-    merged_competency_id = payload.competency_id if payload.competency_id is not None else sch.competency_id
+    merged_training_program_id = payload.training_program_id if "training_program_id" in payload.model_fields_set else sch.training_program_id
+    merged_competency_id = payload.competency_id if "competency_id" in payload.model_fields_set else sch.competency_id
     merged_date = payload.date if payload.date is not None else sch.date
     merged_start = payload.start_time if payload.start_time is not None else sch.start_time
     merged_end = payload.end_time if payload.end_time is not None else sch.end_time
@@ -486,6 +496,17 @@ def update_schedule(
         if "additional_hours_type" in payload.model_fields_set
         else sch.additional_hours_type
     )
+    if merged_is_additional_hours:
+        merged_group_id = None
+        merged_environment_id = None
+        merged_learning_result_id = None
+        merged_learning_result_topic_id = None
+        merged_manual_topic_name = None
+        merged_training_program_id = None
+        merged_competency_id = None
+        merged_date = _additional_hours_month(merged_date)
+        merged_start = time(0, 0)
+        merged_end = time(0, 0)
 
     class MergedPayload:
         instructor_id = merged_instructor_id
@@ -505,7 +526,7 @@ def update_schedule(
 
     instructor, group, environment, learning_result, competency, program = _check_entities(session, MergedPayload())
     if MergedPayload().is_additional_hours and not _clean_manual_topic(MergedPayload().additional_hours_type):
-        raise HTTPException(422, detail="additional_hours_type is required for additional hours")
+        raise HTTPException(422, detail="additional_hours_type is required as justification for additional hours")
 
     existing = _existing_for_date(session, MergedPayload(), exclude_id=schedule_id)
     vpayload = _build_validation_payload(
@@ -540,7 +561,41 @@ def update_schedule(
             MergedPayload().learning_result_topic_id,
             _clean_manual_topic(MergedPayload().manual_topic_name),
         )
+    if MergedPayload().is_additional_hours:
+        sch.group_id = None
+        sch.training_program_id = None
+        sch.competency_id = None
+        sch.learning_result_id = None
+        sch.learning_result_topic_id = None
+        sch.manual_topic_name = None
+        sch.environment_id = None
+        sch.date = MergedPayload().date
+        sch.weekday = MergedPayload().date.isoweekday()
+        sch.start_time = time(0, 0)
+        sch.end_time = time(0, 0)
+        sch.block_id = None
+        sch.subblock_id = None
+        sch.notes = None
+
+    additional_locked_fields = {
+        "group_id",
+        "training_program_id",
+        "competency_id",
+        "learning_result_id",
+        "learning_result_topic_id",
+        "manual_topic_name",
+        "environment_id",
+        "date",
+        "weekday",
+        "start_time",
+        "end_time",
+        "block_id",
+        "subblock_id",
+        "notes",
+    }
     for key, value in update_data.items():
+        if MergedPayload().is_additional_hours and key in additional_locked_fields:
+            continue
         if key in ("learning_result_topic_id", "manual_topic_name", "additional_hours_type"):
             setattr(sch, key, _clean_manual_topic(value) if key in ("manual_topic_name", "additional_hours_type") else value)
         elif key in {

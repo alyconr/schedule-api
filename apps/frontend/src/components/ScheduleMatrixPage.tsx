@@ -33,7 +33,9 @@ export function ScheduleMatrixPage() {
     queryFn: () => fetchSchedulesDetailed(filters),
     enabled: hasFilter,
   });
-  const schedules = (schedulesQuery.data ?? []).filter((schedule) => !schedule.is_additional_hours);
+  const allSchedules = schedulesQuery.data ?? [];
+  const schedules = allSchedules.filter((schedule) => !schedule.is_additional_hours);
+  const additionalHours = allSchedules.filter((schedule) => schedule.is_additional_hours);
 
   useEffect(() => {
     const firstDate = filters.date_from || schedules[0]?.date;
@@ -91,6 +93,25 @@ export function ScheduleMatrixPage() {
         onClear={() => setFilters({})}
       />
       <ScheduleQueryStatus hasFilter={hasFilter} query={schedulesQuery} />
+
+      {hasFilter && filters.instructor_id && additionalHours.length > 0 && (
+        <section className="additional-hours-panel" aria-label="Horas adicionales mensuales">
+          <header>
+            <span>Horas adicionales</span>
+            <strong>{additionalHours.reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0).toFixed(1)} h</strong>
+          </header>
+          <div className="additional-hours-list">
+            {additionalHours.map((schedule) => (
+              <article key={schedule.id}>
+                <div>
+                  <strong>{schedule.date.slice(0, 7)} - {Number(schedule.duration_hours || 0).toFixed(1)} h</strong>
+                  <span>{schedule.additional_hours_type || "Sin justificaciÃ³n"}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {hasFilter && schedules.length > 0 && (
         <section className="academic-calendar" aria-label="Calendario de la matriz académica">

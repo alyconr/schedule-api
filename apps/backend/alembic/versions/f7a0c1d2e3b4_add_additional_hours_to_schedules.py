@@ -1,7 +1,7 @@
 """add additional hours to schedules
 
 Revision ID: f7a0c1d2e3b4
-Revises: f6d9b3a5e0c2
+Revises: a7b8c9d0e1f2
 Create Date: 2026-07-27
 """
 
@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column("schedules", sa.Column("is_additional_hours", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("schedules", sa.Column("additional_hours_type", sa.String(length=120), nullable=True))
+    op.add_column("schedules", sa.Column("additional_hours_type", sa.String(length=500), nullable=True))
     op.alter_column("schedules", "group_id", existing_type=sa.Integer(), nullable=True)
     op.alter_column("schedules", "environment_id", existing_type=sa.Integer(), nullable=True)
 

@@ -95,14 +95,14 @@ class ScheduleCreate(BaseModel):
     subblock_id: int | None = None
     duration_hours: float = Field(gt=0)
     is_additional_hours: bool = False
-    additional_hours_type: str | None = Field(default=None, max_length=120)
+    additional_hours_type: str | None = Field(default=None, max_length=500)
     notes: str | None = None
 
     @model_validator(mode="after")
     def validate_schedule_kind(self) -> "ScheduleCreate":
         if self.is_additional_hours:
             if not (self.additional_hours_type or "").strip():
-                raise ValueError("additional_hours_type is required for additional hours")
+                raise ValueError("additional_hours_type is required as justification for additional hours")
             return self
         missing = [
             name
@@ -137,7 +137,7 @@ class ScheduleUpdate(BaseModel):
     subblock_id: int | None = None
     duration_hours: float | None = Field(default=None, gt=0)
     is_additional_hours: bool | None = None
-    additional_hours_type: str | None = Field(default=None, max_length=120)
+    additional_hours_type: str | None = Field(default=None, max_length=500)
     notes: str | None = None
     status: str | None = None
 
@@ -158,6 +158,7 @@ class ScheduleDetailedRead(BaseModel):
     weekday_label: str
     start_time: time
     end_time: time
+    duration_hours: float
     instructor_id: int
     instructor_name: str
     group_id: int | None = None

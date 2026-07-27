@@ -299,10 +299,9 @@ class ScheduleListingTest(unittest.TestCase):
             date=date(2026, 7, 10),
             start_time="00:00",
             end_time="00:00",
-            duration_hours=2,
+            duration_hours=12,
             is_additional_hours=True,
-            additional_hours_type="Complementarias",
-            notes="Apoyo alistamiento",
+            additional_hours_type="Apoyo a alistamiento mensual",
         )
         create_schedule(additional_hours, session)
 
@@ -351,7 +350,19 @@ class ScheduleListingTest(unittest.TestCase):
         additional = [row for row in rows if row.is_additional_hours]
         self.assertEqual(len(additional), 1)
         self.assertIsNone(additional[0].group_id)
-        self.assertEqual(additional[0].additional_hours_type, "Complementarias")
+        self.assertIsNone(additional[0].environment_id)
+        self.assertEqual(additional[0].date, date(2026, 7, 1))
+        self.assertEqual(float(additional[0].duration_hours), 12)
+        self.assertEqual(additional[0].additional_hours_type, "Apoyo a alistamiento mensual")
+
+    def test_detailed_instructor_includes_monthly_additional_hours(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules_detailed(session, instructor_id=self.ids["instructor"])
+        additional = [row for row in rows if row.is_additional_hours]
+        self.assertEqual(len(additional), 1)
+        self.assertEqual(additional[0].date, date(2026, 7, 1))
+        self.assertEqual(additional[0].duration_hours, 12)
+        self.assertEqual(additional[0].additional_hours_type, "Apoyo a alistamiento mensual")
 
     def test_list_schedules_detailed_enriches_names(self) -> None:
         with Session(self.engine) as session:

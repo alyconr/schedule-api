@@ -78,6 +78,7 @@ export function ScheduleDetailPage() {
                 <tr>
                   <th>Día programado</th>
                   <th>Horario</th>
+                  <th>Horas</th>
                   <th>Instructor</th>
                   <th>Ficha</th>
                   <th>Trimestre</th>
@@ -92,14 +93,15 @@ export function ScheduleDetailPage() {
               <tbody>
                 {visibleSchedules.map((schedule) => (
                   <tr key={schedule.id}>
-                    <td className="day-cell">{formatProgrammedDay(schedule.date)}</td>
+                    <td className="day-cell">{schedule.is_additional_hours ? schedule.date.slice(0, 7) : formatProgrammedDay(schedule.date)}</td>
                     <td className="time-cell">{schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}</td>
+                    <td>{Number(schedule.duration_hours || 0).toFixed(1)} h</td>
                     <td className="instructor-cell">{schedule.instructor_name}</td>
                     <td><strong className="group-code">{schedule.is_additional_hours ? "Horas adicionales" : schedule.group_code}</strong></td>
                     <td>{schedule.group_trimester || "Sin trimestre"}</td>
                     <td>{schedule.training_program_name || "-"}</td>
                     <td>{schedule.is_additional_hours ? schedule.additional_hours_type || "-" : schedule.learning_result_code || "-"}</td>
-                    <td>{schedule.topic_name || "-"}</td>
+                    <td>{schedule.is_additional_hours ? schedule.additional_hours_type || "-" : schedule.topic_name || "-"}</td>
                     <td>{schedule.environment_name || "-"}</td>
                     <td><span className={`schedule-status ${statusClass(schedule.status)}`}>{statusLabel(schedule.status)}</span></td>
                     <td>

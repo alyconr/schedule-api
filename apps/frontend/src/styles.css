@@ -1325,6 +1325,9 @@ textarea:focus:not(:focus-visible) {
 .additional-hours-list article div { display: grid; gap: 3px; min-width: 0; }
 .additional-hours-list article strong { color: #183b27; }
 .additional-hours-list article span, .additional-hours-list article small { color: #607268; font-size: .76rem; overflow-wrap: anywhere; }
+.weekly-add-hours { border: none; border-radius: 8px; padding: 8px 12px; background: #17452d; color: #fff; font-weight: 800; cursor: pointer; }
+.weekly-add-hours:hover { background: #0f3521; }
+.additional-hours-fields { display: grid; gap: 12px; }
 
 @media (max-width: 720px) {
   .planner-summary-grid { grid-template-columns: 1fr; }

@@ -131,6 +131,7 @@ class ScheduleValidationTest(unittest.TestCase):
         self.assertNotIn("INVALID_TIME_RANGE", rules)
         self.assertNotIn("INSTRUCTOR_OVERLAP", rules)
         self.assertNotIn("LEARNING_RESULT_NOT_IN_PROGRAM", rules)
+        self.assertNotIn("PLANT_INSTRUCTOR_MISSING_HOURS", rules)
 
 
 if __name__ == "__main__":

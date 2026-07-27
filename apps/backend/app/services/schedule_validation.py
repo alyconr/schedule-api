@@ -49,7 +49,7 @@ def validate_schedule(payload: dict[str, Any]) -> dict[str, Any]:
     if not is_additional_hours:
         _validate_overlaps(payload, validations)
         _validate_plant_schedule_window(payload, validations)
-    _validate_weekly_hours(payload, validations)
+        _validate_weekly_hours(payload, validations)
 
     if not is_additional_hours and payload["environment_capacity"] < payload["group_learners"]:
         validations.append(

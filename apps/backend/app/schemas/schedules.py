@@ -88,6 +88,8 @@ class ScheduleCreate(BaseModel):
     manual_topic_name: str | None = Field(default=None, max_length=500)
     environment_id: int | None = None
     date: date_type
+    schedule_year: int = Field(ge=2000, le=2100)
+    schedule_quarter: int = Field(ge=1, le=4)
     weekday: int | None = None
     start_time: time
     end_time: time
@@ -100,6 +102,9 @@ class ScheduleCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_schedule_kind(self) -> "ScheduleCreate":
+        expected_quarter = ((self.date.month - 1) // 3) + 1
+        if self.date.year != self.schedule_year or expected_quarter != self.schedule_quarter:
+            raise ValueError("date must belong to schedule_year and schedule_quarter")
         if self.is_additional_hours:
             if not (self.additional_hours_type or "").strip():
                 raise ValueError("additional_hours_type is required as justification for additional hours")
@@ -130,6 +135,8 @@ class ScheduleUpdate(BaseModel):
     manual_topic_name: str | None = Field(default=None, max_length=500)
     environment_id: int | None = None
     date: date_type | None = None
+    schedule_year: int | None = Field(default=None, ge=2000, le=2100)
+    schedule_quarter: int | None = Field(default=None, ge=1, le=4)
     weekday: int | None = None
     start_time: time | None = None
     end_time: time | None = None
@@ -155,6 +162,8 @@ class ScheduleDetailedRead(BaseModel):
 
     id: int
     date: date_type
+    schedule_year: int
+    schedule_quarter: int
     weekday_label: str
     start_time: time
     end_time: time

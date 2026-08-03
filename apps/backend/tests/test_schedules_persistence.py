@@ -10,6 +10,7 @@ from app.api.routes.schedules import (
     delete_schedule,
     list_schedules,
     list_schedules_detailed,
+    list_schedule_periods,
     update_schedule,
 )
 from app.main import app
@@ -194,6 +195,8 @@ def _additional_payload(instructor_id: int, hours: int = 12) -> ScheduleCreate:
     return ScheduleCreate(
         instructor_id=instructor_id,
         date=date(2026, 7, 10),
+        schedule_year=2026,
+        schedule_quarter=3,
         start_time="00:00",
         end_time="00:00",
         duration_hours=hours,
@@ -223,6 +226,8 @@ class ScheduleTopicAssignmentTest(unittest.TestCase):
             "learning_result_id": self.ids["learning_result"],
             "environment_id": self.ids["environment"],
             "date": date(2026, 7, 8),
+            "schedule_year": 2026,
+            "schedule_quarter": 3,
             "start_time": "08:00",
             "end_time": "10:00",
             "duration_hours": 2,
@@ -239,6 +244,10 @@ class ScheduleTopicAssignmentTest(unittest.TestCase):
         self.assertEqual(result.status, "validated")
         self.assertEqual(result.schedule["learning_result_topic_id"], self.ids["relation"])
         self.assertIsNone(result.schedule["manual_topic_name"])
+
+    def test_create_rejects_date_outside_selected_quarter(self) -> None:
+        with self.assertRaises(ValueError):
+            self._payload(schedule_quarter=2)
 
     def test_create_accepts_manual_topic_when_no_relation(self) -> None:
         with Session(self.engine) as session:
@@ -296,6 +305,8 @@ class ScheduleListingTest(unittest.TestCase):
             learning_result_topic_id=self.ids["relation"],
             environment_id=self.ids["environment"],
             date=date(2026, 7, 7),
+            schedule_year=2026,
+            schedule_quarter=3,
             start_time="08:00",
             end_time="10:00",
             duration_hours=2,
@@ -309,6 +320,8 @@ class ScheduleListingTest(unittest.TestCase):
             manual_topic_name="Tema manual de prueba",
             environment_id=self.ids["environment"],
             date=date(2026, 7, 9),
+            schedule_year=2026,
+            schedule_quarter=3,
             start_time="10:00",
             end_time="12:00",
             duration_hours=2,
@@ -318,6 +331,8 @@ class ScheduleListingTest(unittest.TestCase):
         additional_hours = ScheduleCreate(
             instructor_id=self.ids["instructor"],
             date=date(2026, 7, 10),
+            schedule_year=2026,
+            schedule_quarter=3,
             start_time="00:00",
             end_time="00:00",
             duration_hours=12,
@@ -332,6 +347,8 @@ class ScheduleListingTest(unittest.TestCase):
             group_id=None,
             environment_id=None,
             learning_result_id=None,
+            schedule_year=None,
+            schedule_quarter=None,
             date=None,
             date_from=None,
             date_to=None,
@@ -347,6 +364,8 @@ class ScheduleListingTest(unittest.TestCase):
             instructor_id=None,
             group_id=None,
             learning_result_id=None,
+            schedule_year=2026,
+            schedule_quarter=3,
             date_from=None,
             date_to=None,
             include_inactive=False,
@@ -364,6 +383,27 @@ class ScheduleListingTest(unittest.TestCase):
         with Session(self.engine) as session:
             rows = self._list_schedules(session, learning_result_id=self.ids["learning_result"] + 999)
         self.assertEqual(len(rows), 0)
+
+    def test_list_schedules_filters_by_period(self) -> None:
+        with Session(self.engine) as session:
+            rows = self._list_schedules(
+                session,
+                schedule_year=2026,
+                schedule_quarter=3,
+            )
+        self.assertEqual(len(rows), 3)
+
+    def test_list_schedule_periods_groups_instructor_history(self) -> None:
+        with Session(self.engine) as session:
+            periods = list_schedule_periods(
+                session,
+                instructor_id=self.ids["instructor"],
+                group_id=None,
+            )
+        self.assertEqual(len(periods), 1)
+        self.assertEqual(periods[0]["schedule_year"], 2026)
+        self.assertEqual(periods[0]["schedule_quarter"], 3)
+        self.assertEqual(periods[0]["schedule_count"], 3)
 
     def test_additional_hours_visible_by_instructor(self) -> None:
         with Session(self.engine) as session:

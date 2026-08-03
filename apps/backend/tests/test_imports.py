@@ -195,7 +195,7 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
 
     def test_rejects_old_import_types(self) -> None:
         from app.api.routes.imports import ALLOWED_IMPORT_TYPES
-        self.assertEqual(ALLOWED_IMPORT_TYPES, ["schedule_normalized"])
+        self.assertEqual(ALLOWED_IMPORT_TYPES, ["schedule_normalized", "schedule_history"])
         self.assertNotIn("semaforos_relacional", ALLOWED_IMPORT_TYPES)
         self.assertNotIn("semaforos_sena", ALLOWED_IMPORT_TYPES)
 
@@ -313,7 +313,7 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
 
     def test_template_info_includes_only_schedule_normalized(self) -> None:
         info = get_template_info()
-        self.assertEqual(info.supported_import_types, ["schedule_normalized"])
+        self.assertEqual(info.supported_import_types, ["schedule_normalized", "schedule_history"])
         self.assertEqual(info.supported_formats, [".xlsx"])
         self.assertNotIn("semaforos_relacional", info.supported_import_types)
         self.assertNotIn("Semaforo con RA", info.required_sheets)

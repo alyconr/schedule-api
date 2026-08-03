@@ -11,16 +11,20 @@ from app.schemas.imports import (
     TemplateInfoResponse
 )
 from app.services import import_service
+from app.services.schedule_history_import import commit_schedule_history, preview_schedule_history
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 SessionDep = Annotated[Session, Depends(get_session)]
-ALLOWED_IMPORT_TYPES = ["schedule_normalized"]
+ALLOWED_IMPORT_TYPES = ["schedule_normalized", "schedule_history"]
 
 
 @router.post("/preview", response_model=ImportPreviewResponse, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 async def preview_import(
+    session: SessionDep,
     file: UploadFile = File(...),
-    import_type: str = Form(...)
+    import_type: str = Form(...),
+    schedule_year: int | None = Form(default=None),
+    schedule_quarter: int | None = Form(default=None),
 ) -> ImportPreviewResponse:
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):
@@ -39,6 +43,10 @@ async def preview_import(
 
     if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
+    if import_type == "schedule_history":
+        if schedule_year is None or not 2000 <= schedule_year <= 2100 or schedule_quarter not in {1, 2, 3, 4}:
+            raise HTTPException(status_code=422, detail="Debe seleccionar año y trimestre para el histórico")
+        return preview_schedule_history(session, content, filename, schedule_year, schedule_quarter)
 
     try:
         preview = import_service.preview_workbook(content, filename, import_type)
@@ -52,7 +60,9 @@ async def commit_import(
     session: SessionDep,
     file: UploadFile = File(...),
     import_type: str = Form(...),
-    mode: str = Form("upsert")
+    mode: str = Form("upsert"),
+    schedule_year: int | None = Form(default=None),
+    schedule_quarter: int | None = Form(default=None),
 ) -> ImportCommitResponse:
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):
@@ -68,6 +78,10 @@ async def commit_import(
 
     if import_type not in ALLOWED_IMPORT_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de importación inválido: {import_type}")
+    if import_type == "schedule_history":
+        if schedule_year is None or not 2000 <= schedule_year <= 2100 or schedule_quarter not in {1, 2, 3, 4}:
+            raise HTTPException(status_code=422, detail="Debe seleccionar año y trimestre para el histórico")
+        return commit_schedule_history(session, content, filename, schedule_year, schedule_quarter)
 
     try:
         result = import_service.commit_workbook(session, content, import_type, filename=filename, mode=mode)

@@ -37,6 +37,8 @@ class Schedule(SQLModel, table=True):
     manual_topic_name: Optional[str] = Field(default=None, max_length=500)
     environment_id: Optional[int] = Field(default=None, foreign_key="environments.id")
     date: date
+    schedule_year: int = Field(ge=2000, le=2100)
+    schedule_quarter: int = Field(ge=1, le=4)
     weekday: Optional[int] = Field(default=None)
     start_time: time
     end_time: time

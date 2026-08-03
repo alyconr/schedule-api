@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -32,6 +33,7 @@ from app.schemas.schedules import (
     ValidationResult,
 )
 from app.services.schedule_service import derive_contract_type, get_week_range, weekday_label
+from app.services.schedule_period import validate_schedule_period
 from app.services.schedule_validation import validate_schedule
 
 
@@ -244,6 +246,8 @@ def list_schedules(
     group_id: int | None = Query(default=None),
     environment_id: int | None = Query(default=None),
     learning_result_id: int | None = Query(default=None),
+    schedule_year: int | None = Query(default=None, ge=2000, le=2100),
+    schedule_quarter: int | None = Query(default=None, ge=1, le=4),
     date: date_type | None = Query(default=None),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
@@ -251,6 +255,8 @@ def list_schedules(
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[Schedule]:
+    if (schedule_year is None) != (schedule_quarter is None):
+        raise HTTPException(422, detail="Debe indicar año y trimestre juntos.")
     stmt = select(Schedule).where(Schedule.status != "deleted")
     if not (include_inactive or include_cancelled):
         stmt = stmt.where(Schedule.status != "cancelled")
@@ -262,6 +268,11 @@ def list_schedules(
         stmt = stmt.where(Schedule.environment_id == environment_id)
     if learning_result_id is not None:
         stmt = stmt.where(Schedule.learning_result_id == learning_result_id)
+    if schedule_year is not None and schedule_quarter is not None:
+        stmt = stmt.where(
+            Schedule.schedule_year == schedule_year,
+            Schedule.schedule_quarter == schedule_quarter,
+        )
     if date is not None:
         stmt = stmt.where(Schedule.date == date)
     else:
@@ -283,6 +294,8 @@ def list_schedules_detailed(
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
     learning_result_id: int | None = Query(default=None),
+    schedule_year: int | None = Query(default=None, ge=2000, le=2100),
+    schedule_quarter: int | None = Query(default=None, ge=1, le=4),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
     include_inactive: bool = Query(default=False),
@@ -293,6 +306,11 @@ def list_schedules_detailed(
         raise HTTPException(
             status_code=422,
             detail="Debe filtrar por instructor o ficha para consultar horarios detallados.",
+        )
+    if schedule_year is None or schedule_quarter is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Debe seleccionar año y trimestre para consultar horarios.",
         )
 
     stmt = (
@@ -312,6 +330,10 @@ def list_schedules_detailed(
         stmt = stmt.where(Schedule.group_id == group_id)
     if learning_result_id is not None:
         stmt = stmt.where(Schedule.learning_result_id == learning_result_id)
+    stmt = stmt.where(
+        Schedule.schedule_year == schedule_year,
+        Schedule.schedule_quarter == schedule_quarter,
+    )
     if date_from is not None:
         stmt = stmt.where(Schedule.date >= date_from)
     if date_to is not None:
@@ -347,6 +369,8 @@ def list_schedules_detailed(
             ScheduleDetailedRead(
                 id=sch.id,
                 date=sch.date,
+                schedule_year=sch.schedule_year,
+                schedule_quarter=sch.schedule_quarter,
                 weekday_label=weekday_label(sch.weekday or sch.date.isoweekday()),
                 start_time=sch.start_time,
                 end_time=sch.end_time,
@@ -371,6 +395,44 @@ def list_schedules_detailed(
             )
         )
     return results
+
+
+@router.get("/periods", dependencies=[Depends(require_roles(*ROLE_READ))])
+def list_schedule_periods(
+    session: SessionDep,
+    instructor_id: int | None = Query(default=None),
+    group_id: int | None = Query(default=None),
+) -> list[dict[str, object]]:
+    if instructor_id is None and group_id is None:
+        raise HTTPException(422, detail="Debe seleccionar un instructor o una ficha.")
+    stmt = (
+        select(
+            Schedule.schedule_year,
+            Schedule.schedule_quarter,
+            func.count(Schedule.id),
+            func.coalesce(func.sum(Schedule.duration_hours), 0),
+            func.min(Schedule.date),
+            func.max(Schedule.date),
+        )
+        .where(Schedule.status.notin_(["deleted", "cancelled"]))
+        .group_by(Schedule.schedule_year, Schedule.schedule_quarter)
+        .order_by(Schedule.schedule_year.desc(), Schedule.schedule_quarter.desc())
+    )
+    if instructor_id is not None:
+        stmt = stmt.where(Schedule.instructor_id == instructor_id)
+    if group_id is not None:
+        stmt = stmt.where(Schedule.group_id == group_id)
+    return [
+        {
+            "schedule_year": year,
+            "schedule_quarter": quarter,
+            "schedule_count": count,
+            "total_hours": float(total_hours),
+            "date_from": date_from,
+            "date_to": date_to,
+        }
+        for year, quarter, count, total_hours, date_from, date_to in session.exec(stmt).all()
+    ]
 
 
 @router.get("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
@@ -398,6 +460,7 @@ def list_schedule_validations(schedule_id: int, session: SessionDep) -> list[Sch
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePersistResponse:
+    validate_schedule_period(payload.date, payload.schedule_year, payload.schedule_quarter)
     instructor, group, environment, learning_result, competency, program = _check_entities(session, payload)
 
     existing = _existing_for_date(session, payload)
@@ -449,6 +512,8 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
         manual_topic_name=None if is_additional_hours else manual_topic_name,
         environment_id=None if is_additional_hours else payload.environment_id,
         date=schedule_date,
+        schedule_year=payload.schedule_year,
+        schedule_quarter=payload.schedule_quarter,
         weekday=schedule_date.isoweekday(),
         start_time=schedule_start,
         end_time=schedule_end,
@@ -505,6 +570,10 @@ def update_schedule(
     merged_training_program_id = payload.training_program_id if "training_program_id" in payload.model_fields_set else sch.training_program_id
     merged_competency_id = payload.competency_id if "competency_id" in payload.model_fields_set else sch.competency_id
     merged_date = payload.date if payload.date is not None else sch.date
+    merged_schedule_year = payload.schedule_year if payload.schedule_year is not None else sch.schedule_year
+    merged_schedule_quarter = (
+        payload.schedule_quarter if payload.schedule_quarter is not None else sch.schedule_quarter
+    )
     merged_start = payload.start_time if payload.start_time is not None else sch.start_time
     merged_end = payload.end_time if payload.end_time is not None else sch.end_time
     merged_duration = payload.duration_hours if payload.duration_hours is not None else float(sch.duration_hours)
@@ -536,12 +605,19 @@ def update_schedule(
         training_program_id = merged_training_program_id
         competency_id = merged_competency_id
         date = merged_date
+        schedule_year = merged_schedule_year
+        schedule_quarter = merged_schedule_quarter
         start_time = merged_start
         end_time = merged_end
         duration_hours = merged_duration
         is_additional_hours = merged_is_additional_hours
         additional_hours_type = merged_additional_hours_type
 
+    validate_schedule_period(
+        MergedPayload().date,
+        MergedPayload().schedule_year,
+        MergedPayload().schedule_quarter,
+    )
     instructor, group, environment, learning_result, competency, program = _check_entities(session, MergedPayload())
     if MergedPayload().is_additional_hours and not _clean_manual_topic(MergedPayload().additional_hours_type):
         raise HTTPException(422, detail="additional_hours_type is required as justification for additional hours")
@@ -588,6 +664,8 @@ def update_schedule(
         sch.manual_topic_name = None
         sch.environment_id = None
         sch.date = MergedPayload().date
+        sch.schedule_year = MergedPayload().schedule_year
+        sch.schedule_quarter = MergedPayload().schedule_quarter
         sch.weekday = MergedPayload().date.isoweekday()
         sch.start_time = time(0, 0)
         sch.end_time = time(0, 0)

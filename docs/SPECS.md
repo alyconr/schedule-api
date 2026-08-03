@@ -2,6 +2,16 @@ SPECS.md
 
 ## Importacion relacional de semaforos
 
+## Periodo obligatorio de horarios
+
+- `schedules.schedule_year`: `SMALLINT NOT NULL`, rango 2000-2100.
+- `schedules.schedule_quarter`: `SMALLINT NOT NULL`, rango 1-4.
+- La migración deriva ambos campos desde `schedules.date` antes de hacerlos obligatorios.
+- `GET /api/v1/schedules/periods` agrupa sesiones por instructor o ficha.
+- `GET /api/v1/schedules/detailed` exige `schedule_year` y `schedule_quarter`.
+- `POST` y `PUT /api/v1/schedules` validan que la fecha pertenezca al periodo.
+- `schedule_history` recibe `.xlsx`, año y trimestre mediante los endpoints existentes de previsualización y confirmación de importaciones.
+
 El importador soporta el tipo `semaforos_relacional` para reconstruir la relacion entre resultados de aprendizaje y tematicas desde hojas de semaforo de Oferta Abierta y Cadena. La regla aplicada es:
 
 ```text

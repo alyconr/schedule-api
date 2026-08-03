@@ -117,6 +117,21 @@ function latestValidationResults(items: ValidationResult[]): ValidationResult[] 
   return [...new Map(items.map((item) => [item.rule_code, item])).values()];
 }
 
+function calendarQuarter(value: string): 1 | 2 | 3 | 4 {
+  const month = Number(value.slice(5, 7));
+  return (Math.floor((month - 1) / 3) + 1) as 1 | 2 | 3 | 4;
+}
+
+function quarterDateRange(year: number, quarter: 1 | 2 | 3 | 4): [string, string] {
+  const startMonth = (quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(year, endMonth, 0).getDate();
+  return [
+    `${year}-${String(startMonth).padStart(2, "0")}-01`,
+    `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+  ];
+}
+
 function contractCategory(contractType?: ContractType): "planta" | "contratista" | "otro" {
   if (contractType?.category) return contractType.category;
   const name = normalizeSearchText(contractType?.name || "");
@@ -222,6 +237,8 @@ export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerPr
 
   const [trimesterStartDate, setTrimesterStartDate] = useState("");
   const [trimesterEndDate, setTrimesterEndDate] = useState("");
+  const [scheduleYear, setScheduleYear] = useState<number | "">("");
+  const [scheduleQuarter, setScheduleQuarter] = useState<1 | 2 | 3 | 4 | "">("");
 
   // Form states
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -458,8 +475,14 @@ const contractTypes = contractTypesQuery.data || [];
   );
   // 2. Fetch Schedules
 const { data: schedules = [] } = useQuery<Schedule[]>({
-  queryKey: ["schedules", "planner-summary"],
-  queryFn: () => fetchSchedules({ ...PLANNER_SUMMARY_FILTERS, include_inactive: true }),
+  queryKey: ["schedules", "planner-summary", scheduleYear, scheduleQuarter],
+  queryFn: () => fetchSchedules({
+    ...PLANNER_SUMMARY_FILTERS,
+    include_inactive: true,
+    schedule_year: scheduleYear === "" ? undefined : scheduleYear,
+    schedule_quarter: scheduleQuarter === "" ? undefined : scheduleQuarter,
+  }),
+  enabled: scheduleYear !== "" && scheduleQuarter !== "",
   staleTime: 60 * 1000,
   refetchOnWindowFocus: false,
   placeholderData: (previousData) => previousData,
@@ -705,6 +728,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   const resetForm = (keepValidation = false) => {
     setEditingSchedule(null);
     setDateVal("");
+    setScheduleYear("");
+    setScheduleQuarter("");
     setAdditionalMonth("");
     setGroupId("");
     setProgramId("");
@@ -743,6 +768,8 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setValidations([]);
     setEditingSchedule(sch);
     setDateVal(sch.date);
+    setScheduleYear(sch.schedule_year);
+    setScheduleQuarter(sch.schedule_quarter);
     setAdditionalMonth(monthValue(sch.date));
     setGroupId(sch.group_id || "");
     setProgramId(sch.training_program_id || "");
@@ -997,6 +1024,19 @@ const cancelMutation = useMutation({
     e.preventDefault();
     setErrorMsg(null);
 
+    if (scheduleYear === "" || scheduleQuarter === "") {
+      setErrorMsg("Seleccione el año y trimestre del horario.");
+      return;
+    }
+    const periodDates = isAdditionalHours
+      ? [additionalMonth ? `${additionalMonth}-01` : ""]
+      : [trimesterStartDate, trimesterEndDate];
+    if (periodDates.some((value) => value && (
+      Number(value.slice(0, 4)) !== scheduleYear || calendarQuarter(value) !== scheduleQuarter
+    ))) {
+      setErrorMsg("Las fechas deben pertenecer al año y trimestre seleccionados.");
+      return;
+    }
     if (!isAdditionalHours && (!trimesterStartDate || !trimesterEndDate)) {
       setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
       return;
@@ -1077,10 +1117,22 @@ const cancelMutation = useMutation({
 
     if (editingSchedule) {
       const date = isAdditionalHours ? monthStartDate(additionalMonth) : dateVal;
-      const payload = { ...basePayload, date, weekday: getWeekdayFromDate(date) };
+      const payload = {
+        ...basePayload,
+        date,
+        schedule_year: scheduleYear,
+        schedule_quarter: scheduleQuarter,
+        weekday: getWeekdayFromDate(date),
+      };
       updateMutation.mutate({ id: editingSchedule.id, payload });
     } else if (targetDates.length === 1) {
-      const payload = { ...basePayload, date: targetDates[0], weekday: getWeekdayFromDate(targetDates[0]) };
+      const payload = {
+        ...basePayload,
+        date: targetDates[0],
+        schedule_year: scheduleYear,
+        schedule_quarter: scheduleQuarter,
+        weekday: getWeekdayFromDate(targetDates[0]),
+      };
       createMutation.mutate(payload);
     } else {
       setIsBulkSubmitting(true);
@@ -1092,6 +1144,8 @@ const cancelMutation = useMutation({
           const result = await createSchedule({
             ...basePayload,
             date: targetDate,
+            schedule_year: scheduleYear,
+            schedule_quarter: scheduleQuarter,
             weekday: getWeekdayFromDate(targetDate),
           });
           warnings.push(...(result.validations || []));
@@ -1535,6 +1589,51 @@ const cancelMutation = useMutation({
                       <div className="schedule-form-group">
                         <p className="form-group-title">Horario</p>
                         <p className="form-section-subtitle">{isAdditionalHours ? "AsignaciÃ³n mensual" : "Periodo del trimestre"}</p>
+                        <div className="form-row-compact">
+                          <label className="form-label">
+                            Año del horario <span className="req">*</span>
+                            <input
+                              type="number"
+                              min="2000"
+                              max="2100"
+                              value={scheduleYear}
+                              onChange={(event) => {
+                                const year = event.target.value ? Number(event.target.value) : "";
+                                setScheduleYear(year);
+                                if (year !== "" && scheduleQuarter !== "") {
+                                  const [start, end] = quarterDateRange(year, scheduleQuarter);
+                                  setTrimesterStartDate(start);
+                                  setTrimesterEndDate(end);
+                                }
+                              }}
+                              required
+                            />
+                          </label>
+                          <label className="form-label">
+                            Trimestre del horario <span className="req">*</span>
+                            <select
+                              value={scheduleQuarter}
+                              onChange={(event) => {
+                                const quarter = event.target.value
+                                  ? Number(event.target.value) as 1 | 2 | 3 | 4
+                                  : "";
+                                setScheduleQuarter(quarter);
+                                if (scheduleYear !== "" && quarter !== "") {
+                                  const [start, end] = quarterDateRange(scheduleYear, quarter);
+                                  setTrimesterStartDate(start);
+                                  setTrimesterEndDate(end);
+                                }
+                              }}
+                              required
+                            >
+                              <option value="">Seleccione...</option>
+                              <option value="1">I Trimestre</option>
+                              <option value="2">II Trimestre</option>
+                              <option value="3">III Trimestre</option>
+                              <option value="4">IV Trimestre</option>
+                            </select>
+                          </label>
+                        </div>
                         {!isAdditionalHours && <div className="form-row-compact">
                           <label className="form-label">
                             Fecha inicio trimestre <span className="req">*</span>

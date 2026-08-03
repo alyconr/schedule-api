@@ -1,4 +1,4 @@
-export type ImportType = "schedule_normalized";
+export type ImportType = "schedule_normalized" | "schedule_history";
 
 export type ImportIssue = {
   sheet: string;

@@ -1,10 +1,16 @@
 import { apiRequest } from "./client";
 import { ImportPreviewResponse, ImportCommitResponse, TemplateInfoResponse } from "../types/imports";
 
-export async function previewImport(file: File, importType: string): Promise<ImportPreviewResponse> {
+type SchedulePeriod = { scheduleYear: number; scheduleQuarter: number };
+
+export async function previewImport(file: File, importType: string, period?: SchedulePeriod): Promise<ImportPreviewResponse> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("import_type", importType);
+  if (period) {
+    formData.append("schedule_year", String(period.scheduleYear));
+    formData.append("schedule_quarter", String(period.scheduleQuarter));
+  }
 
   return apiRequest<ImportPreviewResponse>("imports/preview", {
     method: "POST",
@@ -12,11 +18,20 @@ export async function previewImport(file: File, importType: string): Promise<Imp
   });
 }
 
-export async function commitImport(file: File, importType: string, mode: string = "upsert"): Promise<ImportCommitResponse> {
+export async function commitImport(
+  file: File,
+  importType: string,
+  mode: string = "upsert",
+  period?: SchedulePeriod,
+): Promise<ImportCommitResponse> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("import_type", importType);
   formData.append("mode", mode);
+  if (period) {
+    formData.append("schedule_year", String(period.scheduleYear));
+    formData.append("schedule_quarter", String(period.scheduleQuarter));
+  }
 
   return apiRequest<ImportCommitResponse>("imports/commit", {
     method: "POST",

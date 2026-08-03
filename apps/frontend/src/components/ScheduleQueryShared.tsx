@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { UseQueryResult } from "@tanstack/react-query";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters, ScheduleValidation } from "../types/schedules";
-import { fetchScheduleValidations } from "../api/schedules";
+import { fetchSchedulePeriods, fetchScheduleValidations } from "../api/schedules";
 import { useQuery } from "@tanstack/react-query";
 import { validationRuleLabel } from "./ValidationAlertDialog";
 import { SearchableSelect } from "./SearchableSelect";
@@ -56,15 +56,29 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
   const [groupId, setGroupId] = useState<number | "">("");
   const [instructorId, setInstructorId] = useState<number | "">("");
   const [learningResultId, setLearningResultId] = useState<number | "">("");
+  const [scheduleYear, setScheduleYear] = useState<number | "">("");
+  const [scheduleQuarter, setScheduleQuarter] = useState<1 | 2 | 3 | 4 | "">("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const periodsQuery = useQuery({
+    queryKey: ["schedule-periods", instructorId, groupId],
+    queryFn: () => fetchSchedulePeriods({
+      instructor_id: instructorId === "" ? undefined : Number(instructorId),
+      group_id: groupId === "" ? undefined : Number(groupId),
+    }),
+    enabled: instructorId !== "" || groupId !== "",
+  });
+  const periods = periodsQuery.data ?? [];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (scheduleYear === "" || scheduleQuarter === "") return;
     onApply({
       group_id: groupId === "" ? undefined : Number(groupId),
       instructor_id: instructorId === "" ? undefined : Number(instructorId),
       learning_result_id: learningResultId === "" ? undefined : Number(learningResultId),
+      schedule_year: Number(scheduleYear),
+      schedule_quarter: scheduleQuarter,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       limit: 500,
@@ -75,6 +89,8 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
     setGroupId("");
     setInstructorId("");
     setLearningResultId("");
+    setScheduleYear("");
+    setScheduleQuarter("");
     setDateFrom("");
     setDateTo("");
     onClear();
@@ -93,7 +109,11 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
           placeholder="Seleccione ficha..."
           searchPlaceholder="Buscar ficha..."
           options={groups.map((group) => ({ value: group.id, label: groupLabel(group) }))}
-          onChange={(value) => setGroupId(value === "" ? "" : Number(value))}
+          onChange={(value) => {
+            setGroupId(value === "" ? "" : Number(value));
+            setScheduleYear("");
+            setScheduleQuarter("");
+          }}
         />
         <SearchableSelect
           label="Instructor"
@@ -101,8 +121,37 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
           placeholder="Seleccione instructor..."
           searchPlaceholder="Buscar instructor..."
           options={instructors.map((instructor) => ({ value: instructor.id, label: instructorLabel(instructor) }))}
-          onChange={(value) => setInstructorId(value === "" ? "" : Number(value))}
+          onChange={(value) => {
+            setInstructorId(value === "" ? "" : Number(value));
+            setScheduleYear("");
+            setScheduleQuarter("");
+          }}
         />
+        <label>
+          Periodo programado
+          <select
+            value={scheduleYear === "" || scheduleQuarter === "" ? "" : `${scheduleYear}-${scheduleQuarter}`}
+            onChange={(event) => {
+              if (!event.target.value) {
+                setScheduleYear("");
+                setScheduleQuarter("");
+                return;
+              }
+              const [year, quarter] = event.target.value.split("-").map(Number);
+              setScheduleYear(year);
+              setScheduleQuarter(quarter as 1 | 2 | 3 | 4);
+            }}
+            disabled={!periods.length}
+            required
+          >
+            <option value="">{periodsQuery.isLoading ? "Consultando periodos..." : "Seleccione año y trimestre"}</option>
+            {periods.map((period) => (
+              <option key={`${period.schedule_year}-${period.schedule_quarter}`} value={`${period.schedule_year}-${period.schedule_quarter}`}>
+                {period.schedule_year} - Trimestre {period.schedule_quarter} ({period.schedule_count} sesiones, {Number(period.total_hours).toFixed(1)} h)
+              </option>
+            ))}
+          </select>
+        </label>
         <SearchableSelect
           label="RAP"
           value={learningResultId}
@@ -121,7 +170,7 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
         </label>
       </div>
       <div className="filter-actions">
-        <button type="submit" className="btn-primary">Consultar</button>
+        <button type="submit" className="btn-primary" disabled={scheduleYear === "" || scheduleQuarter === ""}>Consultar horario</button>
         <button type="button" className="btn-secondary" onClick={clear}>Limpiar</button>
       </div>
     </form>

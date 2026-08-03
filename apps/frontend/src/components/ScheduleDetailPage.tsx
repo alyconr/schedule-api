@@ -43,7 +43,9 @@ export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
   const learningResultsQuery = useQuery({ queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") });
 
-  const hasFilter = Boolean(filters.group_id || filters.instructor_id);
+  const hasFilter = Boolean(
+    (filters.group_id || filters.instructor_id) && filters.schedule_year && filters.schedule_quarter,
+  );
   const schedulesQuery = useQuery<ScheduleDetailed[]>({
     queryKey: ["schedules-detailed", filters],
     queryFn: () => fetchSchedulesDetailed(filters),
@@ -101,6 +103,7 @@ export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
               <thead>
                 <tr>
                   <th>Día programado</th>
+                  <th>Periodo</th>
                   <th>Horario</th>
                   <th>Horas</th>
                   <th>Instructor</th>
@@ -119,6 +122,7 @@ export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
                 {visibleSchedules.map((schedule) => (
                   <tr key={schedule.id}>
                     <td className="day-cell">{schedule.is_additional_hours ? schedule.date.slice(0, 7) : formatProgrammedDay(schedule.date)}</td>
+                    <td>{schedule.schedule_year} - {(["I", "II", "III", "IV"] as const)[schedule.schedule_quarter - 1]} Trimestre</td>
                     <td className="time-cell">{schedule.start_time.slice(0, 5)} – {schedule.end_time.slice(0, 5)}</td>
                     <td>{Number(schedule.duration_hours || 0).toFixed(1)} h</td>
                     <td className="instructor-cell">{schedule.instructor_name}</td>

@@ -28,6 +28,8 @@ export type Schedule = {
   manual_topic_name?: string | null;
   environment_id?: number | null;
   date: string;
+  schedule_year: number;
+  schedule_quarter: 1 | 2 | 3 | 4;
   weekday?: number | null;
   start_time: string;
   end_time: string;
@@ -50,6 +52,8 @@ export type ScheduleCreate = {
   manual_topic_name?: string | null;
   environment_id?: number | null;
   date: string;
+  schedule_year: number;
+  schedule_quarter: 1 | 2 | 3 | 4;
   weekday?: number | null;
   start_time: string;
   end_time: string;
@@ -76,6 +80,8 @@ export type ScheduleFilters = {
   group_id?: number;
   environment_id?: number;
   learning_result_id?: number;
+  schedule_year?: number;
+  schedule_quarter?: 1 | 2 | 3 | 4;
   date?: string;
   date_from?: string;
   date_to?: string;
@@ -87,6 +93,8 @@ export type ScheduleFilters = {
 export type ScheduleDetailed = {
   id: number;
   date: string;
+  schedule_year: number;
+  schedule_quarter: 1 | 2 | 3 | 4;
   weekday_label: string;
   start_time: string;
   end_time: string;
@@ -108,6 +116,15 @@ export type ScheduleDetailed = {
   is_additional_hours?: boolean;
   additional_hours_type?: string | null;
   status: ScheduleStatus;
+};
+
+export type SchedulePeriodSummary = {
+  schedule_year: number;
+  schedule_quarter: 1 | 2 | 3 | 4;
+  schedule_count: number;
+  total_hours: number;
+  date_from: string;
+  date_to: string;
 };
 
 export type ScheduleValidation = {

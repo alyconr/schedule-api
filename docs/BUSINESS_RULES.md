@@ -273,7 +273,23 @@ El sistema debe priorizar las validaciones bloqueantes sobre las informativas. N
 
 ---
 
-## 14. Regla de consistencia institucional
+## 14. Periodos calendario de programación
+
+### RN-048. Año y trimestre obligatorios
+
+Todo horario, incluidas las horas adicionales, debe persistir un año y un trimestre calendario entre I y IV. La fecha debe pertenecer al periodo seleccionado: I enero-marzo, II abril-junio, III julio-septiembre y IV octubre-diciembre. Este periodo no reemplaza el trimestre curricular de la ficha.
+
+### RN-049. Consulta por periodo
+
+La consulta por instructor o ficha debe mostrar primero los periodos con programación disponible. El usuario selecciona año y trimestre antes de acceder al calendario o al detalle.
+
+### RN-050. Histórico trimestral
+
+La carga histórica selecciona un único año y trimestre antes de analizar el archivo. Todas las filas deben pertenecer al periodo y resolver las relaciones académicas requeridas.
+
+---
+
+## 15. Regla de consistencia institucional
 
 ### RN-046. Alineación con la planeación académica
 

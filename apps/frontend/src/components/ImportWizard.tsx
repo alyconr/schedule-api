@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 import { CurrentUser } from "../types/auth";
 import { previewImport, commitImport } from "../api/imports";
-import { ImportPreviewResponse, ImportCommitResponse, ImportIssue } from "../types/imports";
+import { ImportPreviewResponse, ImportCommitResponse, ImportIssue, ImportType } from "../types/imports";
 
 interface ImportWizardProps {
   currentUser: CurrentUser;
 }
 
-const importType = "schedule_normalized";
-
 export function ImportWizard({ currentUser }: ImportWizardProps) {
+  const [importType, setImportType] = useState<ImportType>("schedule_normalized");
+  const [scheduleYear, setScheduleYear] = useState<number>(new Date().getFullYear());
+  const [scheduleQuarter, setScheduleQuarter] = useState<1 | 2 | 3 | 4>(
+    (Math.floor(new Date().getMonth() / 3) + 1) as 1 | 2 | 3 | 4,
+  );
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
@@ -46,6 +49,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       setErrorMsg("Por favor, selecciona un archivo.");
       return;
     }
+    const period = importType === "schedule_history" ? { scheduleYear, scheduleQuarter } : undefined;
 
     setIsLoading(true);
     setErrorMsg(null);
@@ -54,7 +58,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
     setResult(null);
 
     try {
-      const data = await previewImport(file, importType);
+      const data = await previewImport(file, importType, period);
       setPreview(data);
       if (data.errors && data.errors.length > 0) {
         setErrorMsg("El archivo analizado contiene errores críticos que impiden la importación.");
@@ -75,7 +79,8 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
     setResult(null);
 
     try {
-      const data = await commitImport(file, importType, "upsert");
+      const period = importType === "schedule_history" ? { scheduleYear, scheduleQuarter } : undefined;
+      const data = await commitImport(file, importType, "upsert", period);
       setResult(data);
       if (data.status === "failed") {
         setErrorMsg("La importación falló debido a errores en la base de datos.");
@@ -125,6 +130,8 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         return "Programas de Formación";
       case "competencies":
         return "Competencias";
+      case "schedules":
+        return "Horarios históricos";
       default:
         return key;
     }
@@ -135,7 +142,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
       <header className="topbar">
         <div>
           <p className="eyebrow">Administración</p>
-          <h1>Carga del archivo normalizado</h1>
+          <h1>Carga de datos e históricos</h1>
         </div>
       </header>
 
@@ -146,10 +153,57 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         <form onSubmit={handlePreview} className="import-form">
           <div className="form-row">
             <label>
+              Tipo de carga
+              <select
+                value={importType}
+                onChange={(event) => {
+                  setImportType(event.target.value as ImportType);
+                  setFile(null);
+                  setPreview(null);
+                  setResult(null);
+                }}
+              >
+                <option value="schedule_normalized">Datos maestros normalizados</option>
+                <option value="schedule_history">Histórico de horarios por trimestre</option>
+              </select>
+            </label>
+          </div>
+          {importType === "schedule_history" && (
+            <div className="form-row">
+              <label>
+                Año del histórico
+                <input
+                  type="number"
+                  min="2000"
+                  max="2100"
+                  value={scheduleYear}
+                  onChange={(event) => setScheduleYear(Number(event.target.value))}
+                  required
+                />
+              </label>
+              <label>
+                Trimestre del histórico
+                <select
+                  value={scheduleQuarter}
+                  onChange={(event) => setScheduleQuarter(Number(event.target.value) as 1 | 2 | 3 | 4)}
+                  required
+                >
+                  <option value="1">I Trimestre</option>
+                  <option value="2">II Trimestre</option>
+                  <option value="3">III Trimestre</option>
+                  <option value="4">IV Trimestre</option>
+                </select>
+              </label>
+            </div>
+          )}
+          <div className="form-row">
+            <label>
               Archivo (.xlsx)
               <input type="file" accept=".xlsx" onChange={handleFileChange} />
               <small className="field-help">
-                Cargue únicamente el archivo normalizado SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx con las hojas LISTA INSTRUCTORES, AMBIENTES, FICHAS, Semaforo con RA cadena y Semaforo con RA Oferta Abierta.
+                {importType === "schedule_history"
+                  ? "Use una hoja con: fecha, documento_instructor, ficha, ambiente, codigo_rap, hora_inicio, hora_fin y duracion_horas. Todas las fechas deben pertenecer al periodo seleccionado."
+                  : "Cargue únicamente el archivo normalizado SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx con las hojas institucionales requeridas."}
               </small>
             </label>
           </div>

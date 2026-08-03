@@ -38,7 +38,9 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
   const learningResultsQuery = useQuery({ queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") });
-  const hasFilter = Boolean(filters.group_id || filters.instructor_id);
+  const hasFilter = Boolean(
+    (filters.group_id || filters.instructor_id) && filters.schedule_year && filters.schedule_quarter,
+  );
   const schedulesQuery = useQuery<ScheduleDetailed[]>({
     queryKey: ["schedules-detailed", filters],
     queryFn: () => fetchSchedulesDetailed(filters),
@@ -97,6 +99,10 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
     if (filters.group_id) labels.push({ name: "Ficha", value: group ? groupLabel(group) : String(filters.group_id) });
     if (filters.instructor_id) labels.push({ name: "Instructor", value: instructor ? instructorLabel(instructor) : String(filters.instructor_id) });
     if (filters.learning_result_id) labels.push({ name: "RAP", value: rap ? rapLabel(rap) : String(filters.learning_result_id) });
+    if (filters.schedule_year && filters.schedule_quarter) labels.push({
+      name: "Periodo",
+      value: `${filters.schedule_year} - ${(["I", "II", "III", "IV"] as const)[filters.schedule_quarter - 1]} Trimestre`,
+    });
     if (filters.date_from || filters.date_to) labels.push({
       name: "Fechas",
       value: `${filters.date_from ? shortDate(filters.date_from) : "Inicio"} – ${filters.date_to ? shortDate(filters.date_to) : "Actualidad"}`,

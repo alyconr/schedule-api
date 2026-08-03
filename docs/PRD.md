@@ -766,6 +766,13 @@ La primera versión debe incluir:
 
 ---
 
-## 22. Conclusión
+## 22. Gestión trimestral de horarios
+
+- La creación manual y masiva exige año y trimestre calendario.
+- Las consultas por instructor y ficha presentan los periodos disponibles antes del horario.
+- La matriz y el detalle no mezclan periodos diferentes.
+- La carga masiva admite un histórico `.xlsx` independiente por año y trimestre, con previsualización de filas válidas y rechazadas.
+
+## 23. Conclusión
 
 La aplicación debe funcionar como una herramienta centralizada para planear, validar y consultar horarios de instructores del CGMLTI SENA Bogotá. Su valor principal está en aplicar reglas de negocio de manera automática, evitar cruces, controlar cargas horarias y entregar información confiable para instructores, programadores y coordinación académica.

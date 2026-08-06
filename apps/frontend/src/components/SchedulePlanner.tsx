@@ -1070,7 +1070,7 @@ const cancelMutation = useMutation({
     const calculatedDur = isAdditionalHours ? Number(durationHours) : Number(durationHours) || calculateDurationHours(startTime, endTime);
     const cleanedAdditionalType = additionalHoursType.trim();
     if (isAdditionalHours && !cleanedAdditionalType) {
-      setErrorMsg("Escriba la justificaciÃ³n de las horas adicionales.");
+      setErrorMsg("Escriba la justificación de las horas adicionales.");
       return;
     }
     if (calculatedDur <= 0) {
@@ -1393,7 +1393,7 @@ const cancelMutation = useMutation({
                           >
                             <div>
                               <strong>{monthLabel(monthValue(schedule.date))} - {formatHours(schedule.duration_hours)} h</strong>
-                              <span>{schedule.additional_hours_type || "Sin justificaciÃ³n"}</span>
+                              <span>{schedule.additional_hours_type || "Sin justificación"}</span>
                               <span>{schedule.date} · {formatHours(schedule.duration_hours)} h</span>
                             </div>
                             {canDelete && (
@@ -1592,7 +1592,7 @@ const cancelMutation = useMutation({
                     <form onSubmit={handleFormSubmit} className="schedule-form">
                       <div className="schedule-form-group">
                         <p className="form-group-title">Horario</p>
-                        <p className="form-section-subtitle">{isAdditionalHours ? "AsignaciÃ³n mensual" : "Periodo del trimestre"}</p>
+                        <p className="form-section-subtitle">{isAdditionalHours ? "Asignación mensual" : "Periodo del trimestre"}</p>
                         <div className="form-row-compact">
                           <label className="form-label">
                             Año del horario <span className="req">*</span>
@@ -1693,7 +1693,7 @@ const cancelMutation = useMutation({
                         )}
                         {isAdditionalHours && (
                           <label className="form-label">
-                            JustificaciÃ³n <span className="req">*</span>
+                            Justificación <span className="req">*</span>
                             <input
                               type="text"
                               value={additionalHoursType}
@@ -1972,7 +1972,7 @@ const cancelMutation = useMutation({
               { label: "Mes", value: monthLabel(monthValue(detailSchedule.date)) },
               { label: "Horas", value: `${formatHours(detailSchedule.duration_hours)} horas` },
               { label: "Instructor", value: detail.instructor ? `${detail.instructor.first_name} ${detail.instructor.last_name}` : detailSchedule.instructor_id },
-              { label: "JustificaciÃ³n", value: detailSchedule.additional_hours_type },
+              { label: "Justificación", value: detailSchedule.additional_hours_type },
               { label: "Estado", value: detail.statusName },
             ];
           }

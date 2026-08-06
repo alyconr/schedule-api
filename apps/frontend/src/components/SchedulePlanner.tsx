@@ -517,18 +517,22 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
       const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
-      const currentWeek = [...load.weeks.entries()].sort(([a], [b]) => b.localeCompare(a))[0];
-      if (!currentWeek) return [];
+      const currentWeek = [...load.weeks.entries()].sort(([a], [b]) => b.localeCompare(a))[0]
+        ?? [weekStartDate(load.latestSchedule.date), 0] as [string, number];
       const [weekStart, hours] = currentWeek;
+      const additionalHours = load.schedules
+        .filter((schedule) => schedule.is_additional_hours && monthValue(schedule.date) === monthValue(weekStart))
+        .reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0);
+      const totalHours = hours + additionalHours;
       const weeklyIssues = { missing: 0, over: 0, extra: 0, weekStart };
       if (category === "planta") {
-        if (hours < 30) weeklyIssues.missing = 30 - hours;
-        else if (hours > 32) weeklyIssues.over = hours - 32;
-        else if (hours > 30) weeklyIssues.extra = hours - 30;
+        if (totalHours < 30) weeklyIssues.missing = 30 - totalHours;
+        else if (totalHours > 32) weeklyIssues.over = totalHours - 32;
+        else if (totalHours > 30) weeklyIssues.extra = totalHours - 30;
       }
       if (category === "contratista") {
-        if (hours < contractorTarget) weeklyIssues.missing = contractorTarget - hours;
-        else if (hours > contractorTarget) weeklyIssues.over = hours - contractorTarget;
+        if (totalHours < contractorTarget) weeklyIssues.missing = contractorTarget - totalHours;
+        else if (totalHours > contractorTarget) weeklyIssues.over = totalHours - contractorTarget;
       }
 
       if (!weeklyIssues.missing && !weeklyIssues.over && !weeklyIssues.extra) return [];

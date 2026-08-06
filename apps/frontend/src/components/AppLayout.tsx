@@ -1,4 +1,24 @@
 import { useState } from "react";
+import {
+  BadgeCheck,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  Clock3,
+  FileUp,
+  GraduationCap,
+  ListChecks,
+  LogOut,
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Rows3,
+  ShieldCheck,
+  Table2,
+  UserRound,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { CurrentUser } from "../types/auth";
 
 interface AppLayoutProps {
@@ -10,6 +30,8 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
+const SIDEBAR_COLLAPSED_KEY = "schedule-sidebar-collapsed";
+
 export function AppLayout({
   currentUser,
   onLogout,
@@ -18,7 +40,14 @@ export function AppLayout({
   isNavigating = false,
   children,
 }: AppLayoutProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    () => {
+      const storedPreference = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      return storedPreference === null
+        ? window.matchMedia("(max-width: 1024px)").matches
+        : storedPreference === "true";
+    },
+  );
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const isAdmin = roles.includes("admin");
@@ -27,35 +56,48 @@ export function AppLayout({
     {
       title: "Operación",
       items: [
-        { id: "schedules", label: "Programación de Horarios" },
-        { id: "schedule-matrix", label: "Matriz Académica" },
-        { id: "schedule-detail", label: "Programación Detallada" },
-        ...(canWrite ? [{ id: "validation", label: "Validación Manual" }] : []),
-        ...(canWrite ? [{ id: "imports", label: "Carga Masiva" }] : []),
+        { id: "schedules", label: "Programación de horarios", icon: CalendarDays },
+        { id: "schedule-matrix", label: "Matriz académica", icon: Table2 },
+        { id: "schedule-detail", label: "Programación detallada", icon: Rows3 },
+        ...(canWrite ? [{ id: "validation", label: "Validación manual", icon: BadgeCheck }] : []),
+        ...(canWrite ? [{ id: "imports", label: "Carga masiva", icon: FileUp }] : []),
       ],
     },
     {
       title: "Datos maestros",
       items: [
-        { id: "contract-types", label: "Tipos de Vinculación" },
-        { id: "instructors", label: "Instructores" },
-        { id: "training-programs", label: "Programas de Formación" },
-        { id: "competencies", label: "Competencias" },
-        { id: "learning-results", label: "Resultados RAP" },
-        { id: "groups", label: "Fichas / Grupos" },
-        { id: "environments", label: "Ambientes" },
-        { id: "time-blocks", label: "Bloques Horarios" },
+        { id: "contract-types", label: "Tipos de vinculación", icon: BriefcaseBusiness },
+        { id: "instructors", label: "Instructores", icon: UserRound },
+        { id: "training-programs", label: "Programas de formación", icon: GraduationCap },
+        { id: "competencies", label: "Competencias", icon: Network },
+        { id: "learning-results", label: "Resultados RAP", icon: ListChecks },
+        { id: "groups", label: "Fichas / Grupos", icon: UsersRound },
+        { id: "environments", label: "Ambientes", icon: Building2 },
+        { id: "time-blocks", label: "Bloques horarios", icon: Clock3 },
       ],
     },
     {
       title: "Administración",
-      items: isAdmin ? [{ id: "users", label: "Usuarios" }] : [],
+      items: isAdmin ? [{ id: "users", label: "Usuarios", icon: ShieldCheck }] : [],
     },
   ].filter((section) => section.items.length > 0);
   const activeLabel =
     menuSections.flatMap((section) => section.items).find((item) => item.id === activeTab)?.label ||
     "Panel académico";
   const userInitial = currentUser.full_name.trim().charAt(0).toUpperCase() || "U";
+  const updateSidebar = (collapsed: boolean) => {
+    setIsSidebarCollapsed(collapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  };
+  const toggleSidebar = () => {
+    updateSidebar(!isSidebarCollapsed);
+  };
+  const navigateFromSidebar = (tab: string) => {
+    setActiveTab(tab);
+    if (window.matchMedia("(max-width: 1024px)").matches) {
+      updateSidebar(true);
+    }
+  };
 
   return (
     <div className="app-layout">
@@ -64,23 +106,37 @@ export function AppLayout({
           <div className="sidebar-brand">
             <div className="sidebar-logo-container">
               <img className="sena-sidebar-logo" src="/logo-sena.svg" alt="SENA" />
-              <p className="eyebrow">CGMLTI Bogotá</p>
+              <div className="sidebar-brand-copy">
+                <p className="eyebrow">CGMLTI Bogotá</p>
+                <strong>Gestión de horarios</strong>
+              </div>
+              <button
+                type="button"
+                className="sidebar-mobile-close"
+                onClick={() => updateSidebar(true)}
+                aria-label="Cerrar menú"
+                title="Cerrar menú"
+              >
+                <X size={20} aria-hidden="true" />
+              </button>
             </div>
-            <h2>Gestión de Horarios CGMLTI</h2>
           </div>
-          <nav className="sidebar-nav">
+          <nav className="sidebar-nav" aria-label="Menú principal">
             {menuSections.map((section) => (
               <div className="nav-section" key={section.title}>
                 <p className="nav-section-title">{section.title}</p>
                 {section.items.map((item) => (
-<button
+                  <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id)}
+                    onClick={() => navigateFromSidebar(item.id)}
                     className={`nav-btn ${activeTab === item.id ? "active" : ""}`}
                     disabled={isNavigating}
+                    aria-current={activeTab === item.id ? "page" : undefined}
+                    title={isSidebarCollapsed ? item.label : undefined}
                   >
-                    {item.label}
-                    {isNavigating && activeTab !== item.id ? "…" : ""}
+                    <item.icon className="nav-icon" size={20} strokeWidth={1.8} aria-hidden="true" />
+                    <span className="nav-label">{item.label}</span>
+                    {isNavigating && activeTab !== item.id ? <span className="nav-progress">…</span> : null}
                   </button>
                 ))}
               </div>
@@ -93,35 +149,11 @@ export function AppLayout({
         <header className="main-header">
           <button
             className="btn-toggle-sidebar"
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            aria-label={isSidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
-            title={isSidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
+            onClick={toggleSidebar}
+            aria-label={isSidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+            title={isSidebarCollapsed ? "Expandir menú" : "Contraer menú"}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {isSidebarCollapsed ? (
-                <>
-                  <line x1="3" y1="12" x2="21" y2="12"></line>
-                  <line x1="3" y1="6" x2="21" y2="6"></line>
-                  <line x1="3" y1="18" x2="21" y2="18"></line>
-                </>
-              ) : (
-                <>
-                  <line x1="18" y1="20" x2="12" y2="12"></line>
-                  <line x1="12" y1="12" x2="18" y2="4"></line>
-                  <line x1="6" y1="20" x2="6" y2="4"></line>
-                </>
-              )}
-            </svg>
+            {isSidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
           </button>
 
           <div className="header-context">
@@ -138,7 +170,8 @@ export function AppLayout({
               </div>
             </div>
             <button className="btn-logout" onClick={onLogout}>
-              Cerrar Sesión
+              <LogOut size={17} aria-hidden="true" />
+              Cerrar sesión
             </button>
           </div>
         </header>

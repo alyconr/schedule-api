@@ -37,7 +37,7 @@ interface SchedulePlannerProps {
   setActiveTab: (tab: string) => void;
 }
 
-type SummaryDetail = "warnings" | "instructors" | "groups" | "environments";
+type SummaryDetail = "warnings" | "instructors" | "groups" | "environments" | "additional-hours";
 type CurrentHourWarning = {
   schedule: Schedule;
   validations: ValidationResult[];
@@ -561,6 +561,7 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
     instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
     groups: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.group_id).map((s) => s.group_id)).size,
     environments: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.environment_id).map((s) => s.environment_id)).size,
+    additionalHours: activeSchedules.filter((s) => s.is_additional_hours).reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0),
   }), [activeSchedules, currentHourWarnings]);
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
@@ -621,6 +622,16 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         secondary: warning.secondary,
       }));
     }
+    if (summaryDetail === "additional-hours") {
+      return activeSchedules
+        .filter((schedule) => schedule.is_additional_hours)
+        .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
+        .map((schedule) => ({
+          id: schedule.id,
+          primary: instructorsById.has(schedule.instructor_id) ? instructorLabel(instructorsById.get(schedule.instructor_id)!) : `Instructor ${schedule.instructor_id}`,
+          secondary: `${monthLabel(monthValue(schedule.date))} · ${formatHours(schedule.duration_hours)} h · ${schedule.additional_hours_type || "Sin justificación"} · Estado: ${getScheduleDisplayData(schedule).statusName}`,
+        }));
+    }
     if (summaryDetail === "instructors" || summaryDetail === "groups") return [];
     const ids = [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))];
     return ids.map((id) => {
@@ -632,7 +643,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         secondary: `${count} ${count === 1 ? "sesión programada" : "sesiones programadas"}`,
       };
     });
-  }, [summaryDetail, activeSchedules, environmentsById, currentHourWarnings]);
+  }, [summaryDetail, activeSchedules, environmentsById, currentHourWarnings, instructorsById]);
 
   const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
     ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => {
@@ -663,7 +674,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       }))
     : [], [summaryDetail, activeSchedules, environmentsById]);
 
-  const summaryTitle = summaryDetail === "warnings" ? "Horarios con advertencias" : summaryDetail === "instructors" ? "Instructores programados" : summaryDetail === "groups" ? "Fichas programadas" : "Ambientes usados";
+  const summaryTitle = summaryDetail === "warnings" ? "Horarios con advertencias" : summaryDetail === "instructors" ? "Instructores programados" : summaryDetail === "groups" ? "Fichas programadas" : summaryDetail === "additional-hours" ? "Horas adicionales programadas" : "Ambientes usados";
   const summarySearchTerm = normalizeSearchText(summarySearch.trim());
   const scheduleSearchText = (schedule: Schedule) => {
     const detail = getScheduleDisplayData(schedule);
@@ -1210,6 +1221,11 @@ const cancelMutation = useMutation({
         <button type="button" className="schedule-summary-card" onClick={() => setSummaryDetail("environments")} aria-label={`Ver ${plannerStats.environments} ambientes usados`}>
           <span>Ambientes usados</span>
           <strong>{plannerStats.environments}</strong>
+          <small>Ver detalle →</small>
+        </button>
+        <button type="button" className="schedule-summary-card" onClick={() => setSummaryDetail("additional-hours")} aria-label={`Ver ${formatHours(plannerStats.additionalHours)} horas adicionales programadas`}>
+          <span>Horas adicionales</span>
+          <strong>{formatHours(plannerStats.additionalHours)} h</strong>
           <small>Ver detalle →</small>
         </button>
       </div>

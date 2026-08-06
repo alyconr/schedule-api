@@ -1242,7 +1242,7 @@ textarea:focus:not(:focus-visible) {
   gap: 14px;
 }
 
-.planner-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.planner-summary-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
 .schedule-summary-card {
   position: relative;

@@ -474,8 +474,15 @@ const contractTypes = contractTypesQuery.data || [];
     [timeBlocks, blockSearch]
   );
   // 2. Fetch Schedules
+const { data: summarySchedules = [] } = useQuery<Schedule[]>({
+  queryKey: ["schedules", "planner-summary"],
+  queryFn: () => fetchSchedules({ ...PLANNER_SUMMARY_FILTERS, include_inactive: true }),
+  staleTime: 60 * 1000,
+  refetchOnWindowFocus: false,
+});
+
 const { data: schedules = [] } = useQuery<Schedule[]>({
-  queryKey: ["schedules", "planner-summary", scheduleYear, scheduleQuarter],
+  queryKey: ["schedules", "planner-period", scheduleYear, scheduleQuarter],
   queryFn: () => fetchSchedules({
     ...PLANNER_SUMMARY_FILTERS,
     include_inactive: true,
@@ -493,9 +500,13 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
     () => schedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
     [schedules]
   );
+  const summaryActiveSchedules = useMemo(
+    () => summarySchedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
+    [summarySchedules]
+  );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
     const byInstructor = new Map<number, { schedules: Schedule[]; latestSchedule: Schedule; weeks: Map<string, number> }>();
-    [...activeSchedules]
+    [...summaryActiveSchedules]
       .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
       .forEach((schedule) => {
         const weekStart = weekStartDate(schedule.date);
@@ -555,14 +566,14 @@ const { data: schedules = [] } = useQuery<Schedule[]>({
         monthlyHours: monthTotals,
       }];
     });
-  }, [activeSchedules, contractTypesById, instructorsById]);
+  }, [summaryActiveSchedules, contractTypesById, instructorsById]);
   const plannerStats = useMemo(() => ({
     warnings: currentHourWarnings.length,
-    instructors: new Set(activeSchedules.map((s) => s.instructor_id)).size,
-    groups: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.group_id).map((s) => s.group_id)).size,
-    environments: new Set(activeSchedules.filter((s) => !s.is_additional_hours && s.environment_id).map((s) => s.environment_id)).size,
-    additionalHours: activeSchedules.filter((s) => s.is_additional_hours).reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0),
-  }), [activeSchedules, currentHourWarnings]);
+    instructors: new Set(summaryActiveSchedules.map((s) => s.instructor_id)).size,
+    groups: new Set(summaryActiveSchedules.filter((s) => !s.is_additional_hours && s.group_id).map((s) => s.group_id)).size,
+    environments: new Set(summaryActiveSchedules.filter((s) => !s.is_additional_hours && s.environment_id).map((s) => s.environment_id)).size,
+    additionalHours: summaryActiveSchedules.filter((s) => s.is_additional_hours).reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0),
+  }), [summaryActiveSchedules, currentHourWarnings]);
 const warningValidationsQuery = useQuery({
   queryKey: ["schedule-validations", warningSchedule?.id],
   queryFn: () => fetchScheduleValidations(Number(warningSchedule?.id)),
@@ -623,7 +634,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       }));
     }
     if (summaryDetail === "additional-hours") {
-      return activeSchedules
+      return summaryActiveSchedules
         .filter((schedule) => schedule.is_additional_hours)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
         .map((schedule) => ({
@@ -633,9 +644,9 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         }));
     }
     if (summaryDetail === "instructors" || summaryDetail === "groups") return [];
-    const ids = [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))];
+    const ids = [...new Set(summaryActiveSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))];
     return ids.map((id) => {
-      const count = activeSchedules.filter((schedule) => schedule.environment_id === id).length;
+      const count = summaryActiveSchedules.filter((schedule) => schedule.environment_id === id).length;
       const entity = environmentsById.get(id);
       return {
         id,
@@ -643,11 +654,11 @@ const getScheduleDisplayData = (schedule: Schedule) => {
         secondary: `${count} ${count === 1 ? "sesión programada" : "sesiones programadas"}`,
       };
     });
-  }, [summaryDetail, activeSchedules, environmentsById, currentHourWarnings, instructorsById]);
+  }, [summaryDetail, summaryActiveSchedules, environmentsById, currentHourWarnings, instructorsById]);
 
   const instructorScheduleGroups = useMemo(() => summaryDetail === "instructors"
-    ? [...new Set(activeSchedules.map((schedule) => schedule.instructor_id))].map((id) => {
-        const instructorSchedules = activeSchedules.filter((schedule) => schedule.instructor_id === id);
+    ? [...new Set(summaryActiveSchedules.map((schedule) => schedule.instructor_id))].map((id) => {
+        const instructorSchedules = summaryActiveSchedules.filter((schedule) => schedule.instructor_id === id);
         return {
           id,
           instructor: instructorsById.get(id),
@@ -656,23 +667,23 @@ const getScheduleDisplayData = (schedule: Schedule) => {
           additionalHours: instructorSchedules.filter((schedule) => schedule.is_additional_hours).sort((a, b) => a.date.localeCompare(b.date)),
         };
       })
-    : [], [summaryDetail, activeSchedules, instructorsById]);
+    : [], [summaryDetail, summaryActiveSchedules, instructorsById]);
 
   const groupScheduleGroups = useMemo(() => summaryDetail === "groups"
-    ? [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.group_id).map((schedule) => Number(schedule.group_id)))].map((id) => ({
+    ? [...new Set(summaryActiveSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.group_id).map((schedule) => Number(schedule.group_id)))].map((id) => ({
         id,
         group: groupsById.get(id),
-        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.group_id === id)),
+        schedules: weeklySchedules(summaryActiveSchedules.filter((schedule) => schedule.group_id === id)),
       }))
-    : [], [summaryDetail, activeSchedules, groupsById]);
+    : [], [summaryDetail, summaryActiveSchedules, groupsById]);
 
   const environmentScheduleGroups = useMemo(() => summaryDetail === "environments"
-    ? [...new Set(activeSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))].map((id) => ({
+    ? [...new Set(summaryActiveSchedules.filter((schedule) => !schedule.is_additional_hours && schedule.environment_id).map((schedule) => Number(schedule.environment_id)))].map((id) => ({
         id,
         environment: environmentsById.get(id),
-        schedules: weeklySchedules(activeSchedules.filter((schedule) => schedule.environment_id === id)),
+        schedules: weeklySchedules(summaryActiveSchedules.filter((schedule) => schedule.environment_id === id)),
       }))
-    : [], [summaryDetail, activeSchedules, environmentsById]);
+    : [], [summaryDetail, summaryActiveSchedules, environmentsById]);
 
   const summaryTitle = summaryDetail === "warnings" ? "Horarios con advertencias" : summaryDetail === "instructors" ? "Instructores programados" : summaryDetail === "groups" ? "Fichas programadas" : summaryDetail === "additional-hours" ? "Horas adicionales programadas" : "Ambientes usados";
   const summarySearchTerm = normalizeSearchText(summarySearch.trim());
@@ -1554,7 +1565,7 @@ const cancelMutation = useMutation({
                     className="summary-warning-item"
                     key={item.id}
                     onClick={() => {
-                      const schedule = activeSchedules.find((current) => current.id === item.id);
+                      const schedule = summaryActiveSchedules.find((current) => current.id === item.id);
                       if (schedule) setWarningSchedule(schedule);
                       setSummaryDetail(null);
                     }}

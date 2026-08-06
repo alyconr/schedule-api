@@ -740,11 +740,13 @@ const getScheduleDisplayData = (schedule: Schedule) => {
   }, [summaryDetail, selectedSummaryEntityId, selectedEnvironmentId]);
 
   // Reset form helper
-  const resetForm = (keepValidation = false) => {
+  const resetForm = (keepValidation = false, keepPeriod = false) => {
     setEditingSchedule(null);
     setDateVal("");
-    setScheduleYear("");
-    setScheduleQuarter("");
+    if (!keepPeriod) {
+      setScheduleYear("");
+      setScheduleQuarter("");
+    }
     setAdditionalMonth("");
     setGroupId("");
     setProgramId("");
@@ -861,7 +863,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
             ? "Horario guardado con advertencias."
             : "Horario programado exitosamente."
         );
-        resetForm(true);
+        resetForm(true, true);
       }
     },
     onError: (err: any) => {
@@ -886,7 +888,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
             ? "Horario actualizado con advertencias."
             : "Horario actualizado exitosamente."
         );
-        resetForm(true);
+        resetForm(true, true);
       }
     },
     onError: (err: any) => {
@@ -1179,7 +1181,7 @@ const cancelMutation = useMutation({
           setErrorMsg(`No se pudieron programar estos días por reglas de negocio: ${blockedDays.join(", ")}.`);
         } else {
           addToast("success", `${savedCount} horarios programados correctamente.`);
-          resetForm(true);
+          resetForm(true, true);
         }
       } catch (err: any) {
         setErrorMsg(err.message || "Error al programar los días seleccionados.");

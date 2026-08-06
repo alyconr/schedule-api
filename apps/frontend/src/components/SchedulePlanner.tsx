@@ -1855,7 +1855,7 @@ const cancelMutation = useMutation({
                 </label>}
 
                 <div className="form-actions-inline">
-                  {editingSchedule && (
+                  {(editingSchedule || isAdditionalHours) && (
                     <button type="button" className="btn-secondary" onClick={() => resetForm()}>
                       Cancelar
                     </button>

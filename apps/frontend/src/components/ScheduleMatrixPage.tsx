@@ -67,7 +67,7 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
   useEffect(() => {
     const firstDate = filters.date_from || schedules[0]?.date;
     if (firstDate) setVisibleMonth(new Date(`${firstDate}T00:00:00`));
-  }, [filters.date_from, schedules]);
+  }, [filters, schedules[0]?.date]);
 
   const schedulesByDate = useMemo(() => {
     const map = new Map<string, ScheduleDetailed[]>();

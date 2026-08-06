@@ -1465,7 +1465,6 @@ textarea:focus:not(:focus-visible) {
 .schedule-query-filters .filter-fields > * { min-width: 0; }
 .schedule-query-filters .searchable-select-trigger,
 .schedule-query-filters input { height: 46px; min-height: 46px; box-sizing: border-box; }
-.schedule-query-filters .searchable-select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-query-filters .filter-actions button { min-height: 46px; }
 
 @media (max-width: 1100px) {
@@ -2930,9 +2929,10 @@ textarea:focus:not(:focus-visible) {
 .warning-detail-heading span { color: #64748b; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; }
 .warning-detail-item p { margin: 6px 0 0; }
 
-.searchable-select { position: relative; display: grid; gap: 0.35rem; }
+.searchable-select { position: relative; display: grid; gap: 0.35rem; min-width: 0; }
 .searchable-select-label { font-size: 0.82rem; font-weight: 700; color: #334155; }
-.searchable-select-trigger { min-height: 42px; width: 100%; border: 1px solid var(--color-border, #d9dee8); border-radius: 0.65rem; background: #fff; padding: 0.55rem 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; color: #0f172a; cursor: pointer; text-align: left; }
+.searchable-select-trigger { min-height: 42px; min-width: 0; max-width: 100%; width: 100%; border: 1px solid var(--color-border, #d9dee8); border-radius: 0.65rem; background: #fff; padding: 0.55rem 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; color: #0f172a; cursor: pointer; text-align: left; }
+.searchable-select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .searchable-select-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
 .searchable-select-panel { position: absolute; z-index: 80; top: calc(100% + 0.35rem); left: 0; right: 0; min-width: 280px; border: 1px solid var(--color-border, #d9dee8); border-radius: 0.75rem; background: #fff; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16); padding: 0.6rem; }
 .searchable-select-search { width: 100%; border: 1px solid var(--color-border, #d9dee8); border-radius: 0.55rem; padding: 0.5rem 0.65rem; margin-bottom: 0.5rem; }

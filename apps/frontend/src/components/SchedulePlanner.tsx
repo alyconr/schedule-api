@@ -543,25 +543,6 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
   refetchOnWindowFocus: false,
 });
 
-const { data: schedules = [] } = useQuery<Schedule[]>({
-  queryKey: ["schedules", "planner-period", scheduleYear, scheduleQuarter],
-  queryFn: () => fetchSchedules({
-    ...PLANNER_SUMMARY_FILTERS,
-    include_inactive: true,
-    schedule_year: scheduleYear === "" ? undefined : scheduleYear,
-    schedule_quarter: scheduleQuarter === "" ? undefined : scheduleQuarter,
-  }),
-  enabled: scheduleYear !== "" && scheduleQuarter !== "",
-  staleTime: 60 * 1000,
-  refetchOnWindowFocus: false,
-  placeholderData: (previousData) => previousData,
-});
-
-// Keep deleted rows visible in the table, but out of the active weekly matrix.
-  const activeSchedules = useMemo(
-    () => schedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
-    [schedules]
-  );
   const summaryActiveSchedules = useMemo(
     () => summarySchedules.filter((s) => !["cancelled", "deleted"].includes(s.status)),
     [summarySchedules]
@@ -1077,8 +1058,8 @@ const cancelMutation = useMutation({
   };
 
   const weeklySeriesIds = (scheduleIds: number[]) => {
-    const anchors = activeSchedules.filter((schedule) => scheduleIds.includes(schedule.id));
-    return [...new Set(activeSchedules
+    const anchors = summaryActiveSchedules.filter((schedule) => scheduleIds.includes(schedule.id));
+    return [...new Set(summaryActiveSchedules
       .filter((schedule) => anchors.some((anchor) => weeklyBlockKey(schedule) === weeklyBlockKey(anchor) && weekdayIndex(schedule) === weekdayIndex(anchor)))
       .map((schedule) => schedule.id))];
   };
@@ -1101,11 +1082,11 @@ const cancelMutation = useMutation({
   };
 
   const moveWeeklyBlock = async (scheduleId: number, targetWeekday: number) => {
-    const dragged = activeSchedules.find((schedule) => schedule.id === scheduleId);
+    const dragged = summaryActiveSchedules.find((schedule) => schedule.id === scheduleId);
     setDraggedScheduleId(null);
     if (!canWrite || !dragged || weekdayIndex(dragged) === targetWeekday) return;
 
-    const occurrences = activeSchedules.filter((schedule) => weeklyBlockKey(schedule) === weeklyBlockKey(dragged) && weekdayIndex(schedule) === weekdayIndex(dragged));
+    const occurrences = summaryActiveSchedules.filter((schedule) => weeklyBlockKey(schedule) === weeklyBlockKey(dragged) && weekdayIndex(schedule) === weekdayIndex(dragged));
     setIsBulkSubmitting(true);
     try {
       let skipped = 0;

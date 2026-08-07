@@ -1017,8 +1017,8 @@ const cancelMutation = useMutation({
     }
   };
 
-  const moveWeeklyBlock = async (targetWeekday: number) => {
-    const dragged = activeSchedules.find((schedule) => schedule.id === draggedScheduleId);
+  const moveWeeklyBlock = async (scheduleId: number, targetWeekday: number) => {
+    const dragged = activeSchedules.find((schedule) => schedule.id === scheduleId);
     setDraggedScheduleId(null);
     if (!canWrite || !dragged || weekdayIndex(dragged) === targetWeekday) return;
 
@@ -1314,11 +1314,15 @@ const cancelMutation = useMutation({
                             className={`weekly-chronogram-day${draggedScheduleId ? " is-drop-target" : ""}`}
                             key={day.index}
                             onDragOver={(event) => {
-                              if (canWrite) event.preventDefault();
+                              if (canWrite) {
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = "move";
+                              }
                             }}
                             onDrop={(event) => {
                               event.preventDefault();
-                              void moveWeeklyBlock(day.index);
+                              const scheduleId = Number(event.dataTransfer.getData("text/plain")) || draggedScheduleId;
+                              if (scheduleId) void moveWeeklyBlock(scheduleId, day.index);
                             }}
                           >
                             <header>

@@ -115,6 +115,10 @@ function calculateDurationHours(startTime: string, endTime: string): number {
   return diffMinutes > 0 ? Number((diffMinutes / 60).toFixed(1)) : 0;
 }
 
+function blockLabel(block: TimeBlock): string {
+  return `${block.name}${block.jornada ? ` · ${block.jornada}` : ""} (${block.start_time} - ${block.end_time})`;
+}
+
 const weekDays = [
   { index: 1, label: "Lunes" },
   { index: 2, label: "Martes" },
@@ -873,7 +877,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
     setInstructorSearch(instructor ? instructorLabel(instructor) : "");
     setEnvironmentSearch(environment ? environmentLabel(environment) : "");
-    setBlockSearch(block ? `${block.name} ${block.start_time} - ${block.end_time}` : "");
+    setBlockSearch(block ? blockLabel(block) : "");
     setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
   };
 
@@ -1033,7 +1037,7 @@ const cancelMutation = useMutation({
     }
     const b = timeBlocks.find((x) => x.id === id);
     if (b) {
-      setBlockSearch(`${b.name} ${b.start_time} - ${b.end_time}`);
+      setBlockSearch(blockLabel(b));
       setStartTime(b.start_time);
       setEndTime(b.end_time);
       setDurationHours(b.duration_minutes / 60);
@@ -1900,7 +1904,7 @@ const cancelMutation = useMutation({
 
                 <div className="schedule-form-group">
                   <p className="form-group-title">Bloque y duración</p>
-                {!isAdditionalHours && <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque..." options={timeBlocks.map((block) => ({ value: block.id, label: `${block.name} (${block.start_time} - ${block.end_time})` }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />}
+                {!isAdditionalHours && <SearchableSelect label="Bloque Horario Institucional" value={blockId} placeholder="Carga manual / Sin bloque" searchPlaceholder="Buscar bloque o jornada..." options={timeBlocks.map((block) => ({ value: block.id, label: blockLabel(block) }))} onChange={(value) => handleBlockChange(value === "" ? "" : Number(value))} />}
 
                 <div className={isAdditionalHours ? "form-row-compact additional-hours-row" : "form-row-compact"}>
                   {!isAdditionalHours && <label className="form-label">

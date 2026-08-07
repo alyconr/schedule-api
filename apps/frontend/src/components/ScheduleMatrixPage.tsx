@@ -123,7 +123,7 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
   return (
     <section className="workspace schedule-query-workspace">
       <header className="topbar">
-        <div><p className="eyebrow">Panorama académico</p><h1>Matriz Académica</h1><p className="page-intro">Explora la programación mensual y abre cualquier sesión para consultar su detalle.</p></div>
+        <div><p className="eyebrow">Panorama académico</p><h1>Matriz Académica</h1><p className="page-intro">Explora la programación mensual y abre cualquier sesión para consultar su detalle.{canWrite ? " Haz clic sobre cualquier día para programarlo." : ""}</p></div>
       </header>
 
       <ScheduleFilterBar
@@ -179,21 +179,29 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
               const key = `${monthKey(date)}-${String(date.getDate()).padStart(2, "0")}`;
               const daySchedules = schedulesByDate.get(key) ?? [];
               return (
-                <div className={`calendar-day${daySchedules.length ? " has-events" : ""}${key === todayKey ? " is-today" : ""}`} role="gridcell" key={key}>
+                <div
+                  className={`calendar-day${daySchedules.length ? " has-events" : ""}${key === todayKey ? " is-today" : ""}${canWrite ? " is-programmable" : ""}`}
+                  role="gridcell"
+                  key={key}
+                  tabIndex={canWrite ? 0 : undefined}
+                  aria-label={canWrite ? `${key}: programar este día${daySchedules.length ? ` (${daySchedules.length} sesiones registradas)` : ""}` : undefined}
+                  onClick={canWrite ? () => programDate(key) : undefined}
+                  onKeyDown={canWrite ? (event) => {
+                    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                      event.preventDefault();
+                      programDate(key);
+                    }
+                  } : undefined}
+                >
                   <span className="calendar-day-number">{date.getDate()}</span>
                   <div className="calendar-events">
                     {daySchedules.map((schedule) => (
-                      <button type="button" className={`calendar-event status-${schedule.status}`} key={schedule.id} onClick={() => setSelectedSchedule(schedule)}>
+                      <button type="button" className={`calendar-event status-${schedule.status}`} key={schedule.id} onClick={(event) => { event.stopPropagation(); setSelectedSchedule(schedule); }}>
                         <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
                         <span>{schedule.group_code} · {schedule.group_trimester || "Sin trimestre"} · {schedule.instructor_name}</span>
                         <small>{schedule.environment_name}</small>
                       </button>
                     ))}
-                    {canWrite && (
-                      <button type="button" className="calendar-program-action" onClick={() => programDate(key)}>
-                        <span aria-hidden="true">+</span> Programar este día
-                      </button>
-                    )}
                   </div>
                 </div>
               );

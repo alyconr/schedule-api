@@ -1644,9 +1644,9 @@ textarea:focus:not(:focus-visible) {
 .calendar-day.is-today .calendar-day-number { display: inline-grid; place-items: center; min-width: 27px; height: 27px; border-radius: 50%; color: #fff; background: #23854b; }
 .calendar-day-number { display: block; margin-bottom: 7px; color: #52685a; font-weight: 800; }
 .calendar-events { display: grid; gap: 6px; }
-.calendar-program-action { width: 100%; min-height: 34px; padding: 7px 8px; border: 1px dashed #8fbea0; border-radius: 8px; color: #246b3c; background: #f3faf5; font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
-.calendar-program-action:hover { border-color: #39a900; background: #e8f6ec; }
-.calendar-program-action:focus-visible { outline: 3px solid rgba(57, 169, 0, .25); outline-offset: 2px; }
+.calendar-day.is-programmable { cursor: pointer; }
+.calendar-day.is-programmable:hover { background: #eef7f0; box-shadow: inset 0 0 0 2px #9fceac; }
+.calendar-day.is-programmable:focus-visible { outline: 3px solid rgba(57, 169, 0, .25); outline-offset: -3px; }
 
 .calendar-event {
   display: grid;

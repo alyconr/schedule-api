@@ -54,7 +54,13 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
       } catch {
         // ignore
       }
-      throw new ApiError("Revisa los campos enviados.", 422, details);
+      const detail = details?.detail;
+      const message = typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+        ? detail.map((item) => item?.msg).filter(Boolean).join(" ")
+        : "";
+      throw new ApiError(message || "Revisa los campos enviados.", 422, details);
     }
 
     if (!response.ok) {

@@ -1,6 +1,6 @@
 import { FormEvent, type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { closestCenter, DndContext, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { closestCenter, DndContext, pointerWithin, useDraggable, useDroppable, type CollisionDetection, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { fetchList } from "../api/masterData";
 import {
   fetchSchedules,
@@ -41,20 +41,46 @@ interface SchedulePlannerProps {
   onPrefillApplied?: () => void;
 }
 
-function WeeklyDragHandle({ scheduleId, disabled }: { scheduleId: number; disabled: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: scheduleId, disabled });
+function WeeklyDraggableBlock({ scheduleId, disabled, canOpen, ariaLabel, actions, children, onOpen }: {
+  scheduleId: number;
+  disabled: boolean;
+  canOpen: boolean;
+  ariaLabel: string;
+  actions?: ReactNode;
+  children: ReactNode;
+  onOpen: () => void;
+}) {
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } = useDraggable({ id: scheduleId, disabled });
   return (
-    <button
+    <article
       ref={setNodeRef}
-      type="button"
-      className={`weekly-drag-handle${isDragging ? " is-dragging" : ""}`}
+      className={`weekly-chronogram-block${isDragging ? " is-dragging" : ""}`}
       style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}
-      {...listeners}
-      {...attributes}
-      aria-label="Mover este bloque a otro día"
+      role={canOpen ? "button" : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      onClick={(event) => {
+        if (!isEditableElement(event.target)) onOpen();
+      }}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && !isEditableElement(event.target)) {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      aria-label={ariaLabel}
     >
-      Mover
-    </button>
+      {(canOpen || actions) && (
+        <div className="weekly-block-actions">
+          {canOpen && (
+            <button ref={setActivatorNodeRef} type="button" className="weekly-drag-handle" {...listeners} {...attributes}>
+              Mover
+            </button>
+          )}
+          {actions}
+        </div>
+      )}
+      {children}
+    </article>
   );
 }
 
@@ -66,6 +92,11 @@ function WeeklyDropDay({ weekday, disabled, dragging, children }: { weekday: num
     </section>
   );
 }
+
+const weeklyCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length ? pointerCollisions : closestCenter(args);
+};
 
 type SummaryDetail = "warnings" | "instructors" | "groups" | "environments" | "additional-hours";
 type CurrentHourWarning = {
@@ -1365,7 +1396,7 @@ const cancelMutation = useMutation({
                     </div>
                   </header>
                   <div className="weekly-chronogram-scroll">
-                    <DndContext collisionDetection={closestCenter} onDragStart={handleWeeklyDragStart} onDragCancel={() => setDraggedScheduleId(null)} onDragEnd={handleWeeklyDragEnd}>
+                    <DndContext collisionDetection={weeklyCollisionDetection} onDragStart={handleWeeklyDragStart} onDragCancel={() => setDraggedScheduleId(null)} onDragEnd={handleWeeklyDragEnd}>
                     <div className="weekly-chronogram-grid">
                       {weekDays.map((day) => {
                         const daySchedules = selectedWeeklySchedule.schedules.filter((schedule) => weekdayIndex(schedule) === day.index);
@@ -1379,25 +1410,15 @@ const cancelMutation = useMutation({
                               {daySchedules.length ? daySchedules.map((schedule) => {
                                 const detail = getScheduleDisplayData(schedule);
                                 return (
-                                  <article
-                                    className="weekly-chronogram-block"
+                                  <WeeklyDraggableBlock
                                     key={schedule.id}
-                                    role={canWrite ? "button" : undefined}
-                                    tabIndex={canWrite ? 0 : undefined}
-                                    onClick={(event) => {
-                                      if (!isEditableElement(event.target)) editFromSummary(schedule);
-                                    }}
-                                    onKeyDown={(event) => {
-                                      if ((event.key === "Enter" || event.key === " ") && !isEditableElement(event.target)) {
-                                        event.preventDefault();
-                                        editFromSummary(schedule);
-                                      }
-                                    }}
-                                    aria-label={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
-                                  >
-                                    {canWrite && <WeeklyDragHandle scheduleId={schedule.id} disabled={isBulkSubmitting} />}
-                                    {canDelete && (
-                                      <div className="weekly-block-actions">
+                                    scheduleId={schedule.id}
+                                    disabled={!canWrite || isBulkSubmitting}
+                                    canOpen={canWrite}
+                                    onOpen={() => editFromSummary(schedule)}
+                                    ariaLabel={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
+                                    actions={canDelete ? (
+                                      <>
                                         <label>
                                           <input
                                             type="checkbox"
@@ -1406,9 +1427,10 @@ const cancelMutation = useMutation({
                                           />
                                           Seleccionar
                                         </label>
-                                        <button type="button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
-                                      </div>
-                                    )}
+                                        <button type="button" className="weekly-delete-button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
+                                      </>
+                                    ) : undefined}
+                                  >
                                     <div className="weekly-chronogram-time">
                                       <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
                                       <span className={`status-pill ${detail.statusClass}`}>{detail.statusName}</span>
@@ -1425,7 +1447,7 @@ const cancelMutation = useMutation({
                                       <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : `RAP ${schedule.learning_result_id}`}</dd></div>
                                       <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática registrada"}</dd></div>
                                     </dl>
-                                  </article>
+                                  </WeeklyDraggableBlock>
                                 );
                               }) : <p className="weekly-chronogram-empty">Sin programación</p>}
                             </div>

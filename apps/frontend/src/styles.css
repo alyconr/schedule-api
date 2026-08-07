@@ -1358,12 +1358,12 @@ textarea:focus:not(:focus-visible) {
 .weekly-chronogram-selection > strong { padding: 8px 12px; border-radius: 999px; color: #17452d; background: #c6e6ce; font-size: .78rem; white-space: nowrap; }
 .weekly-chronogram-selection label, .weekly-block-actions label { display: inline-flex; align-items: center; gap: 6px; color: #315b40; font-size: .72rem; font-weight: 800; cursor: pointer; }
 .weekly-chronogram-selection input, .weekly-block-actions input { width: 16px; height: 16px; accent-color: #267a47; }
-.weekly-delete-selected, .weekly-block-actions button { padding: 7px 10px; border: 1px solid #e2a3a3; border-radius: 9px; color: #9b1c1c; background: #fff4f4; font: inherit; font-size: .72rem; font-weight: 850; cursor: pointer; }
+.weekly-delete-selected, .weekly-delete-button { padding: 7px 10px; border: 1px solid #e2a3a3; border-radius: 9px; color: #9b1c1c; background: #fff4f4; font: inherit; font-size: .72rem; font-weight: 850; cursor: pointer; }
 .weekly-delete-selected:disabled { opacity: .5; cursor: not-allowed; }
 .weekly-chronogram-scroll { overflow-x: auto; padding-bottom: 6px; }
 .weekly-chronogram-grid { display: grid; grid-template-columns: repeat(7, minmax(240px, 1fr)); gap: 14px; min-width: 1774px; }
 .weekly-chronogram-day { overflow: hidden; min-height: 320px; border: 1px solid #d4e1d7; border-radius: 16px; background: #f5f8f6; }
-.weekly-chronogram-day.is-drop-target { border-style: dashed; border-color: #5e9f70; }
+.weekly-chronogram-day.is-drop-target { overflow: visible; border-style: dashed; border-color: #5e9f70; }
 .weekly-chronogram-day.is-drop-target:hover { background: #e8f5eb; box-shadow: inset 0 0 0 2px #8fc59d; }
 .weekly-chronogram-day.is-over { background: #e8f5eb; box-shadow: inset 0 0 0 3px #39a900; }
 .weekly-chronogram-day > header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: #17452d; background: linear-gradient(110deg, #dff1e4, #cfe8d6); }
@@ -1371,10 +1371,11 @@ textarea:focus:not(:focus-visible) {
 .weekly-chronogram-blocks { display: grid; align-content: start; gap: 10px; padding: 10px; }
 .weekly-chronogram-block { padding: 12px; border: 1px solid #d7e4da; border-left: 4px solid #2b8a4b; border-radius: 12px; background: #fff; box-shadow: 0 5px 14px rgba(22, 59, 39, .06); }
 .weekly-chronogram-block[role="button"]:focus-visible { outline: 3px solid rgba(35, 130, 71, .25); outline-offset: 2px; }
-.weekly-drag-handle { float: right; margin: 0 0 8px 8px; padding: 5px 8px; border: 1px solid #9ac8a7; border-radius: 8px; color: #1f6b3b; background: #edf8f0; font: inherit; font-size: .68rem; font-weight: 850; cursor: grab; touch-action: none; }
-.weekly-drag-handle:active, .weekly-drag-handle.is-dragging { cursor: grabbing; opacity: .7; z-index: 3; }
+.weekly-chronogram-block.is-dragging { position: relative; z-index: 20; opacity: .85; box-shadow: 0 16px 34px rgba(22, 59, 39, .22); }
+.weekly-drag-handle { padding: 7px 10px; border: 1px solid #9ac8a7; border-radius: 9px; color: #1f6b3b; background: #edf8f0; font: inherit; font-size: .72rem; font-weight: 850; cursor: grab; touch-action: none; }
+.weekly-drag-handle:active { cursor: grabbing; }
 .weekly-drag-handle:focus-visible { outline: 3px solid rgba(35, 130, 71, .25); outline-offset: 2px; }
-.weekly-block-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 8px; border-bottom: 1px solid #e1ebe3; }
+.weekly-block-actions { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 9px; padding-bottom: 8px; border-bottom: 1px solid #e1ebe3; }
 .weekly-chronogram-time { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: #17452d; font-size: .78rem; }
 .weekly-chronogram-block h5 { margin: 9px 0; color: #102f20; font-size: .84rem; line-height: 1.35; }
 .weekly-chronogram-block dl { display: grid; gap: 8px; margin: 0; }

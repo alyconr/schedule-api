@@ -757,6 +757,15 @@ textarea:focus:not(:focus-visible) {
   gap: 16px;
 }
 
+.time-block-fields { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.time-block-fields .crud-field-name,
+.time-block-fields .crud-field-weekday { grid-column: span 6; }
+.time-block-fields .crud-field-start_time,
+.time-block-fields .crud-field-end_time { grid-column: span 5; }
+.time-block-fields .crud-field-duration_hours { grid-column: span 2; }
+.time-block-fields .crud-field-jornada { grid-column: 1 / -1; }
+.time-block-fields .crud-field-duration_hours input { background: #eef1f4; }
+
 .form-label {
   display: flex;
   flex-direction: column;
@@ -1162,6 +1171,7 @@ textarea:focus:not(:focus-visible) {
   .form-fields {
     grid-template-columns: 1fr;
   }
+  .time-block-fields > .form-label { grid-column: 1 / -1; }
   .band,
   .band.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;

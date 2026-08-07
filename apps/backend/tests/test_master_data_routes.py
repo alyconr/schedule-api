@@ -87,6 +87,61 @@ class MasterDataRoutesTest(unittest.TestCase):
         valid = EnvironmentCreate(code="X", name="Test", environment_type="virtual")
         self.assertEqual(valid.environment_type, "virtual")
 
+    def test_time_block_requires_at_least_two_hours(self) -> None:
+        from app.schemas.master_data import TimeBlockCreate
+        from pydantic import ValidationError
+
+        valid = TimeBlockCreate(
+            name="Mañana",
+            weekday=1,
+            start_time="08:00",
+            end_time="10:00",
+            duration_minutes=120,
+        )
+        self.assertEqual(valid.duration_minutes, 120)
+
+        with self.assertRaises(ValidationError):
+            TimeBlockCreate(
+                name="Muy corto",
+                weekday=1,
+                start_time="08:00",
+                end_time="09:59",
+                duration_minutes=120,
+            )
+
+    def test_time_block_update_recalculates_duration(self) -> None:
+        from app.api.routes.time_blocks import create_time_block, update_time_block
+        from app.schemas.master_data import TimeBlockCreate, TimeBlockUpdate
+        from fastapi import HTTPException
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            created = create_time_block(
+                TimeBlockCreate(
+                    name="Mañana",
+                    weekday=1,
+                    start_time="08:00",
+                    end_time="10:00",
+                    duration_minutes=120,
+                ),
+                session,
+            )
+            updated = update_time_block(
+                created.id,
+                TimeBlockUpdate(end_time="11:00"),
+                session,
+            )
+            self.assertEqual(updated.duration_minutes, 180)
+
+            with self.assertRaises(HTTPException) as ctx:
+                update_time_block(
+                    created.id,
+                    TimeBlockUpdate(end_time="09:59"),
+                    session,
+                )
+            self.assertEqual(ctx.exception.status_code, 422)
+
     def test_delete_contract_type_inactivates_and_hides_row_from_list(self) -> None:
         from app.api.routes.contract_types import delete_contract_type, list_contract_types
 

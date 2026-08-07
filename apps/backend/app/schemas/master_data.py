@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -209,14 +209,31 @@ class EnvironmentUpdate(BaseModel):
 
 
 # --- TimeBlock ---
+def time_block_duration_minutes(start_value: str, end_value: str) -> int:
+    try:
+        start = time.fromisoformat(start_value)
+        end = time.fromisoformat(end_value)
+    except ValueError as exc:
+        raise ValueError("start_time and end_time must use HH:MM format") from exc
+    minutes = end.hour * 60 + end.minute - start.hour * 60 - start.minute
+    if minutes < 120:
+        raise ValueError("Time blocks must last at least 2 hours")
+    return minutes
+
+
 class TimeBlockCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=100)
     weekday: int = Field(ge=1, le=7)
     start_time: str = Field(min_length=1, max_length=10)
     end_time: str = Field(min_length=1, max_length=10)
-    duration_minutes: int = Field(gt=0)
+    duration_minutes: int = Field(ge=120)
     jornada: Optional[str] = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def calculate_duration(self) -> "TimeBlockCreate":
+        self.duration_minutes = time_block_duration_minutes(self.start_time, self.end_time)
+        return self
 
 
 class TimeBlockUpdate(BaseModel):
@@ -225,6 +242,6 @@ class TimeBlockUpdate(BaseModel):
     weekday: Optional[int] = Field(default=None, ge=1, le=7)
     start_time: Optional[str] = Field(default=None, min_length=1, max_length=10)
     end_time: Optional[str] = Field(default=None, min_length=1, max_length=10)
-    duration_minutes: Optional[int] = Field(default=None, gt=0)
+    duration_minutes: Optional[int] = Field(default=None, ge=120)
     jornada: Optional[str] = Field(default=None, max_length=50)
     is_active: Optional[bool] = None

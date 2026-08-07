@@ -30,8 +30,9 @@ function useDebouncedValue<T>(value: T, delay = 300): T {
 export type FieldConfig = {
   name: string;
   label: string;
-  type: "text" | "number" | "date" | "textarea" | "select" | "checkbox";
+  type: "text" | "number" | "date" | "time" | "textarea" | "select" | "checkbox";
   required?: boolean;
+  readOnly?: boolean;
   options?: { label: string; value: string | number }[];
   relatedEndpoint?: string;
   relatedDisplayField?: string;
@@ -50,6 +51,9 @@ interface ResourceCrudProps {
 }
 
 function getFieldValue(item: any, field: FieldConfig, relatedDataMap: Record<string, any[]>): string {
+  if (field.name === "duration_hours" && item.duration_minutes != null) {
+    return String(Number(item.duration_minutes) / 60);
+  }
   const rawVal = item[field.name];
   if (field.type === "checkbox") return rawVal ? "Sí" : "No";
   if (field.relatedEndpoint) {
@@ -265,6 +269,18 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
       }
     });
 
+    if (config.key === "time-blocks") {
+      const [startHour, startMinute] = String(payload.start_time).split(":").map(Number);
+      const [endHour, endMinute] = String(payload.end_time).split(":").map(Number);
+      const durationMinutes = endHour * 60 + endMinute - startHour * 60 - startMinute;
+      if (!Number.isFinite(durationMinutes) || durationMinutes < 120) {
+        setErrorMsg("El bloque horario debe durar mínimo 2 horas.");
+        return;
+      }
+      delete payload.duration_hours;
+      payload.duration_minutes = durationMinutes;
+    }
+
     if (editingItem) {
       updateMutation.mutate({ id: editingItem.id, data: payload });
     } else {
@@ -440,21 +456,44 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="crud-modal-title">
           <div className="modal-content">
             <h3 id="crud-modal-title">{editingItem ? `Editar ${config.label}` : `Nuevo ${config.label}`}</h3>
-            <form onSubmit={handleFormSubmit} className="crud-form">
-              <div className="form-fields">
+            <form
+              onSubmit={handleFormSubmit}
+              onChange={(event) => {
+                if (config.key !== "time-blocks") return;
+                const form = event.currentTarget;
+                const start = form.elements.namedItem("start_time") as HTMLInputElement | null;
+                const end = form.elements.namedItem("end_time") as HTMLInputElement | null;
+                const hours = form.elements.namedItem("duration_hours") as HTMLInputElement | null;
+                if (!start?.value || !end?.value || !hours) return;
+                const [startHour, startMinute] = start.value.split(":").map(Number);
+                const [endHour, endMinute] = end.value.split(":").map(Number);
+                const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute;
+                hours.value = minutes > 0 ? String(Number((minutes / 60).toFixed(2))) : "";
+              }}
+              className="crud-form"
+            >
+              <div className={`form-fields${config.key === "time-blocks" ? " time-block-fields" : ""}`}>
                 {config.fields.map((field) => {
-                  const defaultValue = editingItem ? editingItem[field.name] : "";
+                  const defaultValue = editingItem
+                    ? field.name === "duration_hours"
+                      ? Number(editingItem.duration_minutes || 0) / 60
+                      : editingItem[field.name]
+                    : "";
 
                   if (field.type === "select") {
                     const options: SearchableSelectOption[] = field.options ?? (relatedDataMap[field.relatedEndpoint || ""] || []).map((option: any) => ({
                       value: option.id,
                       label: String(option[field.relatedDisplayField || "name"]),
                     }));
-                    return <ResourceCrudSearchableField key={`${editingItem?.id ?? "new"}-${field.name}`} label={field.label} name={field.name} initialValue={defaultValue || ""} options={options} required={field.required} />;
+                    return (
+                      <div key={`${editingItem?.id ?? "new"}-${field.name}`} className={`crud-field-${field.name}`}>
+                        <ResourceCrudSearchableField label={field.label} name={field.name} initialValue={defaultValue || ""} options={options} required={field.required} />
+                      </div>
+                    );
                   }
 
                   return (
-                    <label key={field.name} className="form-label">
+                    <label key={field.name} className={`form-label crud-field-${field.name}`}>
                       {field.label} {field.required && <span className="req">*</span>}
                       {field.type === "textarea" ? (
                         <textarea
@@ -471,10 +510,11 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                         />
                       ) : (
                         <input
-                          type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+                          type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "time" ? "time" : "text"}
                           name={field.name}
                           defaultValue={defaultValue ?? ""}
                           required={field.required}
+                          readOnly={field.readOnly}
                           step={field.type === "number" ? "any" : undefined}
                         />
                       )}

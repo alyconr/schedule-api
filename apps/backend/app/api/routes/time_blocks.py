@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import TimeBlock
-from app.schemas.master_data import TimeBlockCreate, TimeBlockUpdate
+from app.schemas.master_data import TimeBlockCreate, TimeBlockUpdate, time_block_duration_minutes
 
 
 router = APIRouter(prefix="/time-blocks", tags=["time-blocks"])
@@ -44,6 +44,10 @@ def update_time_block(
         raise HTTPException(404, detail="Time block not found")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(obj, key, value)
+    try:
+        obj.duration_minutes = time_block_duration_minutes(obj.start_time, obj.end_time)
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
     session.add(obj)
     session.commit()
     session.refresh(obj)

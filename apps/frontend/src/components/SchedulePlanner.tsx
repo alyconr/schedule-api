@@ -1,5 +1,6 @@
-import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { FormEvent, type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { closestCenter, DndContext, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { fetchList } from "../api/masterData";
 import {
   fetchSchedules,
@@ -23,6 +24,7 @@ import {
 import {
   Schedule,
   ScheduleFilters,
+  SchedulePrefill,
   ValidationResult,
 } from "../types/schedules";
 import { CurrentUser } from "../types/auth";
@@ -35,6 +37,34 @@ import { SearchableSelect } from "./SearchableSelect";
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
   setActiveTab: (tab: string) => void;
+  prefill?: SchedulePrefill | null;
+  onPrefillApplied?: () => void;
+}
+
+function WeeklyDragHandle({ scheduleId, disabled }: { scheduleId: number; disabled: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: scheduleId, disabled });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      className={`weekly-drag-handle${isDragging ? " is-dragging" : ""}`}
+      style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}
+      {...listeners}
+      {...attributes}
+      aria-label="Mover este bloque a otro día"
+    >
+      Mover
+    </button>
+  );
+}
+
+function WeeklyDropDay({ weekday, disabled, dragging, children }: { weekday: number; disabled: boolean; dragging: boolean; children: ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id: `weekday-${weekday}`, data: { weekday }, disabled });
+  return (
+    <section ref={setNodeRef} className={`weekly-chronogram-day${dragging ? " is-drop-target" : ""}${isOver ? " is-over" : ""}`}>
+      {children}
+    </section>
+  );
 }
 
 type SummaryDetail = "warnings" | "instructors" | "groups" | "environments" | "additional-hours";
@@ -61,6 +91,7 @@ const weekDays = [
   { index: 4, label: "Jueves" },
   { index: 5, label: "Viernes" },
   { index: 6, label: "Sábado" },
+  { index: 7, label: "Domingo" },
 ];
 
 function weekdayIndex(schedule: Schedule): number {
@@ -218,7 +249,7 @@ function datesForWeekdays(startValue: string, endValue: string, weekdays: number
   if (!current || !end) return [];
   const dates: string[] = [];
   while (current <= end) {
-    if (weekdays.includes(current.getDay())) dates.push(toLocalIsoDate(current));
+    if (weekdays.includes(current.getDay() || 7)) dates.push(toLocalIsoDate(current));
     current.setDate(current.getDate() + 1);
   }
   return dates;
@@ -226,7 +257,7 @@ function datesForWeekdays(startValue: string, endValue: string, weekdays: number
 
 const PLANNER_SUMMARY_FILTERS: ScheduleFilters = { limit: 2000 };
 
-export function SchedulePlanner({ currentUser, setActiveTab }: SchedulePlannerProps) {
+export function SchedulePlanner({ currentUser, setActiveTab, prefill, onPrefillApplied }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
 
   // Roles permissions check
@@ -959,6 +990,29 @@ const cancelMutation = useMutation({
     if (r) setRapSearch(`${r.code} - ${r.description.slice(0, 100)}`);
   };
 
+  useEffect(() => {
+    if (!prefill || !instructors.length || !groups.length || !learningResults.length) return;
+    resetForm();
+    setDateVal(prefill.date);
+    if (prefill.schedule_year && prefill.schedule_quarter) {
+      setScheduleYear(prefill.schedule_year);
+      setScheduleQuarter(prefill.schedule_quarter);
+      const [start, end] = quarterDateRange(prefill.schedule_year, prefill.schedule_quarter);
+      setTrimesterStartDate(start);
+      setTrimesterEndDate(end);
+    }
+    setSelectedWeekdays([getWeekdayFromDate(prefill.date) || 7]);
+    if (prefill.group_id) handleFichaChange(prefill.group_id);
+    if (prefill.learning_result_id) handleRapChange(prefill.learning_result_id);
+    if (prefill.instructor_id) {
+      setInstructorId(prefill.instructor_id);
+      const instructor = instructorsById.get(prefill.instructor_id);
+      setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+    }
+    onPrefillApplied?.();
+    requestAnimationFrame(() => document.getElementById("schedule-programming-form")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [prefill, instructors.length, groups.length, learningResults.length]);
+
   const handleBlockChange = (id: number | "") => {
     setBlockId(id);
     if (id === "") {
@@ -1000,19 +1054,17 @@ const cancelMutation = useMutation({
 
   const deleteWeeklySchedules = async () => {
     if (!confirmDeleteIds?.length) return;
+    const scheduleIds = [...confirmDeleteIds];
+    setConfirmDeleteIds(null);
     setIsBulkSubmitting(true);
     try {
-      await Promise.all(confirmDeleteIds.map(deleteSchedule));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
-        queryClient.invalidateQueries({ queryKey: ["instructors"] }),
-      ]);
-      setSelectedWeeklyBlockIds([]);
-      addToast("success", `${confirmDeleteIds.length} ${confirmDeleteIds.length === 1 ? "horario eliminado" : "horarios eliminados"}.`);
+      for (const scheduleId of scheduleIds) await deleteSchedule(scheduleId);
+      addToast("success", `${scheduleIds.length} ${scheduleIds.length === 1 ? "horario eliminado" : "horarios eliminados"}.`);
     } catch (error: any) {
       addToast("error", error.message || "No fue posible eliminar los horarios seleccionados.");
     } finally {
-      setConfirmDeleteIds(null);
+      invalidateScheduleData();
+      setSelectedWeeklyBlockIds([]);
       setIsBulkSubmitting(false);
     }
   };
@@ -1039,6 +1091,13 @@ const cancelMutation = useMutation({
     } finally {
       setIsBulkSubmitting(false);
     }
+  };
+
+  const handleWeeklyDragStart = (event: DragStartEvent) => setDraggedScheduleId(Number(event.active.id));
+  const handleWeeklyDragEnd = (event: DragEndEvent) => {
+    setDraggedScheduleId(null);
+    const targetWeekday = Number(event.over?.data.current?.weekday);
+    if (targetWeekday) void moveWeeklyBlock(Number(event.active.id), targetWeekday);
   };
 
   const toggleWeekday = (weekdayIndex: number) => {
@@ -1306,25 +1365,12 @@ const cancelMutation = useMutation({
                     </div>
                   </header>
                   <div className="weekly-chronogram-scroll">
+                    <DndContext collisionDetection={closestCenter} onDragStart={handleWeeklyDragStart} onDragCancel={() => setDraggedScheduleId(null)} onDragEnd={handleWeeklyDragEnd}>
                     <div className="weekly-chronogram-grid">
                       {weekDays.map((day) => {
                         const daySchedules = selectedWeeklySchedule.schedules.filter((schedule) => weekdayIndex(schedule) === day.index);
                         return (
-                          <section
-                            className={`weekly-chronogram-day${draggedScheduleId ? " is-drop-target" : ""}`}
-                            key={day.index}
-                            onDragOver={(event) => {
-                              if (canWrite) {
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = "move";
-                              }
-                            }}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              const scheduleId = Number(event.dataTransfer.getData("text/plain")) || draggedScheduleId;
-                              if (scheduleId) void moveWeeklyBlock(scheduleId, day.index);
-                            }}
-                          >
+                          <WeeklyDropDay key={day.index} weekday={day.index} disabled={!canWrite || isBulkSubmitting} dragging={Boolean(draggedScheduleId)}>
                             <header>
                               <strong>{day.label}</strong>
                               <span>{daySchedules.length}</span>
@@ -1338,7 +1384,6 @@ const cancelMutation = useMutation({
                                     key={schedule.id}
                                     role={canWrite ? "button" : undefined}
                                     tabIndex={canWrite ? 0 : undefined}
-                                    draggable={canWrite && !isBulkSubmitting}
                                     onClick={(event) => {
                                       if (!isEditableElement(event.target)) editFromSummary(schedule);
                                     }}
@@ -1348,14 +1393,9 @@ const cancelMutation = useMutation({
                                         editFromSummary(schedule);
                                       }
                                     }}
-                                    onDragStart={(event) => {
-                                      setDraggedScheduleId(schedule.id);
-                                      event.dataTransfer.effectAllowed = "move";
-                                      event.dataTransfer.setData("text/plain", String(schedule.id));
-                                    }}
-                                    onDragEnd={() => setDraggedScheduleId(null)}
                                     aria-label={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
                                   >
+                                    {canWrite && <WeeklyDragHandle scheduleId={schedule.id} disabled={isBulkSubmitting} />}
                                     {canDelete && (
                                       <div className="weekly-block-actions">
                                         <label>
@@ -1389,10 +1429,11 @@ const cancelMutation = useMutation({
                                 );
                               }) : <p className="weekly-chronogram-empty">Sin programación</p>}
                             </div>
-                          </section>
+                          </WeeklyDropDay>
                         );
                       })}
                     </div>
+                    </DndContext>
                   </div>
                   {summaryDetail === "instructors" && selectedInstructorGroup?.additionalHours.length ? (
                     <section className="additional-hours-panel" aria-label="Horas adicionales del instructor">
@@ -1608,7 +1649,7 @@ const cancelMutation = useMutation({
               </div>
 
               {!isConsulta && (
-                <div className="schedule-form-section">
+                <div className="schedule-form-section" id="schedule-programming-form">
                   <div className="form-card">
                     <div className="form-card-header">
                       <span className="eyebrow">Panel de programación</span>

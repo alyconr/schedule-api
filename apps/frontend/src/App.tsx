@@ -15,6 +15,7 @@ import { ImportWizard } from "./components/ImportWizard";
 import { ValidationAlertDialog, validationRuleLabel } from "./components/ValidationAlertDialog";
 import { SearchableSelect } from "./components/SearchableSelect";
 import { CurrentUser } from "./types/auth";
+import { SchedulePrefill } from "./types/schedules";
 
 type ValidationResult = {
   rule_code: string;
@@ -224,6 +225,7 @@ function AppContent() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("schedules");
+  const [schedulePrefill, setSchedulePrefill] = useState<SchedulePrefill | null>(null);
   const [isTabPending, startTabTransition] = useTransition();
 
   const [publicView, setPublicView] = useState<PublicView>(() => {
@@ -407,9 +409,20 @@ function AppContent() {
       ) : visibleTab === "imports" ? (
         <ImportWizard currentUser={currentUser} />
       ) : visibleTab === "schedules" ? (
-        <SchedulePlanner currentUser={currentUser} setActiveTab={handleTabChange} />
+        <SchedulePlanner
+          currentUser={currentUser}
+          setActiveTab={handleTabChange}
+          prefill={schedulePrefill}
+          onPrefillApplied={() => setSchedulePrefill(null)}
+        />
       ) : visibleTab === "schedule-matrix" ? (
-        <ScheduleMatrixPage currentUser={currentUser} />
+        <ScheduleMatrixPage
+          currentUser={currentUser}
+          onProgramSchedule={(prefill) => {
+            setSchedulePrefill(prefill);
+            handleTabChange("schedules");
+          }}
+        />
       ) : visibleTab === "schedule-detail" ? (
         <ScheduleDetailPage currentUser={currentUser} />
       ) : visibleTab === "validation" ? (

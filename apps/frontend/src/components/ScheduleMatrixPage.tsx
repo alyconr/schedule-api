@@ -4,7 +4,7 @@ import { fetchList } from "../api/masterData";
 import { deleteSchedule, fetchSchedulesDetailed } from "../api/schedules";
 import { CurrentUser } from "../types/auth";
 import { Group, Instructor, LearningResult } from "../types/masterData";
-import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
+import { ScheduleDetailed, ScheduleFilters, SchedulePrefill } from "../types/schedules";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { groupLabel, instructorLabel, rapLabel, ScheduleFilterBar, ScheduleQueryStatus } from "./ScheduleQueryShared";
 import { useToast } from "./ToastProvider";
@@ -24,9 +24,10 @@ const STATUS_LABELS: Record<string, string> = {
 
 type ScheduleMatrixPageProps = {
   currentUser: CurrentUser;
+  onProgramSchedule: (prefill: SchedulePrefill) => void;
 };
 
-export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
+export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleMatrixPageProps) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
   const [filters, setFilters] = useState<ScheduleFilters>({});
@@ -34,6 +35,7 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleDetailed | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduleDetailed | null>(null);
   const canDelete = currentUser.roles?.includes("admin") || currentUser.roles?.includes("coordinador");
+  const canWrite = canDelete || currentUser.roles?.includes("programador");
 
   const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
   const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
@@ -91,6 +93,14 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
   const monthTitle = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric" }).format(visibleMonth);
   const scheduledDays = schedulesByDate.size;
   const todayKey = new Date().toLocaleDateString("en-CA");
+  const programDate = (date: string) => onProgramSchedule({
+    date,
+    instructor_id: filters.instructor_id,
+    group_id: filters.group_id,
+    learning_result_id: filters.learning_result_id,
+    schedule_year: filters.schedule_year,
+    schedule_quarter: filters.schedule_quarter,
+  });
   const activeFilterLabels = useMemo(() => {
     const labels: { name: string; value: string }[] = [];
     const group = filters.group_id ? groupsQuery.data?.find((item) => item.id === filters.group_id) : undefined;
@@ -179,6 +189,11 @@ export function ScheduleMatrixPage({ currentUser }: ScheduleMatrixPageProps) {
                         <small>{schedule.environment_name}</small>
                       </button>
                     ))}
+                    {canWrite && (
+                      <button type="button" className="calendar-program-action" onClick={() => programDate(key)}>
+                        <span aria-hidden="true">+</span> Programar este día
+                      </button>
+                    )}
                   </div>
                 </div>
               );

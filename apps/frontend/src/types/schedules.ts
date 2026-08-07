@@ -90,6 +90,13 @@ export type ScheduleFilters = {
   limit?: number;
 };
 
+export type SchedulePrefill = Pick<
+  ScheduleFilters,
+  "instructor_id" | "group_id" | "learning_result_id" | "schedule_year" | "schedule_quarter"
+> & {
+  date: string;
+};
+
 export type ScheduleDetailed = {
   id: number;
   date: string;

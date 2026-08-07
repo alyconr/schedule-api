@@ -686,6 +686,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     : [], [summaryDetail, summaryActiveSchedules, environmentsById]);
 
   const summaryTitle = summaryDetail === "warnings" ? "Horarios con advertencias" : summaryDetail === "instructors" ? "Instructores programados" : summaryDetail === "groups" ? "Fichas programadas" : summaryDetail === "additional-hours" ? "Horas adicionales programadas" : "Ambientes usados";
+  const isWeeklySummary = summaryDetail === "instructors" || summaryDetail === "groups" || summaryDetail === "environments";
   const summarySearchTerm = normalizeSearchText(summarySearch.trim());
   const scheduleSearchText = (schedule: Schedule) => {
     const detail = getScheduleDisplayData(schedule);
@@ -1106,15 +1107,6 @@ const cancelMutation = useMutation({
       setErrorMsg("Seleccione primero una ficha o programa de formación para consultar la temática del RAP.");
       return;
     }
-    if (!isAdditionalHours && rapTopics.length > 0 && !learningResultTopicId) {
-      setErrorMsg("Seleccione la temática asociada al RAP.");
-      return;
-    }
-    if (!isAdditionalHours && rapTopics.length === 0 && !cleanedManualTopic) {
-      setErrorMsg("Registre una temática manual para este RAP.");
-      return;
-    }
-
     const targetDates = isAdditionalHours
       ? [monthStartDate(additionalMonth)]
       : editingSchedule
@@ -1244,11 +1236,11 @@ const cancelMutation = useMutation({
       </div>
 
       {summaryDetail && (
-        <div className="modal-overlay" role="presentation" onMouseDown={() => setSummaryDetail(null)}>
-          <section className={`summary-detail-modal${summaryDetail === "instructors" || summaryDetail === "groups" || summaryDetail === "environments" ? " instructor-schedule-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="summary-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className={isWeeklySummary ? "summary-detail-page" : "modal-overlay"} role={isWeeklySummary ? undefined : "presentation"} onMouseDown={isWeeklySummary ? undefined : () => setSummaryDetail(null)}>
+          <section className={isWeeklySummary ? "summary-detail-page-content" : "summary-detail-modal"} role={isWeeklySummary ? "region" : "dialog"} aria-modal={isWeeklySummary ? undefined : true} aria-labelledby="summary-detail-title" onMouseDown={(event) => event.stopPropagation()}>
             <header className="modal-header-row">
               <div><span className="eyebrow">Resumen de programación</span><h3 id="summary-detail-title">{summaryTitle}</h3></div>
-              <button type="button" className="detail-dialog-close" onClick={() => setSummaryDetail(null)} aria-label="Cerrar">×</button>
+              <button type="button" className={isWeeklySummary ? "summary-back-button" : "detail-dialog-close"} onClick={() => setSummaryDetail(null)} aria-label={isWeeklySummary ? "Volver a programación" : "Cerrar"}>{isWeeklySummary ? "← Volver" : "×"}</button>
             </header>
             <label className="summary-modal-search">
               <span>Buscar en {summaryTitle.toLowerCase()}</span>
@@ -1788,6 +1780,20 @@ const cancelMutation = useMutation({
                             <div className="rap-info-row"><span className="rap-info-label">Tipo de oferta:</span><span className="rap-info-value">{rapTopics[0]?.program_scope_label || ""}</span></div>
                             <div className="rap-info-topics">
                               <span className="rap-info-label">Temáticas asociadas:</span>
+                              <label className="rap-topic-choice">
+                                <input
+                                  type="radio"
+                                  name="learning_result_topic_id"
+                                  checked={!learningResultTopicId}
+                                  onChange={() => {
+                                    setLearningResultTopicId("");
+                                    setManualTopicName("");
+                                  }}
+                                />
+                                <span className="rap-topic-item">
+                                  <span className="rap-topic-name">Sin temática</span>
+                                </span>
+                              </label>
                               {rapTopics.map((t, i) => (
                                 <label key={t.relation_id || i} className="rap-topic-choice">
                                   <input
@@ -1815,7 +1821,7 @@ const cancelMutation = useMutation({
                             <p className="form-group-title">Información del RAP seleccionado</p>
                             <p className="rap-empty-msg">Este RAP no tiene temáticas importadas para el programa seleccionado.</p>
                             <label className="form-label">
-                              Temática manual <span className="req">*</span>
+                              Temática manual <span className="text-muted">(opcional)</span>
                               <input
                                 type="text"
                                 value={manualTopicName}

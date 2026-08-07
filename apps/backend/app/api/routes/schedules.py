@@ -225,8 +225,6 @@ def _validate_topic_assignment(
     manual_topic_name = _clean_manual_topic(manual_topic_name)
     if learning_result_topic_id and manual_topic_name:
         raise HTTPException(422, detail="Use learning_result_topic_id or manual_topic_name, not both")
-    if not learning_result_topic_id and not manual_topic_name:
-        raise HTTPException(422, detail="Topic selection is required")
     if not learning_result_topic_id:
         return
 

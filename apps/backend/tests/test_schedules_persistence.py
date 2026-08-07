@@ -265,10 +265,12 @@ class ScheduleTopicAssignmentTest(unittest.TestCase):
             create_schedule(self._payload(learning_result_topic_id=self.ids["other_program_relation"]), session)
         self.assertEqual(ctx.exception.status_code, 422)
 
-    def test_create_rejects_missing_topic_assignment(self) -> None:
-        with Session(self.engine) as session, self.assertRaises(HTTPException) as ctx:
-            create_schedule(self._payload(), session)
-        self.assertEqual(ctx.exception.status_code, 422)
+    def test_create_accepts_schedule_without_topic(self) -> None:
+        with Session(self.engine) as session:
+            result = create_schedule(self._payload(), session)
+        self.assertEqual(result.status, "validated")
+        self.assertIsNone(result.schedule["learning_result_topic_id"])
+        self.assertIsNone(result.schedule["manual_topic_name"])
 
     def test_create_rejects_ambiguous_topic_assignment(self) -> None:
         with Session(self.engine) as session, self.assertRaises(HTTPException) as ctx:

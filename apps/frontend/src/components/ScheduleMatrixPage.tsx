@@ -159,7 +159,7 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
         </section>
       )}
 
-      {hasFilter && schedules.length > 0 && (
+      {hasFilter && (
         <section className="academic-calendar" aria-label="Calendario de la matriz académica">
           <header className="academic-calendar-toolbar">
             <button type="button" className="calendar-nav-button" onClick={() => moveMonth(-1)} aria-label="Mes anterior">‹</button>

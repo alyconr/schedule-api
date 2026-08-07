@@ -333,6 +333,7 @@ export function SchedulePlanner({ currentUser, setActiveTab, prefill, onPrefillA
   const [learningResultTopicId, setLearningResultTopicId] = useState<number | "">("");
   const [manualTopicName, setManualTopicName] = useState("");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
+  const [singleDayMode, setSingleDayMode] = useState(false);
   const deferredRapSearch = useDeferredValue(rapSearch);
 
   // Feedback states
@@ -830,6 +831,7 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setLearningResultTopicId("");
     setManualTopicName("");
     setSelectedWeekdays([]);
+    setSingleDayMode(false);
     setErrorMsg(null);
     if (!keepValidation) {
       setValidationStatus(null);
@@ -1009,6 +1011,7 @@ const cancelMutation = useMutation({
   useEffect(() => {
     if (!prefill || !instructors.length || !groups.length || !learningResults.length) return;
     resetForm();
+    setSingleDayMode(true);
     setDateVal(prefill.date);
     if (prefill.schedule_year && prefill.schedule_quarter) {
       setScheduleYear(prefill.schedule_year);
@@ -1143,6 +1146,8 @@ const cancelMutation = useMutation({
     }
     const periodDates = isAdditionalHours
       ? [additionalMonth ? `${additionalMonth}-01` : ""]
+      : singleDayMode
+      ? [dateVal]
       : [trimesterStartDate, trimesterEndDate];
     if (periodDates.some((value) => value && (
       Number(value.slice(0, 4)) !== scheduleYear || calendarQuarter(value) !== scheduleQuarter
@@ -1159,7 +1164,7 @@ const cancelMutation = useMutation({
       return;
     }
 
-    if (!instructorId || (editingSchedule && !isAdditionalHours && !dateVal)) {
+    if (!instructorId || ((editingSchedule || singleDayMode) && !isAdditionalHours && !dateVal)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
@@ -1193,7 +1198,7 @@ const cancelMutation = useMutation({
     }
     const targetDates = isAdditionalHours
       ? [monthStartDate(additionalMonth)]
-      : editingSchedule
+      : editingSchedule || singleDayMode
       ? [dateVal]
       : datesForWeekdays(trimesterStartDate, trimesterEndDate, selectedWeekdays);
     if (targetDates.length === 0) {
@@ -1720,7 +1725,7 @@ const cancelMutation = useMutation({
                             </select>
                           </label>
                         </div>
-                        {!isAdditionalHours && <div className="form-row-compact">
+                        {!isAdditionalHours && !singleDayMode && <div className="form-row-compact">
                           <label className="form-label">
                             Fecha inicio trimestre <span className="req">*</span>
                             <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
@@ -1730,13 +1735,13 @@ const cancelMutation = useMutation({
                             <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
                           </label>
                         </div>}
-                        {editingSchedule && !isAdditionalHours && (
+                        {(editingSchedule || singleDayMode) && !isAdditionalHours && (
                           <label className="form-label">
                             Fecha programada <span className="req">*</span>
                             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
                           </label>
                         )}
-                        {!editingSchedule && !isAdditionalHours && (
+                        {!editingSchedule && !singleDayMode && !isAdditionalHours && (
                           <fieldset className="weekday-selector">
                             <legend>Días a programar</legend>
                             <div className="weekday-options" role="group" aria-label="Días de la semana a programar">

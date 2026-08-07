@@ -1108,15 +1108,24 @@ const cancelMutation = useMutation({
     const occurrences = activeSchedules.filter((schedule) => weeklyBlockKey(schedule) === weeklyBlockKey(dragged) && weekdayIndex(schedule) === weekdayIndex(dragged));
     setIsBulkSubmitting(true);
     try {
+      let skipped = 0;
       for (const schedule of occurrences) {
-        const result = await updateSchedule(schedule.id, { date: dateForWeekday(schedule.date, targetWeekday), weekday: targetWeekday });
+        const newDate = dateForWeekday(schedule.date, targetWeekday);
+        if (Number(newDate.slice(0, 4)) !== schedule.schedule_year || calendarQuarter(newDate) !== schedule.schedule_quarter) {
+          skipped += 1;
+          continue;
+        }
+        const result = await updateSchedule(schedule.id, { date: newDate, weekday: targetWeekday });
         if (result.status === "blocked") throw new Error(result.validations.map((item) => item.message).join(" ") || "El cambio está bloqueado por las reglas de programación.");
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["schedules"] }),
         queryClient.invalidateQueries({ queryKey: ["instructors"] }),
       ]);
-      addToast("success", `Bloque movido a ${weekDays.find((day) => day.index === targetWeekday)?.label}.`);
+      const dayLabel = weekDays.find((day) => day.index === targetWeekday)?.label;
+      addToast("success", skipped
+        ? `Bloque movido a ${dayLabel}. ${skipped} sesión(es) quedaban fuera del trimestre y no se movieron.`
+        : `Bloque movido a ${dayLabel}.`);
     } catch (error: any) {
       addToast("error", error.message || "No fue posible mover la programación.");
     } finally {

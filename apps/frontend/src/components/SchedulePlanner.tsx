@@ -188,16 +188,6 @@ function calendarQuarter(value: string): 1 | 2 | 3 | 4 {
   return (Math.floor((month - 1) / 3) + 1) as 1 | 2 | 3 | 4;
 }
 
-function quarterDateRange(year: number, quarter: 1 | 2 | 3 | 4): [string, string] {
-  const startMonth = (quarter - 1) * 3 + 1;
-  const endMonth = startMonth + 2;
-  const lastDay = new Date(year, endMonth, 0).getDate();
-  return [
-    `${year}-${String(startMonth).padStart(2, "0")}-01`,
-    `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
-  ];
-}
-
 function contractCategory(contractType?: ContractType): "planta" | "contratista" | "otro" {
   if (contractType?.category) return contractType.category;
   const name = normalizeSearchText(contractType?.name || "");
@@ -301,9 +291,9 @@ export function SchedulePlanner({ currentUser, setActiveTab, prefill, onPrefillA
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const canDelete = roles.includes("admin") || roles.includes("coordinador");
 
-  const [trimesterStartDate, setTrimesterStartDate] = useState("");
-  const [trimesterEndDate, setTrimesterEndDate] = useState("");
-  const [scheduleYear, setScheduleYear] = useState<number | "">("");
+  const [eventStartDate, setEventStartDate] = useState("");
+  const [eventEndDate, setEventEndDate] = useState("");
+  const [scheduleYear, setScheduleYear] = useState<number | "">(new Date().getFullYear());
   const [scheduleQuarter, setScheduleQuarter] = useState<1 | 2 | 3 | 4 | "">("");
 
   // Form states
@@ -867,8 +857,6 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setSelectedWeekdays([getWeekdayFromDate(sch.date)]);
     const rap = sch.learning_result_id ? learningResultsById.get(sch.learning_result_id) : undefined;
     const group = sch.group_id ? groupsById.get(sch.group_id) : undefined;
-    if (group?.start_date && !trimesterStartDate) setTrimesterStartDate(group.start_date);
-    if (group?.end_date && !trimesterEndDate) setTrimesterEndDate(group.end_date);
     const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
     const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
     const instructor = instructorsById.get(sch.instructor_id);
@@ -984,8 +972,6 @@ const cancelMutation = useMutation({
     }
     setGroupId(id);
     const g = groups.find((x) => x.id === id);
-    if (g?.start_date && !trimesterStartDate) setTrimesterStartDate(g.start_date);
-    if (g?.end_date && !trimesterEndDate) setTrimesterEndDate(g.end_date);
     setGroupSearch(g ? groupLabel(g) : "");
     if (g?.training_program_id) {
       setProgramId(g.training_program_id);
@@ -1016,9 +1002,6 @@ const cancelMutation = useMutation({
     if (prefill.schedule_year && prefill.schedule_quarter) {
       setScheduleYear(prefill.schedule_year);
       setScheduleQuarter(prefill.schedule_quarter);
-      const [start, end] = quarterDateRange(prefill.schedule_year, prefill.schedule_quarter);
-      setTrimesterStartDate(start);
-      setTrimesterEndDate(end);
     }
     setSelectedWeekdays([getWeekdayFromDate(prefill.date) || 7]);
     if (prefill.group_id) handleFichaChange(prefill.group_id);
@@ -1148,19 +1131,19 @@ const cancelMutation = useMutation({
       ? [additionalMonth ? `${additionalMonth}-01` : ""]
       : singleDayMode
       ? [dateVal]
-      : [trimesterStartDate, trimesterEndDate];
+      : [eventStartDate, eventEndDate];
     if (periodDates.some((value) => value && (
       Number(value.slice(0, 4)) !== scheduleYear || calendarQuarter(value) !== scheduleQuarter
     ))) {
       setErrorMsg("Las fechas deben pertenecer al año y trimestre seleccionados.");
       return;
     }
-    if (!isAdditionalHours && (!trimesterStartDate || !trimesterEndDate)) {
-      setErrorMsg("Debe seleccionar la fecha de inicio y fin del trimestre.");
+    if (!isAdditionalHours && !singleDayMode && (!eventStartDate || !eventEndDate)) {
+      setErrorMsg("Debe seleccionar la fecha de inicio y fin del evento.");
       return;
     }
-    if (!isAdditionalHours && trimesterStartDate > trimesterEndDate) {
-      setErrorMsg("La fecha de inicio del trimestre no puede ser mayor a la fecha fin.");
+    if (!isAdditionalHours && !singleDayMode && eventStartDate > eventEndDate) {
+      setErrorMsg("La fecha de inicio del evento no puede ser mayor a la fecha fin.");
       return;
     }
 
@@ -1200,9 +1183,9 @@ const cancelMutation = useMutation({
       ? [monthStartDate(additionalMonth)]
       : editingSchedule || singleDayMode
       ? [dateVal]
-      : datesForWeekdays(trimesterStartDate, trimesterEndDate, selectedWeekdays);
+      : datesForWeekdays(eventStartDate, eventEndDate, selectedWeekdays);
     if (targetDates.length === 0) {
-      setErrorMsg("No hay fechas dentro del trimestre que coincidan con los días seleccionados.");
+      setErrorMsg("No hay fechas dentro del evento que coincidan con los días seleccionados.");
       return;
     }
 
@@ -1679,7 +1662,7 @@ const cancelMutation = useMutation({
                     <form onSubmit={handleFormSubmit} className="schedule-form">
                       <div className="schedule-form-group">
                         <p className="form-group-title">Horario</p>
-                        <p className="form-section-subtitle">{isAdditionalHours ? "Asignación mensual" : "Periodo del trimestre"}</p>
+                        <p className="form-section-subtitle">{isAdditionalHours ? "Asignación mensual" : "Periodo y fechas del evento"}</p>
                         <div className="form-row-compact">
                           <label className="form-label">
                             Año del horario <span className="req">*</span>
@@ -1688,15 +1671,7 @@ const cancelMutation = useMutation({
                               min="2000"
                               max="2100"
                               value={scheduleYear}
-                              onChange={(event) => {
-                                const year = event.target.value ? Number(event.target.value) : "";
-                                setScheduleYear(year);
-                                if (year !== "" && scheduleQuarter !== "") {
-                                  const [start, end] = quarterDateRange(year, scheduleQuarter);
-                                  setTrimesterStartDate(start);
-                                  setTrimesterEndDate(end);
-                                }
-                              }}
+                              onChange={(event) => setScheduleYear(event.target.value ? Number(event.target.value) : "")}
                               required
                             />
                           </label>
@@ -1704,17 +1679,7 @@ const cancelMutation = useMutation({
                             Trimestre del horario <span className="req">*</span>
                             <select
                               value={scheduleQuarter}
-                              onChange={(event) => {
-                                const quarter = event.target.value
-                                  ? Number(event.target.value) as 1 | 2 | 3 | 4
-                                  : "";
-                                setScheduleQuarter(quarter);
-                                if (scheduleYear !== "" && quarter !== "") {
-                                  const [start, end] = quarterDateRange(scheduleYear, quarter);
-                                  setTrimesterStartDate(start);
-                                  setTrimesterEndDate(end);
-                                }
-                              }}
+                              onChange={(event) => setScheduleQuarter(event.target.value ? Number(event.target.value) as 1 | 2 | 3 | 4 : "")}
                               required
                             >
                               <option value="">Seleccione...</option>
@@ -1725,14 +1690,14 @@ const cancelMutation = useMutation({
                             </select>
                           </label>
                         </div>
-                        {!isAdditionalHours && !singleDayMode && <div className="form-row-compact">
+                        {!isAdditionalHours && !singleDayMode && !editingSchedule && <div className="form-row-compact">
                           <label className="form-label">
-                            Fecha inicio trimestre <span className="req">*</span>
-                            <input type="date" value={trimesterStartDate} onChange={(e) => setTrimesterStartDate(e.target.value)} required />
+                            Fecha inicio del evento <span className="req">*</span>
+                            <input type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} required />
                           </label>
                           <label className="form-label">
-                            Fecha fin trimestre <span className="req">*</span>
-                            <input type="date" value={trimesterEndDate} onChange={(e) => setTrimesterEndDate(e.target.value)} required />
+                            Fecha fin del evento <span className="req">*</span>
+                            <input type="date" value={eventEndDate} onChange={(e) => setEventEndDate(e.target.value)} required />
                           </label>
                         </div>}
                         {(editingSchedule || singleDayMode) && !isAdditionalHours && (

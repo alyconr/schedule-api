@@ -242,14 +242,6 @@ function monthlyHoursText(items: [string, number][]): string {
   return items.map(([month, hours]) => `${monthLabel(month)}: ${formatHours(hours)} h`).join(" | ");
 }
 
-function weeklyIssuesText(issues: { missing: number; over: number; extra: number; weekStart: string }): string {
-  const parts = [];
-  if (issues.missing > 0) parts.push(`faltan ${formatHours(issues.missing)} h por programar`);
-  if (issues.over > 0) parts.push(`sobran ${formatHours(issues.over)} h sobre el máximo semanal`);
-  if (issues.extra > 0) parts.push(`${formatHours(issues.extra)} h adicionales de planta por identificar`);
-  return `${parts.join("; ")} en la semana ${weekRangeLabel(issues.weekStart)}`;
-}
-
 function isEditableElement(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest("button, input, label, select, textarea, a"));
 }
@@ -543,66 +535,59 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
     [summarySchedules]
   );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
-    const byInstructor = new Map<number, { schedules: Schedule[]; latestSchedule: Schedule; weeks: Map<string, number> }>();
-    [...summaryActiveSchedules]
-      .sort((a, b) => `${b.date}T${b.start_time}`.localeCompare(`${a.date}T${a.start_time}`) || b.id - a.id)
-      .forEach((schedule) => {
-        const weekStart = weekStartDate(schedule.date);
-        const current = byInstructor.get(schedule.instructor_id);
-        if (current) {
-          current.schedules.push(schedule);
-          if (!schedule.is_additional_hours) current.weeks.set(weekStart, (current.weeks.get(weekStart) || 0) + Number(schedule.duration_hours || 0));
-        } else {
-          byInstructor.set(schedule.instructor_id, {
-            schedules: [schedule],
-            latestSchedule: schedule,
-            weeks: schedule.is_additional_hours ? new Map() : new Map([[weekStart, Number(schedule.duration_hours || 0)]]),
-          });
-        }
-      });
+    const byInstructor = new Map<number, { schedules: Schedule[]; weeks: Map<string, { hours: number; latest: Schedule }> }>();
+    summaryActiveSchedules.forEach((schedule) => {
+      const load = byInstructor.get(schedule.instructor_id) ?? { schedules: [], weeks: new Map<string, { hours: number; latest: Schedule }>() };
+      byInstructor.set(schedule.instructor_id, load);
+      load.schedules.push(schedule);
+      if (schedule.is_additional_hours) return;
+      const weekStart = weekStartDate(schedule.date);
+      const bucket = load.weeks.get(weekStart) ?? { hours: 0, latest: schedule };
+      bucket.hours += Number(schedule.duration_hours || 0);
+      if (`${schedule.date}T${schedule.start_time}` >= `${bucket.latest.date}T${bucket.latest.start_time}`) bucket.latest = schedule;
+      load.weeks.set(weekStart, bucket);
+    });
 
     return [...byInstructor.entries()].flatMap(([instructorId, load]) => {
       const instructor = instructorsById.get(instructorId);
       const contractType = contractTypesById.get(instructor?.contract_type_id ?? -1);
       const category = contractCategory(contractType);
-      const contractorTarget = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || 40);
-      const currentWeek = [...load.weeks.entries()].sort(([a], [b]) => b.localeCompare(a))[0]
-        ?? [weekStartDate(load.latestSchedule.date), 0] as [string, number];
-      const [weekStart, hours] = currentWeek;
-      const additionalHours = load.schedules
-        .filter((schedule) => schedule.is_additional_hours && monthValue(schedule.date) === monthValue(weekStart))
-        .reduce((total, schedule) => total + Number(schedule.duration_hours || 0), 0);
-      const totalHours = hours + additionalHours;
-      const weeklyIssues = { missing: 0, over: 0, extra: 0, weekStart };
-      if (category === "planta") {
-        if (totalHours < 30) weeklyIssues.missing = 30 - totalHours;
-        else if (totalHours > 32) weeklyIssues.over = totalHours - 32;
-        else if (totalHours > 30) weeklyIssues.extra = totalHours - 30;
-      }
-      if (category === "contratista") {
-        if (totalHours < contractorTarget) weeklyIssues.missing = contractorTarget - totalHours;
-        else if (totalHours > contractorTarget) weeklyIssues.over = totalHours - contractorTarget;
-      }
-
-      if (!weeklyIssues.missing && !weeklyIssues.over && !weeklyIssues.extra) return [];
-      const schedule = load.latestSchedule;
+      if ((category !== "planta" && category !== "contratista") || !load.weeks.size) return [];
+      const weeklyBase = Number(instructor?.weekly_base_hours || contractType?.weekly_base_hours || (category === "planta" ? 30 : 40));
+      const weeklyMax = Number(instructor?.weekly_max_hours || contractType?.weekly_max_hours || (category === "planta" ? 32 : weeklyBase));
+      const instructorName = instructor ? instructorLabel(instructor) : `Instructor ${instructorId}`;
       const monthTotals = monthlyHours(load.schedules);
-      const summary = weeklyIssuesText(weeklyIssues);
-      const message = `${summary}. Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
-      return [{
-        schedule,
-        validations: [{
-          id: -schedule.id,
-          schedule_id: schedule.id,
-          rule_code: category === "planta" ? "PLANT_INSTRUCTOR_WEEKLY_HOURS" : "CONTRACTOR_WEEKLY_HOURS",
-          severity: "WARNING",
-          message,
-          is_blocking: false,
-        }],
-        primary: `${instructor ? instructorLabel(instructor) : `Instructor ${schedule.instructor_id}`} - ${monthlyHoursText(monthTotals)}`,
-        secondary: summary,
-        monthlyHours: monthTotals,
-      }];
+      const monthSummary = `Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
+
+      return [...load.weeks.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([weekStart, bucket]) => {
+        const hours = bucket.hours;
+        const weekLabel = `Semana ${weekRangeLabel(weekStart)}`;
+        let secondary = "";
+        if (category === "planta") {
+          if (hours < weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la base semanal de ${formatHours(weeklyBase)} h.`;
+          else if (hours > weeklyMax) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
+          else if (hours > weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. ${formatHours(hours - weeklyBase)} h adicionales de planta por identificar (base ${formatHours(weeklyBase)} h, máximo ${formatHours(weeklyMax)} h).`;
+        } else if (hours < weeklyBase) {
+          secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la meta semanal de ${formatHours(weeklyBase)} h.`;
+        } else if (hours > weeklyMax) {
+          secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
+        }
+        if (!secondary) return [];
+        return [{
+          schedule: bucket.latest,
+          validations: [{
+            id: -bucket.latest.id,
+            schedule_id: bucket.latest.id,
+            rule_code: category === "planta" ? "PLANT_INSTRUCTOR_WEEKLY_HOURS" : "CONTRACTOR_WEEKLY_HOURS",
+            severity: "WARNING",
+            message: `${secondary} ${monthSummary}`,
+            is_blocking: false,
+          }],
+          primary: `${instructorName} - ${monthlyHoursText(monthTotals)}`,
+          secondary,
+          monthlyHours: monthTotals,
+        }];
+      });
     });
   }, [summaryActiveSchedules, contractTypesById, instructorsById]);
   const plannerStats = useMemo(() => ({

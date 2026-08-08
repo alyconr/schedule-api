@@ -1089,7 +1089,9 @@ const cancelMutation = useMutation({
     }
   };
 
-  const applyOptimisticMove = (updates: Map<number, { date: string; weekday: number }>) => {
+  type WeeklyMovePatch = { date: string; weekday: number; schedule_year: number; schedule_quarter: 1 | 2 | 3 | 4 };
+
+  const applyOptimisticMove = (updates: Map<number, WeeklyMovePatch>) => {
     queryClient.setQueriesData<Schedule[]>(
       { queryKey: ["schedules", "planner-summary"] },
       (current) => current?.map((schedule) => {
@@ -1105,27 +1107,27 @@ const cancelMutation = useMutation({
     if (!canWrite || !dragged || weekdayIndex(dragged) === targetWeekday) return;
 
     const occurrences = summaryActiveSchedules.filter((schedule) => weeklyBlockKey(schedule) === weeklyBlockKey(dragged) && weekdayIndex(schedule) === weekdayIndex(dragged));
-    const moves: { id: number; originalDate: string; originalWeekday: number; newDate: string }[] = [];
-    let skipped = 0;
-    for (const schedule of occurrences) {
+    const moves = occurrences.map((schedule) => {
       const newDate = dateForWeekday(schedule.date, targetWeekday);
-      if (Number(newDate.slice(0, 4)) !== schedule.schedule_year || calendarQuarter(newDate) !== schedule.schedule_quarter) {
-        skipped += 1;
-        continue;
-      }
-      moves.push({ id: schedule.id, originalDate: schedule.date, originalWeekday: weekdayIndex(schedule), newDate });
-    }
-    if (!moves.length) {
-      addToast("error", "No fue posible mover el bloque: las sesiones quedarían fuera del trimestre.");
-      return;
-    }
+      return {
+        id: schedule.id,
+        originalDate: schedule.date,
+        originalWeekday: weekdayIndex(schedule),
+        originalYear: schedule.schedule_year,
+        originalQuarter: schedule.schedule_quarter,
+        newDate,
+        newYear: Number(newDate.slice(0, 4)),
+        newQuarter: calendarQuarter(newDate),
+      };
+    });
+    if (!moves.length) return;
 
-    applyOptimisticMove(new Map(moves.map((move) => [move.id, { date: move.newDate, weekday: targetWeekday }])));
+    applyOptimisticMove(new Map(moves.map((move) => [move.id, { date: move.newDate, weekday: targetWeekday, schedule_year: move.newYear, schedule_quarter: move.newQuarter }])));
     setIsBulkSubmitting(true);
     const done: typeof moves = [];
     try {
       for (const move of moves) {
-        const result = await updateSchedule(move.id, { date: move.newDate, weekday: targetWeekday });
+        const result = await updateSchedule(move.id, { date: move.newDate, weekday: targetWeekday, schedule_year: move.newYear, schedule_quarter: move.newQuarter });
         if (result.status === "blocked") throw new Error(result.validations.map((item) => item.message).join(" ") || "El cambio está bloqueado por las reglas de programación.");
         done.push(move);
       }
@@ -1135,19 +1137,17 @@ const cancelMutation = useMutation({
         queryClient.invalidateQueries({ queryKey: ["instructors"] }),
       ]);
       const dayLabel = weekDays.find((day) => day.index === targetWeekday)?.label;
-      addToast("success", skipped
-        ? `Bloque movido a ${dayLabel}. ${skipped} sesión(es) quedaban fuera del trimestre y no se movieron.`
-        : `Bloque movido a ${dayLabel}.`);
+      addToast("success", `Bloque movido a ${dayLabel}.`);
     } catch (error: any) {
-      // Movimiento parcialmente aplicado: devolver las sesiones ya movidas a su día original.
+      // Movimiento parcialmente aplicado: devolver las sesiones ya movidas a su día y periodo originales.
       for (const move of done) {
         try {
-          await updateSchedule(move.id, { date: move.originalDate, weekday: move.originalWeekday });
+          await updateSchedule(move.id, { date: move.originalDate, weekday: move.originalWeekday, schedule_year: move.originalYear, schedule_quarter: move.originalQuarter });
         } catch {
           queryClient.invalidateQueries({ queryKey: ["schedules"] });
         }
       }
-      applyOptimisticMove(new Map(done.map((move) => [move.id, { date: move.originalDate, weekday: move.originalWeekday }])));
+      applyOptimisticMove(new Map(done.map((move) => [move.id, { date: move.originalDate, weekday: move.originalWeekday, schedule_year: move.originalYear, schedule_quarter: move.originalQuarter }])));
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
       addToast("error", error.message || "No fue posible mover la programación.");
     } finally {

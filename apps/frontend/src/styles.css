@@ -1377,7 +1377,8 @@ textarea:focus:not(:focus-visible) {
 .weekly-drag-handle { padding: 7px 10px; border: 1px solid #9ac8a7; border-radius: 9px; color: #1f6b3b; background: #edf8f0; font: inherit; font-size: .72rem; font-weight: 850; cursor: grab; touch-action: none; }
 .weekly-drag-handle:active { cursor: grabbing; }
 .weekly-drag-handle:focus-visible { outline: 3px solid rgba(35, 130, 71, .25); outline-offset: 2px; }
-.weekly-block-actions { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 9px; padding-bottom: 8px; border-bottom: 1px solid #e1ebe3; }
+.weekly-block-actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-bottom: 9px; padding-bottom: 8px; border-bottom: 1px solid #e1ebe3; }
+.weekly-block-actions > button, .weekly-block-actions > label { flex: 1 1 96px; min-width: 0; justify-content: center; text-align: center; }
 .weekly-chronogram-time { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: #17452d; font-size: .78rem; }
 .weekly-chronogram-block h5 { margin: 9px 0; color: #102f20; font-size: .84rem; line-height: 1.35; }
 .weekly-chronogram-block dl { display: grid; gap: 8px; margin: 0; }

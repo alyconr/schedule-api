@@ -535,6 +535,7 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
     [summarySchedules]
   );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
+    const todayWeek = weekStartDate(new Date().toLocaleDateString("en-CA"));
     const byInstructor = new Map<number, { schedules: Schedule[]; weeks: Map<string, { hours: number; latest: Schedule }> }>();
     summaryActiveSchedules.forEach((schedule) => {
       const load = byInstructor.get(schedule.instructor_id) ?? { schedules: [], weeks: new Map<string, { hours: number; latest: Schedule }>() };
@@ -559,35 +560,40 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
       const monthTotals = monthlyHours(load.schedules);
       const monthSummary = `Total mensual programado: ${monthlyHoursText(monthTotals)}.`;
 
-      return [...load.weeks.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([weekStart, bucket]) => {
-        const hours = bucket.hours;
-        const weekLabel = `Semana ${weekRangeLabel(weekStart)}`;
-        let secondary = "";
-        if (category === "planta") {
-          if (hours < weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la base semanal de ${formatHours(weeklyBase)} h.`;
-          else if (hours > weeklyMax) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
-          else if (hours > weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. ${formatHours(hours - weeklyBase)} h adicionales de planta por identificar (base ${formatHours(weeklyBase)} h, máximo ${formatHours(weeklyMax)} h).`;
-        } else if (hours < weeklyBase) {
-          secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la meta semanal de ${formatHours(weeklyBase)} h.`;
-        } else if (hours > weeklyMax) {
-          secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
-        }
-        if (!secondary) return [];
-        return [{
-          schedule: bucket.latest,
-          validations: [{
-            id: -bucket.latest.id,
-            schedule_id: bucket.latest.id,
-            rule_code: category === "planta" ? "PLANT_INSTRUCTOR_WEEKLY_HOURS" : "CONTRACTOR_WEEKLY_HOURS",
-            severity: "WARNING",
-            message: `${secondary} ${monthSummary}`,
-            is_blocking: false,
-          }],
-          primary: `${instructorName} - ${monthlyHoursText(monthTotals)}`,
-          secondary,
-          monthlyHours: monthTotals,
-        }];
-      });
+      const problematic = [...load.weeks.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([weekStart, bucket]) => {
+          const hours = bucket.hours;
+          const weekLabel = `Semana ${weekRangeLabel(weekStart)}`;
+          let secondary = "";
+          if (category === "planta") {
+            if (hours < weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la base semanal de ${formatHours(weeklyBase)} h.`;
+            else if (hours > weeklyMax) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
+            else if (hours > weeklyBase) secondary = `${weekLabel}: ${formatHours(hours)} h programadas. ${formatHours(hours - weeklyBase)} h adicionales de planta por identificar (base ${formatHours(weeklyBase)} h, máximo ${formatHours(weeklyMax)} h).`;
+          } else if (hours < weeklyBase) {
+            secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Faltan ${formatHours(weeklyBase - hours)} h para cumplir la meta semanal de ${formatHours(weeklyBase)} h.`;
+          } else if (hours > weeklyMax) {
+            secondary = `${weekLabel}: ${formatHours(hours)} h programadas. Supera el máximo semanal de ${formatHours(weeklyMax)} h por ${formatHours(hours - weeklyMax)} h.`;
+          }
+          return secondary ? [{ weekStart, bucket, secondary }] : [];
+        });
+      if (!problematic.length) return [];
+      const upcoming = problematic.filter((item) => item.weekStart >= todayWeek);
+      const chosen = upcoming.length ? upcoming[0] : problematic[problematic.length - 1];
+      return [{
+        schedule: chosen.bucket.latest,
+        validations: [{
+          id: -chosen.bucket.latest.id,
+          schedule_id: chosen.bucket.latest.id,
+          rule_code: category === "planta" ? "PLANT_INSTRUCTOR_WEEKLY_HOURS" : "CONTRACTOR_WEEKLY_HOURS",
+          severity: "WARNING",
+          message: `${chosen.secondary} ${monthSummary}`,
+          is_blocking: false,
+        }],
+        primary: `${instructorName} - ${monthlyHoursText(monthTotals)}`,
+        secondary: chosen.secondary,
+        monthlyHours: monthTotals,
+      }];
     });
   }, [summaryActiveSchedules, contractTypesById, instructorsById]);
   const plannerStats = useMemo(() => ({

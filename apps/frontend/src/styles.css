@@ -1359,6 +1359,8 @@ textarea:focus:not(:focus-visible) {
 .weekly-chronogram-selection label, .weekly-block-actions label { display: inline-flex; align-items: center; gap: 6px; color: #315b40; font-size: .72rem; font-weight: 800; cursor: pointer; }
 .weekly-chronogram-selection input, .weekly-block-actions input { width: 16px; height: 16px; accent-color: #267a47; }
 .weekly-delete-selected, .weekly-delete-button { padding: 7px 10px; border: 1px solid #e2a3a3; border-radius: 9px; color: #9b1c1c; background: #fff4f4; font: inherit; font-size: .72rem; font-weight: 850; cursor: pointer; }
+.weekly-add-shift-button { padding: 7px 10px; border: 1px solid #9ac8a7; border-radius: 9px; color: #1f6b3b; background: #edf8f0; font: inherit; font-size: .72rem; font-weight: 850; cursor: pointer; }
+.weekly-add-shift-button:hover { border-color: #39a900; background: #e8f6ec; }
 .weekly-delete-selected:disabled { opacity: .5; cursor: not-allowed; }
 .weekly-chronogram-scroll { overflow-x: auto; padding-bottom: 6px; }
 .weekly-chronogram-grid { display: grid; grid-template-columns: repeat(7, minmax(240px, 1fr)); gap: 14px; min-width: 1774px; }

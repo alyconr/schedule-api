@@ -829,22 +829,40 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     }
   };
 
-  // Populate form for editing
-  const handleEditInit = (sch: Schedule) => {
+  const applyScheduleContext = (sch: Schedule) => {
     setErrorMsg(null);
     setValidationStatus(null);
     setValidations([]);
-    setEditingSchedule(sch);
-    setDateVal(sch.date);
     setScheduleYear(sch.schedule_year);
     setScheduleQuarter(sch.schedule_quarter);
-    setAdditionalMonth(monthValue(sch.date));
     setGroupId(sch.group_id || "");
     setProgramId(sch.training_program_id || "");
     setCompetencyId(sch.competency_id || "");
     setLearningResultId(sch.learning_result_id || "");
     setInstructorId(sch.instructor_id);
     setEnvironmentId(sch.environment_id || "");
+    setLearningResultTopicId(sch.learning_result_topic_id || "");
+    setManualTopicName(sch.manual_topic_name || "");
+    const rap = sch.learning_result_id ? learningResultsById.get(sch.learning_result_id) : undefined;
+    const group = sch.group_id ? groupsById.get(sch.group_id) : undefined;
+    const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
+    const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
+    const instructor = instructorsById.get(sch.instructor_id);
+    const environment = sch.environment_id ? environmentsById.get(sch.environment_id) : undefined;
+    setGroupSearch(group ? groupLabel(group) : "");
+    setProgramSearch(program ? `${program.code} - ${program.name}` : "");
+    setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
+    setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+    setEnvironmentSearch(environment ? environmentLabel(environment) : "");
+    setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
+  };
+
+  // Populate form for editing
+  const handleEditInit = (sch: Schedule) => {
+    applyScheduleContext(sch);
+    setEditingSchedule(sch);
+    setDateVal(sch.date);
+    setAdditionalMonth(monthValue(sch.date));
     setBlockId(sch.block_id || "");
     setStartTime(sch.start_time);
     setEndTime(sch.end_time);
@@ -852,23 +870,9 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setIsAdditionalHours(Boolean(sch.is_additional_hours));
     setAdditionalHoursType(sch.additional_hours_type || "");
     setNotes(sch.notes || "");
-    setLearningResultTopicId(sch.learning_result_topic_id || "");
-    setManualTopicName(sch.manual_topic_name || "");
     setSelectedWeekdays([getWeekdayFromDate(sch.date)]);
-    const rap = sch.learning_result_id ? learningResultsById.get(sch.learning_result_id) : undefined;
-    const group = sch.group_id ? groupsById.get(sch.group_id) : undefined;
-    const program = sch.training_program_id ? programsById.get(sch.training_program_id) : undefined;
-    const competency = sch.competency_id ? competencies.find((comp) => comp.id === sch.competency_id) : undefined;
-    const instructor = instructorsById.get(sch.instructor_id);
-    const environment = sch.environment_id ? environmentsById.get(sch.environment_id) : undefined;
     const block = sch.block_id ? timeBlocks.find((tb) => tb.id === sch.block_id) : undefined;
-    setGroupSearch(group ? groupLabel(group) : "");
-    setProgramSearch(program ? `${program.code} - ${program.name}` : "");
-    setCompetencySearch(competency ? `${competency.code} - ${competency.name}` : "");
-    setInstructorSearch(instructor ? instructorLabel(instructor) : "");
-    setEnvironmentSearch(environment ? environmentLabel(environment) : "");
     setBlockSearch(block ? blockLabel(block) : "");
-    setRapSearch(rap ? `${rap.code} - ${rap.description.slice(0, 100)}` : "");
   };
 
   const editFromSummary = (schedule: Schedule) => {
@@ -876,6 +880,20 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     handleEditInit(schedule);
     setSummaryDetail(null);
     setSelectedWeeklyBlockIds([]);
+  };
+
+  const addFromSummary = (schedule: Schedule) => {
+    if (!canWrite || schedule.is_additional_hours) return;
+    resetForm();
+    applyScheduleContext(schedule);
+    setSelectedWeekdays([weekdayIndex(schedule)]);
+    const occurrences = summaryActiveSchedules.filter((item) => weeklyBlockKey(item) === weeklyBlockKey(schedule) && weekdayIndex(item) === weekdayIndex(schedule));
+    const occurrenceDates = occurrences.map((item) => item.date);
+    setEventStartDate(occurrenceDates.reduce((min, date) => (date < min ? date : min), schedule.date));
+    setEventEndDate(occurrenceDates.reduce((max, date) => (date > max ? date : max), schedule.date));
+    setSummaryDetail(null);
+    setSelectedWeeklyBlockIds([]);
+    requestAnimationFrame(() => document.getElementById("schedule-programming-form")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const startAdditionalHoursForInstructor = (instructorId: number, date = new Date().toLocaleDateString("en-CA")) => {
@@ -1399,17 +1417,31 @@ const cancelMutation = useMutation({
                                     canOpen={canWrite}
                                     onOpen={() => editFromSummary(schedule)}
                                     ariaLabel={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
-                                    actions={canDelete ? (
+                                    actions={canWrite || canDelete ? (
                                       <>
-                                        <label>
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedWeeklyBlockIds.includes(schedule.id)}
-                                            onChange={(event) => setSelectedWeeklyBlockIds((current) => event.target.checked ? [...current, schedule.id] : current.filter((id) => id !== schedule.id))}
-                                          />
-                                          Seleccionar
-                                        </label>
-                                        <button type="button" className="weekly-delete-button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
+                                        {canWrite && (
+                                          <button
+                                            type="button"
+                                            className="weekly-add-shift-button"
+                                            onClick={() => addFromSummary(schedule)}
+                                            aria-label={`Agregar otra jornada en todas las fechas de este evento conservando el contexto de ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}`}
+                                          >
+                                            Agregar jornada
+                                          </button>
+                                        )}
+                                        {canDelete && (
+                                          <>
+                                            <label>
+                                              <input
+                                                type="checkbox"
+                                                checked={selectedWeeklyBlockIds.includes(schedule.id)}
+                                                onChange={(event) => setSelectedWeeklyBlockIds((current) => event.target.checked ? [...current, schedule.id] : current.filter((id) => id !== schedule.id))}
+                                              />
+                                              Seleccionar
+                                            </label>
+                                            <button type="button" className="weekly-delete-button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
+                                          </>
+                                        )}
                                       </>
                                     ) : undefined}
                                   >

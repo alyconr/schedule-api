@@ -1390,6 +1390,10 @@ textarea:focus:not(:focus-visible) {
 .weekly-jornada > header small { color: #587063; font-size: .62rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
 .weekly-jornada > header span:last-child { margin-left: auto; display: grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: #cfe8d6; font-size: .64rem; }
 .weekly-jornada-empty { margin: 2px 0; color: #8aa192; font-size: .68rem; font-weight: 700; text-align: center; }
+.weekly-jornada.is-programmable { cursor: pointer; }
+.weekly-jornada.is-programmable:hover { border-color: #5e9f70; background: #eef7f0; box-shadow: inset 0 0 0 2px #9fceac; }
+.weekly-jornada.is-programmable:hover .weekly-jornada-empty { color: #246b3c; }
+.weekly-jornada.is-programmable:focus-visible { outline: 3px solid rgba(57, 169, 0, .25); outline-offset: 2px; }
 .instructor-session-list { display: grid; gap: 10px; padding: 12px; }
 .instructor-session-list article { padding: 14px; border: 1px solid #dce8df; border-radius: var(--radius-md); background: #fff; }
 .instructor-session-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #e6eee8; }

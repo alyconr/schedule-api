@@ -130,9 +130,9 @@ const weekDays = [
 ];
 
 const jornadas = [
-  { label: "Mañana", range: "06:00–12:00" },
-  { label: "Tarde", range: "12:00–18:00" },
-  { label: "Noche", range: "18:00–22:00" },
+  { label: "Mañana", from: "06:00", to: "12:00" },
+  { label: "Tarde", from: "12:00", to: "18:00" },
+  { label: "Noche", from: "18:00", to: "22:00" },
 ];
 
 function jornadaIndex(schedule: Schedule): number {
@@ -845,7 +845,17 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     setIsAdditionalHours(Boolean(sch.is_additional_hours));
     setAdditionalHoursType(sch.additional_hours_type || "");
     setNotes(sch.notes || "");
-    setSelectedWeekdays([getWeekdayFromDate(sch.date)]);
+    setSelectedWeekdays([weekdayIndex(sch)]);
+    if (sch.is_additional_hours) {
+      setEventStartDate("");
+      setEventEndDate("");
+    } else {
+      const occurrenceDates = summaryActiveSchedules
+        .filter((item) => weeklyBlockKey(item) === weeklyBlockKey(sch) && weekdayIndex(item) === weekdayIndex(sch))
+        .map((item) => item.date);
+      setEventStartDate(occurrenceDates.reduce((min, date) => (date < min ? date : min), sch.date));
+      setEventEndDate(occurrenceDates.reduce((max, date) => (date > max ? date : max), sch.date));
+    }
     const block = sch.block_id ? timeBlocks.find((tb) => tb.id === sch.block_id) : undefined;
     setBlockSearch(block ? blockLabel(block) : "");
   };
@@ -1021,6 +1031,45 @@ const cancelMutation = useMutation({
       setEndTime(b.end_time);
       setDurationHours(b.duration_minutes / 60);
     }
+  };
+
+  const startJornadaEvent = (weekday: number, jornadaIdx: number) => {
+    if (!canWrite) return;
+    const jornada = jornadas[jornadaIdx];
+    const keptYear = scheduleYear === "" ? new Date().getFullYear() : scheduleYear;
+    const keptQuarter = scheduleQuarter === "" ? calendarQuarter(new Date().toLocaleDateString("en-CA")) : scheduleQuarter;
+    resetForm();
+    setScheduleYear(keptYear);
+    setScheduleQuarter(keptQuarter);
+    setEventStartDate("");
+    setEventEndDate("");
+    setSelectedWeekdays([weekday]);
+    const candidates = timeBlocks.filter((block) => {
+      const start = block.start_time.slice(0, 5);
+      return start >= jornada.from && start < jornada.to;
+    });
+    const block = candidates.find((candidate) => candidate.weekday === weekday) ?? candidates[0];
+    if (block) {
+      handleBlockChange(block.id);
+    } else {
+      setStartTime(jornada.from);
+      setEndTime(jornada.to);
+      setDurationHours(calculateDurationHours(jornada.from, jornada.to));
+    }
+    if (summaryDetail === "instructors" && selectedSummaryEntityId) {
+      setInstructorId(selectedSummaryEntityId);
+      const instructor = instructorsById.get(selectedSummaryEntityId);
+      setInstructorSearch(instructor ? instructorLabel(instructor) : "");
+    } else if (summaryDetail === "groups" && selectedGroupSchedule?.group) {
+      handleFichaChange(selectedGroupSchedule.group.id);
+    } else if (summaryDetail === "environments" && selectedEnvironmentId) {
+      setEnvironmentId(selectedEnvironmentId);
+      const environment = environmentsById.get(selectedEnvironmentId);
+      setEnvironmentSearch(environment ? environmentLabel(environment) : "");
+    }
+    setSummaryDetail(null);
+    setSelectedWeeklyBlockIds([]);
+    requestAnimationFrame(() => document.getElementById("schedule-programming-form")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const handleTimeChange = (start: string, end: string) => {
@@ -1231,7 +1280,7 @@ const cancelMutation = useMutation({
       return;
     }
 
-    if (!instructorId || ((editingSchedule || singleDayMode) && !isAdditionalHours && !dateVal)) {
+    if (!instructorId || (singleDayMode && !isAdditionalHours && !dateVal)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
@@ -1243,7 +1292,7 @@ const cancelMutation = useMutation({
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
     }
-    if (!editingSchedule && !isAdditionalHours && selectedWeekdays.length === 0) {
+    if (!singleDayMode && !isAdditionalHours && selectedWeekdays.length === 0) {
       setErrorMsg("Seleccione al menos un día de lunes a sábado para programar el RAP.");
       return;
     }
@@ -1265,7 +1314,7 @@ const cancelMutation = useMutation({
     }
     const targetDates = isAdditionalHours
       ? [monthStartDate(additionalMonth)]
-      : editingSchedule || singleDayMode
+      : singleDayMode
       ? [dateVal]
       : datesForWeekdays(eventStartDate, eventEndDate, selectedWeekdays);
     if (targetDates.length === 0) {
@@ -1291,8 +1340,61 @@ const cancelMutation = useMutation({
       notes: isAdditionalHours ? null : notes || null,
     };
 
+    if (editingSchedule && !isAdditionalHours) {
+      const occurrences = summaryActiveSchedules.filter(
+        (item) => weeklyBlockKey(item) === weeklyBlockKey(editingSchedule) && weekdayIndex(item) === weekdayIndex(editingSchedule)
+      );
+      const occurrencesByDate = new Map(occurrences.map((item) => [item.date, item]));
+      const targetDateSet = new Set(targetDates);
+      setIsBulkSubmitting(true);
+      const blockedDays: string[] = [];
+      const warnings: ValidationResult[] = [];
+      let savedCount = 0;
+      try {
+        for (const targetDate of targetDates) {
+          const datePayload = {
+            date: targetDate,
+            schedule_year: Number(targetDate.slice(0, 4)),
+            schedule_quarter: calendarQuarter(targetDate),
+            weekday: getWeekdayFromDate(targetDate) || 7,
+          };
+          const existing = occurrencesByDate.get(targetDate);
+          const result = existing
+            ? await updateSchedule(existing.id, { ...basePayload, ...datePayload })
+            : await createSchedule({ ...basePayload, ...datePayload });
+          warnings.push(...(result.validations || []));
+          if (result.status === "blocked") {
+            blockedDays.push(targetDate);
+          } else {
+            savedCount += 1;
+          }
+        }
+        if (!blockedDays.length && canDelete) {
+          for (const occurrence of occurrences) {
+            if (!targetDateSet.has(occurrence.date)) await deleteSchedule(occurrence.id);
+          }
+        }
+        const currentValidations = latestValidationResults(warnings);
+        setValidationStatus(blockedDays.length ? "blocked" : currentValidations.length ? "warning" : "validated");
+        setValidations(currentValidations);
+        setShowBlockingAlert(blockedDays.length > 0);
+        invalidateScheduleData();
+        if (blockedDays.length) {
+          setErrorMsg(`No se pudieron actualizar estos días del evento por reglas de negocio: ${blockedDays.join(", ")}.`);
+        } else {
+          addToast("success", `Evento actualizado correctamente (${savedCount} sesiones).`);
+          resetForm(true, true);
+        }
+      } catch (err: any) {
+        setErrorMsg(err.message || "Error al actualizar el evento.");
+      } finally {
+        setIsBulkSubmitting(false);
+      }
+      return;
+    }
+
     if (editingSchedule) {
-      const date = isAdditionalHours ? monthStartDate(additionalMonth) : dateVal;
+      const date = monthStartDate(additionalMonth);
       const payload = {
         ...basePayload,
         date,
@@ -1475,14 +1577,27 @@ const cancelMutation = useMutation({
                             <div className="weekly-chronogram-blocks">
                               {jornadas.map((jornada, index) => {
                                 const jornadaSchedules = daySchedules.filter((schedule) => jornadaIndex(schedule) === index);
+                                const canProgramHere = canWrite && !jornadaSchedules.length;
                                 return (
-                                  <section className="weekly-jornada" key={jornada.label} aria-label={`${day.label}, jornada ${jornada.label}`}>
+                                  <section
+                                    className={`weekly-jornada${canProgramHere ? " is-programmable" : ""}`}
+                                    key={jornada.label}
+                                    aria-label={`${day.label}, jornada ${jornada.label}${canProgramHere ? ". Clic para programar en esta franja" : ""}`}
+                                    tabIndex={canProgramHere ? 0 : undefined}
+                                    onClick={canProgramHere ? () => startJornadaEvent(day.index, index) : undefined}
+                                    onKeyDown={canProgramHere ? (event) => {
+                                      if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                                        event.preventDefault();
+                                        startJornadaEvent(day.index, index);
+                                      }
+                                    } : undefined}
+                                  >
                                     <header>
                                       <span>{jornada.label}</span>
-                                      <small>{jornada.range}</small>
+                                      <small>{jornada.from}–{jornada.to}</small>
                                       <span>{jornadaSchedules.length}</span>
                                     </header>
-                                    {jornadaSchedules.length ? jornadaSchedules.map((schedule) => renderWeeklyBlock(schedule)) : <p className="weekly-jornada-empty">Sin programación</p>}
+                                    {jornadaSchedules.length ? jornadaSchedules.map((schedule) => renderWeeklyBlock(schedule)) : <p className="weekly-jornada-empty">{canWrite ? "Sin programación · Clic para programar" : "Sin programación"}</p>}
                                   </section>
                                 );
                               })}
@@ -1744,7 +1859,7 @@ const cancelMutation = useMutation({
                             </select>
                           </label>
                         </div>
-                        {!isAdditionalHours && !singleDayMode && !editingSchedule && <div className="form-row-compact">
+                        {!isAdditionalHours && !singleDayMode && <div className="form-row-compact">
                           <label className="form-label">
                             Fecha inicio del evento <span className="req">*</span>
                             <input type="date" value={eventStartDate} onChange={(e) => setEventStartDate(e.target.value)} required />
@@ -1754,13 +1869,13 @@ const cancelMutation = useMutation({
                             <input type="date" value={eventEndDate} onChange={(e) => setEventEndDate(e.target.value)} required />
                           </label>
                         </div>}
-                        {(editingSchedule || singleDayMode) && !isAdditionalHours && (
+                        {singleDayMode && !isAdditionalHours && (
                           <label className="form-label">
                             Fecha programada <span className="req">*</span>
                             <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} required />
                           </label>
                         )}
-                        {!editingSchedule && !singleDayMode && !isAdditionalHours && (
+                        {!singleDayMode && !isAdditionalHours && (
                           <fieldset className="weekday-selector">
                             <legend>Días a programar</legend>
                             <div className="weekday-options" role="group" aria-label="Días de la semana a programar">

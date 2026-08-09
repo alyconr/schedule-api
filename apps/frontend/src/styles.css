@@ -1385,7 +1385,11 @@ textarea:focus:not(:focus-visible) {
 .weekly-chronogram-block dl div { display: grid; gap: 2px; }
 .weekly-chronogram-block dt { color: #587063; font-size: .62rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
 .weekly-chronogram-block dd { margin: 0; color: #2c4135; font-size: .72rem; line-height: 1.35; overflow-wrap: anywhere; }
-.weekly-chronogram-empty { margin: 30px 0; color: #76877d; font-size: .78rem; text-align: center; }
+.weekly-jornada { display: grid; align-content: start; gap: 6px; padding: 8px; border: 1px solid #e2ebe4; border-radius: 10px; background: rgba(255, 255, 255, .65); }
+.weekly-jornada > header { display: flex; align-items: center; gap: 6px; color: #17452d; font-size: .66rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.weekly-jornada > header small { color: #587063; font-size: .62rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.weekly-jornada > header span:last-child { margin-left: auto; display: grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: #cfe8d6; font-size: .64rem; }
+.weekly-jornada-empty { margin: 2px 0; color: #8aa192; font-size: .68rem; font-weight: 700; text-align: center; }
 .instructor-session-list { display: grid; gap: 10px; padding: 12px; }
 .instructor-session-list article { padding: 14px; border: 1px solid #dce8df; border-radius: var(--radius-md); background: #fff; }
 .instructor-session-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #e6eee8; }

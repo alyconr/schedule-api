@@ -129,6 +129,19 @@ const weekDays = [
   { index: 7, label: "Domingo" },
 ];
 
+const jornadas = [
+  { label: "Mañana", range: "06:00–12:00" },
+  { label: "Tarde", range: "12:00–18:00" },
+  { label: "Noche", range: "18:00–22:00" },
+];
+
+function jornadaIndex(schedule: Schedule): number {
+  const start = schedule.start_time.slice(0, 5);
+  if (start < "12:00") return 0;
+  if (start < "18:00") return 1;
+  return 2;
+}
+
 function weekdayIndex(schedule: Schedule): number {
   return schedule.weekday || new Date(`${schedule.date}T00:00:00`).getDay() || 7;
 }
@@ -1124,6 +1137,64 @@ const cancelMutation = useMutation({
     if (targetWeekday) void moveWeeklyBlock(Number(event.active.id), targetWeekday);
   };
 
+  const renderWeeklyBlock = (schedule: Schedule) => {
+    const detail = getScheduleDisplayData(schedule);
+    return (
+      <WeeklyDraggableBlock
+        key={schedule.id}
+        scheduleId={schedule.id}
+        disabled={!canWrite || isBulkSubmitting}
+        canOpen={canWrite}
+        onOpen={() => editFromSummary(schedule)}
+        ariaLabel={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
+        actions={canWrite || canDelete ? (
+          <>
+            {canWrite && (
+              <button
+                type="button"
+                className="weekly-add-shift-button"
+                onClick={() => addFromSummary(schedule)}
+                aria-label={`Agregar otra jornada en todas las fechas de este evento conservando el contexto de ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}`}
+              >
+                Agregar jornada
+              </button>
+            )}
+            {canDelete && (
+              <>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selectedWeeklyBlockIds.includes(schedule.id)}
+                    onChange={(event) => setSelectedWeeklyBlockIds((current) => event.target.checked ? [...current, schedule.id] : current.filter((id) => id !== schedule.id))}
+                  />
+                  Seleccionar
+                </label>
+                <button type="button" className="weekly-delete-button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
+              </>
+            )}
+          </>
+        ) : undefined}
+      >
+        <div className="weekly-chronogram-time">
+          <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
+          <span className={`status-pill ${detail.statusClass}`}>{detail.statusName}</span>
+        </div>
+        <h5>
+          {summaryDetail === "instructors"
+            ? detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`
+            : summaryDetail === "groups"
+            ? detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`
+            : `${detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`} · ${detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}`}
+        </h5>
+        <dl>
+          <div><dt>Ambiente</dt><dd>{detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}</dd></div>
+          <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : `RAP ${schedule.learning_result_id}`}</dd></div>
+          <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática registrada"}</dd></div>
+        </dl>
+      </WeeklyDraggableBlock>
+    );
+  };
+
   const toggleWeekday = (weekdayIndex: number) => {
     setSelectedWeekdays((current) =>
       current.includes(weekdayIndex)
@@ -1402,63 +1473,19 @@ const cancelMutation = useMutation({
                               <span>{daySchedules.length}</span>
                             </header>
                             <div className="weekly-chronogram-blocks">
-                              {daySchedules.length ? daySchedules.map((schedule) => {
-                                const detail = getScheduleDisplayData(schedule);
+                              {jornadas.map((jornada, index) => {
+                                const jornadaSchedules = daySchedules.filter((schedule) => jornadaIndex(schedule) === index);
                                 return (
-                                  <WeeklyDraggableBlock
-                                    key={schedule.id}
-                                    scheduleId={schedule.id}
-                                    disabled={!canWrite || isBulkSubmitting}
-                                    canOpen={canWrite}
-                                    onOpen={() => editFromSummary(schedule)}
-                                    ariaLabel={`${weekdayName(schedule)}, ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}${canWrite ? ". Arrastrable para reprogramar" : ""}`}
-                                    actions={canWrite || canDelete ? (
-                                      <>
-                                        {canWrite && (
-                                          <button
-                                            type="button"
-                                            className="weekly-add-shift-button"
-                                            onClick={() => addFromSummary(schedule)}
-                                            aria-label={`Agregar otra jornada en todas las fechas de este evento conservando el contexto de ${schedule.start_time.slice(0, 5)} a ${schedule.end_time.slice(0, 5)}`}
-                                          >
-                                            Agregar jornada
-                                          </button>
-                                        )}
-                                        {canDelete && (
-                                          <>
-                                            <label>
-                                              <input
-                                                type="checkbox"
-                                                checked={selectedWeeklyBlockIds.includes(schedule.id)}
-                                                onChange={(event) => setSelectedWeeklyBlockIds((current) => event.target.checked ? [...current, schedule.id] : current.filter((id) => id !== schedule.id))}
-                                              />
-                                              Seleccionar
-                                            </label>
-                                            <button type="button" className="weekly-delete-button" onClick={() => setConfirmDeleteIds(weeklySeriesIds([schedule.id]))}>Eliminar</button>
-                                          </>
-                                        )}
-                                      </>
-                                    ) : undefined}
-                                  >
-                                    <div className="weekly-chronogram-time">
-                                      <strong>{schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</strong>
-                                      <span className={`status-pill ${detail.statusClass}`}>{detail.statusName}</span>
-                                    </div>
-                                    <h5>
-                                      {summaryDetail === "instructors"
-                                        ? detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`
-                                        : summaryDetail === "groups"
-                                        ? detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`
-                                        : `${detail.group ? groupLabel(detail.group) : `Ficha ${schedule.group_id}`} · ${detail.instructor ? instructorLabel(detail.instructor) : `Instructor ${schedule.instructor_id}`}`}
-                                    </h5>
-                                    <dl>
-                                      <div><dt>Ambiente</dt><dd>{detail.environment ? environmentLabel(detail.environment) : `Ambiente ${schedule.environment_id}`}</dd></div>
-                                      <div><dt>RAP</dt><dd>{detail.rap ? `${detail.rap.code} · ${detail.rap.description}` : `RAP ${schedule.learning_result_id}`}</dd></div>
-                                      <div><dt>Temática</dt><dd>{detail.topicName || "Sin temática registrada"}</dd></div>
-                                    </dl>
-                                  </WeeklyDraggableBlock>
+                                  <section className="weekly-jornada" key={jornada.label} aria-label={`${day.label}, jornada ${jornada.label}`}>
+                                    <header>
+                                      <span>{jornada.label}</span>
+                                      <small>{jornada.range}</small>
+                                      <span>{jornadaSchedules.length}</span>
+                                    </header>
+                                    {jornadaSchedules.length ? jornadaSchedules.map((schedule) => renderWeeklyBlock(schedule)) : <p className="weekly-jornada-empty">Sin programación</p>}
+                                  </section>
                                 );
-                              }) : <p className="weekly-chronogram-empty">Sin programación</p>}
+                              })}
                             </div>
                           </WeeklyDropDay>
                         );

@@ -6,6 +6,7 @@ import { fetchSchedulePeriods, fetchScheduleValidations } from "../api/schedules
 import { useQuery } from "@tanstack/react-query";
 import { validationRuleLabel } from "./ValidationAlertDialog";
 import { SearchableSelect } from "./SearchableSelect";
+import { useCoordinationScope } from "./CoordinationScopeContext";
 
 export function getGroupTrimester(group: Group): string {
   if (group.trimester && group.trimester.trim()) {
@@ -53,6 +54,7 @@ type ScheduleFilterBarProps = {
 };
 
 export function ScheduleFilterBar({ groups, instructors, learningResults, onApply, onClear }: ScheduleFilterBarProps) {
+  const { activeCoordinationId } = useCoordinationScope();
   const [groupId, setGroupId] = useState<number | "">("");
   const [instructorId, setInstructorId] = useState<number | "">("");
   const [learningResultId, setLearningResultId] = useState<number | "">("");
@@ -61,10 +63,11 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const periodsQuery = useQuery({
-    queryKey: ["schedule-periods", instructorId, groupId],
+    queryKey: ["schedule-periods", activeCoordinationId, instructorId, groupId],
     queryFn: () => fetchSchedulePeriods({
       instructor_id: instructorId === "" ? undefined : Number(instructorId),
       group_id: groupId === "" ? undefined : Number(groupId),
+      coordination_id: activeCoordinationId ?? undefined,
     }),
     enabled: instructorId !== "" || groupId !== "",
   });
@@ -77,6 +80,7 @@ export function ScheduleFilterBar({ groups, instructors, learningResults, onAppl
       group_id: groupId === "" ? undefined : Number(groupId),
       instructor_id: instructorId === "" ? undefined : Number(instructorId),
       learning_result_id: learningResultId === "" ? undefined : Number(learningResultId),
+      coordination_id: activeCoordinationId ?? undefined,
       schedule_year: Number(scheduleYear),
       schedule_quarter: scheduleQuarter,
       date_from: dateFrom || undefined,

@@ -88,11 +88,20 @@ const resourceConfigs: Record<string, ResourceConfig> = {
       },
       {
         name: "primary_coordination_id",
-        label: "Coordinación",
+        label: "Coordinación principal",
         type: "select",
         relatedEndpoint: "coordinations",
         relatedDisplayField: "name",
         required: true,
+      },
+      {
+        name: "coordination_ids",
+        label: "Disponible para",
+        type: "multi-checkbox",
+        relatedEndpoint: "coordinations",
+        relatedDisplayField: "name",
+        required: true,
+        detailOnly: true,
       },
       { name: "area", label: "Área", type: "text" },
       { name: "specialty", label: "Especialidad", type: "text" },
@@ -312,14 +321,6 @@ function AppContent() {
       const user = await getMe();
       setCurrentUser(user);
       setScope(user.scope);
-      // Reset active coordination when scope changes
-      if (user.scope.is_global) {
-        setActiveCoordinationId(null);
-      } else if (user.scope.coordinations.length === 1) {
-        setActiveCoordinationId(user.scope.coordinations[0].id);
-      } else {
-        setActiveCoordinationId(null);
-      }
     } catch {
       localStorage.removeItem("schedule_api_token");
       setCurrentUser(null);

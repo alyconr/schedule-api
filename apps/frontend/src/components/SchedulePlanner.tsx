@@ -9,6 +9,7 @@ import {
   cancelSchedule,
   deleteSchedule,
   fetchScheduleValidations,
+  fetchInstructorBusySlots,
 } from "../api/schedules";
 import { getTopicSelection } from "../api/topics";
 import {
@@ -26,6 +27,7 @@ import {
   ScheduleFilters,
   SchedulePrefill,
   ValidationResult,
+  BusySlot,
 } from "../types/schedules";
 import { CurrentUser } from "../types/auth";
 import { useToast } from "./ToastProvider";
@@ -33,6 +35,8 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DetailDialog } from "./DetailDialog";
 import { ValidationAlertDialog, validationRuleLabel } from "./ValidationAlertDialog";
 import { SearchableSelect } from "./SearchableSelect";
+import { useCoordinationScope } from "./CoordinationScopeContext";
+import { busySlotView } from "../utils/coordinationScope";
 
 interface SchedulePlannerProps {
   currentUser: CurrentUser;
@@ -140,6 +144,17 @@ function jornadaIndex(schedule: Schedule): number {
   if (start < "12:00") return 0;
   if (start < "18:00") return 1;
   return 2;
+}
+
+function busySlotJornada(slot: BusySlot): number {
+  const start = slot.start_time.slice(0, 5);
+  if (start < "12:00") return 0;
+  if (start < "18:00") return 1;
+  return 2;
+}
+
+function busySlotWeekday(slot: BusySlot): number {
+  return new Date(`${slot.date}T00:00:00`).getDay() || 7;
 }
 
 function weekdayIndex(schedule: Schedule): number {
@@ -273,6 +288,7 @@ const PLANNER_SUMMARY_FILTERS: ScheduleFilters = { limit: 2000 };
 
 export function SchedulePlanner({ currentUser, setActiveTab, prefill, onPrefillApplied }: SchedulePlannerProps) {
   const queryClient = useQueryClient();
+  const { activeCoordinationId } = useCoordinationScope();
 
   // Roles permissions check
   const roles = currentUser.roles || [];
@@ -338,8 +354,8 @@ export function SchedulePlanner({ currentUser, setActiveTab, prefill, onPrefillA
   // 1. Fetch Master Data
   const masterQueries = useQueries({
     queries: [
-      { queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") },
-      { queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") },
+      { queryKey: ["instructors", activeCoordinationId], queryFn: () => fetchList<Instructor>("instructors", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) },
+      { queryKey: ["groups", activeCoordinationId], queryFn: () => fetchList<Group>("groups", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) },
       { queryKey: ["training-programs"], queryFn: () => fetchList<TrainingProgram>("training-programs") },
       { queryKey: ["competencies"], queryFn: () => fetchList<Competency>("competencies") },
       { queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") },
@@ -521,8 +537,8 @@ const contractTypes = contractTypesQuery.data || [];
   );
   // 2. Fetch Schedules
 const { data: summarySchedules = [] } = useQuery<Schedule[]>({
-  queryKey: ["schedules", "planner-summary"],
-  queryFn: () => fetchSchedules({ ...PLANNER_SUMMARY_FILTERS, include_inactive: true }),
+  queryKey: ["schedules", "planner-summary", activeCoordinationId],
+  queryFn: () => fetchSchedules({ ...PLANNER_SUMMARY_FILTERS, coordination_id: activeCoordinationId ?? undefined, include_inactive: true }),
   staleTime: 60 * 1000,
   refetchOnWindowFocus: false,
 });
@@ -532,6 +548,7 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
     [summarySchedules]
   );
   const currentHourWarnings = useMemo<CurrentHourWarning[]>(() => {
+    if (!currentUser.scope.is_global || activeCoordinationId !== null) return [];
     const byInstructor = new Map<number, Schedule[]>();
     summaryActiveSchedules.forEach((schedule) => {
       const load = byInstructor.get(schedule.instructor_id) ?? [];
@@ -579,7 +596,7 @@ const { data: summarySchedules = [] } = useQuery<Schedule[]>({
         monthlyHours: monthTotals,
       }];
     });
-  }, [summaryActiveSchedules, contractTypesById, instructorsById]);
+  }, [summaryActiveSchedules, contractTypesById, instructorsById, currentUser.scope.is_global, activeCoordinationId]);
   const plannerStats = useMemo(() => ({
     warnings: currentHourWarnings.length,
     instructors: new Set(summaryActiveSchedules.map((s) => s.instructor_id)).size,
@@ -744,6 +761,22 @@ const getScheduleDisplayData = (schedule: Schedule) => {
     ? selectedEnvironmentGroup
     : undefined;
 
+  const selectedInstructorWeekRange = useMemo(() => {
+    if (!selectedInstructorGroup) return null;
+    const anchor = summaryActiveSchedules
+      .filter((schedule) => schedule.instructor_id === selectedInstructorGroup.id && !schedule.is_additional_hours)
+      .map((schedule) => schedule.date)
+      .sort()
+      .at(-1);
+    return anchor ? { from: dateForWeekday(anchor, 1), to: dateForWeekday(anchor, 7) } : null;
+  }, [selectedInstructorGroup, summaryActiveSchedules]);
+  const { data: rawBusySlots = [] } = useQuery({
+    queryKey: ["instructor-busy-slots", selectedInstructorGroup?.id, selectedInstructorWeekRange?.from, selectedInstructorWeekRange?.to, activeCoordinationId],
+    queryFn: () => fetchInstructorBusySlots(selectedInstructorGroup!.id, selectedInstructorWeekRange!.from, selectedInstructorWeekRange!.to),
+    enabled: Boolean(summaryDetail === "instructors" && selectedInstructorGroup && selectedInstructorWeekRange),
+  });
+  const busySlots = useMemo(() => rawBusySlots.map(busySlotView), [rawBusySlots]);
+
   useEffect(() => {
     setSummarySearch("");
     setSelectedEnvironmentId(null);
@@ -803,6 +836,13 @@ const getScheduleDisplayData = (schedule: Schedule) => {
       setValidations([]);
     }
   };
+
+  useEffect(() => {
+    resetForm();
+    setSummaryDetail(null);
+    setSelectedEnvironmentId(null);
+    setSelectedSummaryEntityId(null);
+  }, [activeCoordinationId]);
 
   const applyScheduleContext = (sch: Schedule) => {
     setErrorMsg(null);
@@ -1288,6 +1328,10 @@ const cancelMutation = useMutation({
       setErrorMsg("Seleccione el mes de las horas adicionales.");
       return;
     }
+    if (isAdditionalHours && activeCoordinationId === null) {
+      setErrorMsg("Seleccione una coordinación para registrar horas adicionales.");
+      return;
+    }
     if (!isAdditionalHours && (!groupId || !learningResultId || !environmentId || !startTime || !endTime)) {
       setErrorMsg("Por favor, rellene todos los campos obligatorios.");
       return;
@@ -1337,6 +1381,7 @@ const cancelMutation = useMutation({
       block_id: isAdditionalHours ? null : blockId ? Number(blockId) : null,
       is_additional_hours: isAdditionalHours,
       additional_hours_type: isAdditionalHours ? cleanedAdditionalType : null,
+      coordination_id: isAdditionalHours ? activeCoordinationId : undefined,
       notes: isAdditionalHours ? null : notes || null,
     };
 
@@ -1568,16 +1613,18 @@ const cancelMutation = useMutation({
                     <div className="weekly-chronogram-grid">
                       {weekDays.map((day) => {
                         const daySchedules = selectedWeeklySchedule.schedules.filter((schedule) => weekdayIndex(schedule) === day.index);
+                        const dayBusySlots = busySlots.filter((slot) => busySlotWeekday(slot) === day.index);
                         return (
                           <WeeklyDropDay key={day.index} weekday={day.index} disabled={!canWrite || isBulkSubmitting} dragging={Boolean(draggedScheduleId)}>
                             <header>
                               <strong>{day.label}</strong>
-                              <span>{daySchedules.length}</span>
+                              <span>{daySchedules.length + dayBusySlots.length}</span>
                             </header>
                             <div className="weekly-chronogram-blocks">
                               {jornadas.map((jornada, index) => {
                                 const jornadaSchedules = daySchedules.filter((schedule) => jornadaIndex(schedule) === index);
-                                const canProgramHere = canWrite && !jornadaSchedules.length;
+                                const jornadaBusySlots = dayBusySlots.filter((slot) => busySlotJornada(slot) === index);
+                                const canProgramHere = canWrite && !jornadaSchedules.length && !jornadaBusySlots.length;
                                 return (
                                   <section
                                     className={`weekly-jornada${canProgramHere ? " is-programmable" : ""}`}
@@ -1597,7 +1644,14 @@ const cancelMutation = useMutation({
                                       <small>{jornada.from}–{jornada.to}</small>
                                       <span>{jornadaSchedules.length}</span>
                                     </header>
-                                    {jornadaSchedules.length ? jornadaSchedules.map((schedule) => renderWeeklyBlock(schedule)) : <p className="weekly-jornada-empty">{canWrite ? "Sin programación · Clic para programar" : "Sin programación"}</p>}
+                                    {jornadaSchedules.map((schedule) => renderWeeklyBlock(schedule))}
+                                    {jornadaBusySlots.map((slot) => (
+                                      <article className="weekly-chronogram-block busy-other-coordination" key={`${slot.date}-${slot.start_time}-${slot.end_time}`} aria-label={`${slot.label}, ${slot.start_time.slice(0, 5)} a ${slot.end_time.slice(0, 5)}`}>
+                                        <strong>🔒 {slot.label}</strong>
+                                        <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
+                                      </article>
+                                    ))}
+                                    {!jornadaSchedules.length && !jornadaBusySlots.length ? <p className="weekly-jornada-empty">{canWrite ? "Sin programación · Clic para programar" : "Sin programación"}</p> : null}
                                   </section>
                                 );
                               })}

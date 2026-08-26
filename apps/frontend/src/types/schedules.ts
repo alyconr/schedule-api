@@ -38,6 +38,7 @@ export type Schedule = {
   duration_hours: number;
   is_additional_hours?: boolean;
   additional_hours_type?: string | null;
+  coordination_id?: number | null;
   status: ScheduleStatus;
   notes?: string | null;
 };
@@ -62,6 +63,7 @@ export type ScheduleCreate = {
   duration_hours: number;
   is_additional_hours?: boolean;
   additional_hours_type?: string | null;
+  coordination_id?: number | null;
   notes?: string | null;
 };
 
@@ -80,6 +82,7 @@ export type ScheduleFilters = {
   group_id?: number;
   environment_id?: number;
   learning_result_id?: number;
+  coordination_id?: number;
   schedule_year?: number;
   schedule_quarter?: 1 | 2 | 3 | 4;
   date?: string;
@@ -142,4 +145,12 @@ export type ScheduleValidation = {
   message: string;
   is_blocking: boolean;
   created_at?: string;
+};
+
+export type BusySlot = {
+  date: string;
+  start_time: string;
+  end_time: string;
+  availability: "busy_other_coordination";
+  label: string;
 };

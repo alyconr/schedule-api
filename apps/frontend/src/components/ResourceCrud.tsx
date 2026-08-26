@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { fetchList, createItem, updateItem, deleteItem } from "../api/masterData";
 import { CurrentUser } from "../types/auth";
@@ -6,16 +6,19 @@ import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DetailDialog } from "./DetailDialog";
 import { SearchableSelect, SearchableSelectOption } from "./SearchableSelect";
+import { useCoordinationScope } from "./CoordinationScopeContext";
+import { includePrimaryCoordination } from "../utils/coordinationScope";
 
-function ResourceCrudSearchableField({ label, name, initialValue, options, required }: {
+function ResourceCrudSearchableField({ label, name, initialValue, options, required, onValueChange }: {
   label: string;
   name: string;
   initialValue: string | number | "";
   options: SearchableSelectOption[];
   required?: boolean;
+  onValueChange?: (value: string | number | "") => void;
 }) {
   const [value, setValue] = useState(initialValue);
-  return <SearchableSelect label={label} name={name} value={value} options={options} required={required} searchPlaceholder={`Buscar ${label.toLowerCase()}...`} onChange={setValue} />;
+  return <SearchableSelect label={label} name={name} value={value} options={options} required={required} searchPlaceholder={`Buscar ${label.toLowerCase()}...`} onChange={(next) => { setValue(next); onValueChange?.(next); }} />;
 }
 
 function useDebouncedValue<T>(value: T, delay = 300): T {
@@ -30,12 +33,13 @@ function useDebouncedValue<T>(value: T, delay = 300): T {
 export type FieldConfig = {
   name: string;
   label: string;
-  type: "text" | "number" | "date" | "time" | "textarea" | "select" | "checkbox";
+  type: "text" | "number" | "date" | "time" | "textarea" | "select" | "checkbox" | "multi-checkbox";
   required?: boolean;
   readOnly?: boolean;
   options?: { label: string; value: string | number }[];
   relatedEndpoint?: string;
   relatedDisplayField?: string;
+  detailOnly?: boolean;
 };
 
 export type ResourceConfig = {
@@ -56,6 +60,11 @@ function getFieldValue(item: any, field: FieldConfig, relatedDataMap: Record<str
   }
   const rawVal = item[field.name];
   if (field.type === "checkbox") return rawVal ? "Sí" : "No";
+  if (field.type === "multi-checkbox") {
+    const ids = Array.isArray(rawVal) ? rawVal : [];
+    const list = relatedDataMap[field.relatedEndpoint || ""] || [];
+    return ids.map((id) => list.find((option) => option.id === id)?.[field.relatedDisplayField || "name"] || id).join(" · ");
+  }
   if (field.relatedEndpoint) {
     const list = relatedDataMap[field.relatedEndpoint] || [];
     const matched = list.find((x) => x.id === rawVal);
@@ -65,11 +74,13 @@ function getFieldValue(item: any, field: FieldConfig, relatedDataMap: Record<str
     const opt = field.options.find((o) => o.value === rawVal);
     if (opt) return opt.label;
   }
-  return rawVal !== undefined && rawVal !== null ? String(rawVal) : "";
+  return rawVal !== undefined && rawVal !== null ? String(rawVal) : field.relatedEndpoint === "coordinations" ? "Sin coordinación" : "";
 }
 
 export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const queryClient = useQueryClient();
+  const formRef = useRef<HTMLFormElement>(null);
+  const { activeCoordinationId } = useCoordinationScope();
   const { addToast } = useToast();
   const [editingItem, setEditingItem] = useState<any | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -86,10 +97,13 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const canDelete = roles.includes("admin") || roles.includes("coordinador");
+  const scopeAware = config.key === "groups" || config.key === "instructors";
+  const visibleFields = config.fields.filter((field) => !field.detailOnly);
+  const resourceQueryKey = scopeAware ? [config.endpoint, activeCoordinationId] : [config.endpoint];
 
   const { data: items = [], isLoading, isError, error } = useQuery<any[]>({
-    queryKey: [config.endpoint],
-    queryFn: () => fetchList<any>(config.endpoint),
+    queryKey: resourceQueryKey,
+    queryFn: () => fetchList<any>(config.endpoint, activeCoordinationId && scopeAware ? { coordination_id: activeCoordinationId } : undefined),
   });
 
   const relatedEndpoints = Array.from(
@@ -138,10 +152,18 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     setSelectedIds((prev) => new Set([...prev].filter((id) => validIds.has(id))));
   }, [items]);
 
+  useEffect(() => {
+    setEditingItem(null);
+    setIsFormOpen(false);
+    setDetailItem(null);
+    setSelectedIds(new Set());
+    setPage(1);
+  }, [activeCoordinationId]);
+
   const createMutation = useMutation({
     mutationFn: (data: any) => createItem(config.endpoint, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      queryClient.invalidateQueries({ queryKey: resourceQueryKey });
       addToast("success", "Registro creado correctamente.");
       closeForm();
     },
@@ -153,7 +175,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => updateItem(config.endpoint, id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      queryClient.invalidateQueries({ queryKey: resourceQueryKey });
       addToast("success", "Registro actualizado correctamente.");
       closeForm();
     },
@@ -165,7 +187,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteItem(config.endpoint, id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      queryClient.invalidateQueries({ queryKey: resourceQueryKey });
       addToast("success", "Registro eliminado o inactivado correctamente.");
     },
     onError: (err: any) => {
@@ -179,7 +201,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
       return { ok: true };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [config.endpoint] });
+      queryClient.invalidateQueries({ queryKey: resourceQueryKey });
       addToast("success", "Registros eliminados o inactivados correctamente.");
       setSelectedIds(new Set());
       setConfirmBulkDelete(false);
@@ -260,7 +282,9 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     config.fields.forEach((field) => {
       const val = formData.get(field.name);
 
-      if (field.type === "checkbox") {
+      if (field.type === "multi-checkbox") {
+        payload[field.name] = formData.getAll(field.name).map(Number);
+      } else if (field.type === "checkbox") {
         payload[field.name] = val === "on";
       } else if (field.type === "number") {
         payload[field.name] = val !== null && val !== "" ? Number(val) : null;
@@ -268,6 +292,10 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
         payload[field.name] = val !== null && val !== "" ? String(val) : null;
       }
     });
+
+    if (config.key === "instructors" && payload.primary_coordination_id) {
+      payload.coordination_ids = includePrimaryCoordination(payload.primary_coordination_id, payload.coordination_ids || []);
+    }
 
     if (config.key === "time-blocks") {
       const [startHour, startMinute] = String(payload.start_time).split(":").map(Number);
@@ -372,7 +400,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                     />
                   </th>
                 )}
-                {config.fields.map((f) => (
+                {visibleFields.map((f) => (
                   <th key={f.name}>{f.label}</th>
                 ))}
                 <th>Acciones</th>
@@ -381,14 +409,14 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={config.fields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
+                  <td colSpan={visibleFields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
                     <strong>Aún no hay registros para este módulo.</strong>
                     <span>Utilice el botón "Nuevo Registro" para agregar el primero.</span>
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={config.fields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
+                  <td colSpan={visibleFields.length + (canDelete ? 2 : 1)} className="text-center empty-cell">
                     <strong>No se encontraron registros con ese criterio.</strong>
                     <span>Intente con otro término de búsqueda.</span>
                   </td>
@@ -419,7 +447,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                         />
                       </td>
                     )}
-                    {config.fields.map((f) => (
+                    {visibleFields.map((f) => (
                       <td key={f.name} className={f.type === "textarea" ? "cell-textarea" : "cell-default"}>
                         <span className="cell-text">{renderFieldValue(item, f)}</span>
                       </td>
@@ -457,10 +485,11 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
           <div className="modal-content">
             <h3 id="crud-modal-title">{editingItem ? `Editar ${config.label}` : `Nuevo ${config.label}`}</h3>
             <form
+              ref={formRef}
               onSubmit={handleFormSubmit}
               onChange={(event) => {
-                if (config.key !== "time-blocks") return;
                 const form = event.currentTarget;
+                if (config.key !== "time-blocks") return;
                 const start = form.elements.namedItem("start_time") as HTMLInputElement | null;
                 const end = form.elements.namedItem("end_time") as HTMLInputElement | null;
                 const hours = form.elements.namedItem("duration_hours") as HTMLInputElement | null;
@@ -478,7 +507,29 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                     ? field.name === "duration_hours"
                       ? Number(editingItem.duration_minutes || 0) / 60
                       : editingItem[field.name]
+                    : field.name === "primary_coordination_id" && activeCoordinationId
+                    ? activeCoordinationId
+                    : field.name === "coordination_ids" && activeCoordinationId
+                    ? [activeCoordinationId]
                     : "";
+
+                  if (field.type === "multi-checkbox") {
+                    const selected = new Set<number>(Array.isArray(defaultValue) ? defaultValue.map(Number) : []);
+                    const options = relatedDataMap[field.relatedEndpoint || ""] || [];
+                    return (
+                      <fieldset key={field.name} className={`form-label crud-field-${field.name}`}>
+                        <legend>{field.label} {field.required && <span className="req">*</span>}</legend>
+                        <div className="coordination-checkboxes">
+                          {options.map((option: any) => (
+                            <label key={option.id}>
+                              <input type="checkbox" name={field.name} value={option.id} defaultChecked={selected.has(option.id)} />
+                              {String(option[field.relatedDisplayField || "name"])}
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                    );
+                  }
 
                   if (field.type === "select") {
                     const options: SearchableSelectOption[] = field.options ?? (relatedDataMap[field.relatedEndpoint || ""] || []).map((option: any) => ({
@@ -487,7 +538,17 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
                     }));
                     return (
                       <div key={`${editingItem?.id ?? "new"}-${field.name}`} className={`crud-field-${field.name}`}>
-                        <ResourceCrudSearchableField label={field.label} name={field.name} initialValue={defaultValue || ""} options={options} required={field.required} />
+                        <ResourceCrudSearchableField
+                          label={field.label}
+                          name={field.name}
+                          initialValue={defaultValue || ""}
+                          options={options}
+                          required={field.required}
+                          onValueChange={field.name === "primary_coordination_id" ? (value) => {
+                            const checkbox = formRef.current?.querySelector<HTMLInputElement>(`input[name="coordination_ids"][value="${value}"]`);
+                            if (checkbox) checkbox.checked = true;
+                          } : undefined}
+                        />
                       </div>
                     );
                   }

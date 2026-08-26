@@ -757,6 +757,18 @@ textarea:focus:not(:focus-visible) {
   gap: 16px;
 }
 
+.coord-scope-selector { display: grid; gap: 3px; min-width: 190px; }
+.coord-scope-label, .coord-scope-current { color: #52665a; font-size: .7rem; font-weight: 800; }
+.coord-scope-select { min-height: 38px; padding: 7px 30px 7px 10px; border: 1px solid #c9d8ce; border-radius: var(--radius-sm); color: #173c28; background: #fff; font: inherit; font-size: .82rem; }
+.coord-scope-select:focus-visible { outline: 3px solid rgba(39, 122, 72, .18); outline-offset: 2px; }
+.coord-scope-current { padding: 8px 10px; border-radius: var(--radius-sm); background: #eef7f0; }
+
+.crud-field-coordination_ids { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; }
+.crud-field-coordination_ids legend { margin-bottom: 8px; font-weight: 700; }
+.coordination-checkboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.coordination-checkboxes label { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #f8fafc; }
+.coordination-checkboxes input { width: auto; accent-color: var(--color-primary); }
+
 .time-block-fields { grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .time-block-fields .crud-field-name,
 .time-block-fields .crud-field-weekday { grid-column: span 6; }
@@ -1372,6 +1384,9 @@ textarea:focus:not(:focus-visible) {
 .weekly-chronogram-day > header span { display: grid; place-items: center; min-width: 24px; height: 24px; border-radius: 999px; background: #bfe0c8; font-size: .72rem; font-weight: 800; }
 .weekly-chronogram-blocks { display: grid; align-content: start; gap: 10px; padding: 10px; }
 .weekly-chronogram-block { padding: 12px; border: 1px solid #d7e4da; border-left: 4px solid #2b8a4b; border-radius: 12px; background: #fff; box-shadow: 0 5px 14px rgba(22, 59, 39, .06); }
+.weekly-chronogram-block.busy-other-coordination { display: grid; gap: 6px; border-color: #cbd5e1; border-left-color: #64748b; color: #475569; background: #f1f5f9; box-shadow: none; }
+.weekly-chronogram-block.busy-other-coordination strong { font-size: .76rem; line-height: 1.35; }
+.weekly-chronogram-block.busy-other-coordination span { font-size: .72rem; font-variant-numeric: tabular-nums; }
 .weekly-chronogram-block[role="button"]:focus-visible { outline: 3px solid rgba(35, 130, 71, .25); outline-offset: 2px; }
 .weekly-chronogram-block.is-dragging { position: relative; z-index: 20; opacity: .85; box-shadow: 0 16px 34px rgba(22, 59, 39, .22); }
 .weekly-drag-handle { padding: 7px 10px; border: 1px solid #9ac8a7; border-radius: 9px; color: #1f6b3b; background: #edf8f0; font: inherit; font-size: .72rem; font-weight: 850; cursor: grab; touch-action: none; }

@@ -44,8 +44,8 @@ services:
     restart: unless-stopped
     depends_on:
       - schedule-backend
-    expose:
-      - "80"
+    ports:
+      - "3000:80"
 
 volumes:
   postgres_data:

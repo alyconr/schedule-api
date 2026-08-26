@@ -45,7 +45,7 @@ services:
     depends_on:
       - schedule-backend
     ports:
-      - "3000:80"
+      - "3001:80"
 
 volumes:
   postgres_data:

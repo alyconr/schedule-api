@@ -3,7 +3,7 @@ import unittest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.main import app
-from app.models import ContractType
+from app.models import ContractType, Coordination
 
 
 class MasterDataRoutesTest(unittest.TestCase):
@@ -234,26 +234,32 @@ class MasterDataRoutesTest(unittest.TestCase):
             GroupUpdate(trimester="   ")
 
     def test_group_routes_crud(self) -> None:
+        from app.api.deps import AccessScope
         from app.api.routes.groups import create_group, get_group, list_groups, update_group
         from app.schemas.master_data import GroupCreate, GroupUpdate
 
         engine = create_engine("sqlite:///:memory:")
         SQLModel.metadata.create_all(engine)
+        scope = AccessScope(user_id=1, roles=frozenset({"admin"}), coordination_ids=frozenset(), is_global=True)
         with Session(engine) as session:
-            payload = GroupCreate(code="3068352", name="Ficha Test", trimester="TRIMESTRE I", learners_count=25)
-            created = create_group(payload, session)
+            coordination = Coordination(code="COORD-TEST", name="Coordinación de prueba")
+            session.add(coordination)
+            session.commit()
+            session.refresh(coordination)
+            payload = GroupCreate(code="3068352", name="Ficha Test", coordination_id=coordination.id, trimester="TRIMESTRE I", learners_count=25)
+            created = create_group(payload, session, scope)
             self.assertEqual(created.trimester, "TRIMESTRE I")
 
-            fetched = get_group(created.id, session)
+            fetched = get_group(created.id, session, scope)
             self.assertEqual(fetched.trimester, "TRIMESTRE I")
 
             # Partial update omitting trimester
-            updated1 = update_group(created.id, GroupUpdate(name="Nuevo Nombre"), session)
+            updated1 = update_group(created.id, GroupUpdate(name="Nuevo Nombre"), session, scope)
             self.assertEqual(updated1.name, "Nuevo Nombre")
             self.assertEqual(updated1.trimester, "TRIMESTRE I")
 
             # Update trimester
-            updated2 = update_group(created.id, GroupUpdate(trimester="TRIMESTRE II"), session)
+            updated2 = update_group(created.id, GroupUpdate(trimester="TRIMESTRE II"), session, scope)
             self.assertEqual(updated2.trimester, "TRIMESTRE II")
 
 

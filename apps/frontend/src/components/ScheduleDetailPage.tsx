@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchList } from "../api/masterData";
 import { deleteSchedule, fetchSchedulesDetailed } from "../api/schedules";
@@ -6,6 +6,7 @@ import { CurrentUser } from "../types/auth";
 import { Group, Instructor, LearningResult } from "../types/masterData";
 import { ScheduleDetailed, ScheduleFilters } from "../types/schedules";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { useCoordinationScope } from "./CoordinationScopeContext";
 import { formatProgrammedDay, ScheduleFilterBar, ScheduleQueryStatus, ScheduleWarningDialog } from "./ScheduleQueryShared";
 import { useToast } from "./ToastProvider";
 
@@ -34,21 +35,22 @@ type ScheduleDetailPageProps = {
 export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
+  const { activeCoordinationId } = useCoordinationScope();
   const [filters, setFilters] = useState<ScheduleFilters>({});
   const [warningSchedule, setWarningSchedule] = useState<ScheduleDetailed | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduleDetailed | null>(null);
   const canDelete = currentUser.roles?.includes("admin") || currentUser.roles?.includes("coordinador");
 
-  const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
-  const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
+  const groupsQuery = useQuery({ queryKey: ["groups", activeCoordinationId], queryFn: () => fetchList<Group>("groups", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) });
+  const instructorsQuery = useQuery({ queryKey: ["instructors", activeCoordinationId], queryFn: () => fetchList<Instructor>("instructors", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) });
   const learningResultsQuery = useQuery({ queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") });
 
   const hasFilter = Boolean(
     (filters.group_id || filters.instructor_id) && filters.schedule_year && filters.schedule_quarter,
   );
   const schedulesQuery = useQuery<ScheduleDetailed[]>({
-    queryKey: ["schedules-detailed", filters],
-    queryFn: () => fetchSchedulesDetailed(filters),
+    queryKey: ["schedules-detailed", activeCoordinationId, filters],
+    queryFn: () => fetchSchedulesDetailed({ ...filters, coordination_id: activeCoordinationId ?? undefined }),
     enabled: hasFilter,
   });
   const schedules = schedulesQuery.data ?? [];
@@ -65,6 +67,12 @@ export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
       addToast("error", error.message || "No fue posible eliminar el horario.");
     },
   });
+
+  useEffect(() => {
+    setFilters({});
+    setWarningSchedule(null);
+    setDeleteTarget(null);
+  }, [activeCoordinationId]);
   const visibleSchedules = useMemo(() => {
     const latestWarning = schedules
       .filter((schedule) => schedule.status === "warning")
@@ -83,6 +91,7 @@ export function ScheduleDetailPage({ currentUser }: ScheduleDetailPageProps) {
       </header>
 
       <ScheduleFilterBar
+        key={activeCoordinationId ?? "all"}
         groups={groupsQuery.data ?? []}
         instructors={instructorsQuery.data ?? []}
         learningResults={learningResultsQuery.data ?? []}

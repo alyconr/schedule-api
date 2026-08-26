@@ -14,7 +14,7 @@ from app.models import (
     InstructorCoordination,
     Schedule,
 )
-from app.schemas.master_data import InstructorCreate, InstructorUpdate
+from app.schemas.master_data import InstructorCreate, InstructorRead, InstructorUpdate
 
 
 router = APIRouter(prefix="/instructors", tags=["instructors"])
@@ -77,19 +77,28 @@ def _instructor_in_scope(session: Session, instructor: Instructor, scope: Access
     return bool(set(coord_ids) & scope.coordination_ids)
 
 
-@router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
+def _instructor_read(session: Session, instructor: Instructor) -> InstructorRead:
+    coordination_ids = session.exec(
+        select(InstructorCoordination.coordination_id).where(
+            InstructorCoordination.instructor_id == instructor.id
+        )
+    ).all()
+    return InstructorRead.model_validate({**instructor.model_dump(), "coordination_ids": list(coordination_ids)})
+
+
+@router.get("", response_model=list[InstructorRead], dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_instructors(
     session: SessionDep,
     scope: AccessScopeDep,
     coordination_id: Optional[int] = Query(default=None),
-) -> list[Instructor]:
+) -> list[InstructorRead]:
     if coordination_id is not None:
         if not scope.can_access(coordination_id):
             return []
         subq = select(InstructorCoordination.instructor_id).where(
             InstructorCoordination.coordination_id == coordination_id
         )
-        return list(
+        instructors = list(
             session.exec(
                 select(Instructor).where(
                     Instructor.is_active == True,  # noqa: E712
@@ -97,14 +106,16 @@ def list_instructors(
                 )
             ).all()
         )
+        return [_instructor_read(session, instructor) for instructor in instructors]
     if scope.is_global:
-        return list(session.exec(select(Instructor).where(Instructor.is_active == True)).all())  # noqa: E712
+        instructors = session.exec(select(Instructor).where(Instructor.is_active == True)).all()  # noqa: E712
+        return [_instructor_read(session, instructor) for instructor in instructors]
     if not scope.coordination_ids:
         return []
     subq = select(InstructorCoordination.instructor_id).where(
         InstructorCoordination.coordination_id.in_(scope.coordination_ids)
     )
-    return list(
+    instructors = list(
         session.exec(
             select(Instructor).where(
                 Instructor.is_active == True,  # noqa: E712
@@ -112,20 +123,21 @@ def list_instructors(
             )
         ).all()
     )
+    return [_instructor_read(session, instructor) for instructor in instructors]
 
 
-@router.get("/{instructor_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
-def get_instructor(instructor_id: int, session: SessionDep, scope: AccessScopeDep) -> Instructor:
+@router.get("/{instructor_id}", response_model=InstructorRead, dependencies=[Depends(require_roles(*ROLE_READ))])
+def get_instructor(instructor_id: int, session: SessionDep, scope: AccessScopeDep) -> InstructorRead:
     obj = session.get(Instructor, instructor_id)
     if not obj or not obj.is_active:
         raise HTTPException(404, detail="Instructor not found")
     if not _instructor_in_scope(session, obj, scope):
         raise HTTPException(404, detail="Instructor not found")
-    return obj
+    return _instructor_read(session, obj)
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
-def create_instructor(payload: InstructorCreate, session: SessionDep, scope: AccessScopeDep) -> Instructor:
+@router.post("", status_code=201, response_model=InstructorRead, dependencies=[Depends(require_roles(*ROLE_WRITE))])
+def create_instructor(payload: InstructorCreate, session: SessionDep, scope: AccessScopeDep) -> InstructorRead:
     _validate_contract_type(session, payload.contract_type_id)
     primary_cid, coord_ids = _validate_instructor_coordinations(
         session, payload.primary_coordination_id, payload.coordination_ids, scope
@@ -143,16 +155,16 @@ def create_instructor(payload: InstructorCreate, session: SessionDep, scope: Acc
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, detail="Instructor document number already exists")
-    return obj
+    return _instructor_read(session, obj)
 
 
-@router.put("/{instructor_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
+@router.put("/{instructor_id}", response_model=InstructorRead, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_instructor(
     instructor_id: int,
     payload: InstructorUpdate,
     session: SessionDep,
     scope: AccessScopeDep,
-) -> Instructor:
+) -> InstructorRead:
     obj = session.get(Instructor, instructor_id)
     if not obj or not obj.is_active:
         raise HTTPException(404, detail="Instructor not found")
@@ -183,7 +195,7 @@ def update_instructor(
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, detail="Instructor document number already exists")
-    return obj
+    return _instructor_read(session, obj)
 
 
 @router.delete("/{instructor_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])

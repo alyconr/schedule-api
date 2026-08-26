@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { AccessScope, CoordinationScopeItem } from "../types/auth";
+import { initialCoordinationId } from "../utils/coordinationScope";
 
 interface CoordinationScopeContextValue {
   activeCoordinationId: number | null;
@@ -18,6 +19,11 @@ export function CoordinationScopeProvider({ children }: { children: ReactNode })
 
   const availableCoordinations = scope?.coordinations ?? [];
   const isGlobal = scope?.is_global ?? false;
+
+  useEffect(() => {
+    if (!scope) return;
+    setActiveCoordinationId(initialCoordinationId(scope));
+  }, [scope]);
 
   return (
     <CoordinationScopeContext.Provider

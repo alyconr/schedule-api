@@ -314,6 +314,7 @@ def list_schedules_detailed(
     schedule_quarter: int | None = Query(default=None, ge=1, le=4),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
+    coordination_id: int | None = None,
     include_inactive: bool = Query(default=False),
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=500, ge=1, le=2000),
@@ -340,7 +341,12 @@ def list_schedules_detailed(
     )
     if not (include_inactive or include_cancelled):
         stmt = stmt.where(Schedule.status != "cancelled")
-    stmt = _scope_schedule_filter(stmt, scope)
+    if coordination_id is not None:
+        if not scope.can_access(coordination_id):
+            return []
+        stmt = stmt.where(Schedule.coordination_id == coordination_id)
+    else:
+        stmt = _scope_schedule_filter(stmt, scope)
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -420,6 +426,7 @@ def list_schedule_periods(
     scope: AccessScopeDep,
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
+    coordination_id: int | None = None,
 ) -> list[dict[str, object]]:
     if instructor_id is None and group_id is None:
         raise HTTPException(422, detail="Debe seleccionar un instructor o una ficha.")
@@ -436,7 +443,12 @@ def list_schedule_periods(
         .group_by(Schedule.schedule_year, Schedule.schedule_quarter)
         .order_by(Schedule.schedule_year.desc(), Schedule.schedule_quarter.desc())
     )
-    stmt = _scope_schedule_filter(stmt, scope)
+    if coordination_id is not None:
+        if not scope.can_access(coordination_id):
+            return []
+        stmt = stmt.where(Schedule.coordination_id == coordination_id)
+    else:
+        stmt = _scope_schedule_filter(stmt, scope)
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:

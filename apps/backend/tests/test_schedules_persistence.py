@@ -4,22 +4,17 @@ from fastapi import HTTPException
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.api.routes.schedules import (
-    cancel_schedule,
-    create_schedule,
-    delete_schedule,
-    list_schedules,
-    list_schedules_detailed,
-    list_schedule_periods,
-    update_schedule,
-)
+from app.api.deps import AccessScope
+from app.api.routes import schedules as schedule_routes
 from app.main import app
 from app.models import (
     Competency,
+    Coordination,
     Environment,
     ExceptionRequest,
     Group,
     Instructor,
+    InstructorCoordination,
     LearningResult,
     LearningResultTopic,
     ScheduleValidation,
@@ -29,6 +24,37 @@ from app.models import (
 from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
 from datetime import date
 from app.services.schedule_service import derive_contract_type, get_week_range
+
+
+GLOBAL_SCOPE = AccessScope(user_id=1, roles=frozenset({"admin"}), coordination_ids=frozenset(), is_global=True)
+
+
+def create_schedule(payload, session):
+    return schedule_routes.create_schedule(payload, session, GLOBAL_SCOPE)
+
+
+def update_schedule(schedule_id, payload, session):
+    return schedule_routes.update_schedule(schedule_id, payload, session, GLOBAL_SCOPE)
+
+
+def cancel_schedule(schedule_id, session):
+    return schedule_routes.cancel_schedule(schedule_id, session, GLOBAL_SCOPE)
+
+
+def delete_schedule(schedule_id, session):
+    return schedule_routes.delete_schedule(schedule_id, session, GLOBAL_SCOPE)
+
+
+def list_schedules(session, **params):
+    return schedule_routes.list_schedules(session, GLOBAL_SCOPE, **params)
+
+
+def list_schedules_detailed(session, **params):
+    return schedule_routes.list_schedules_detailed(session, GLOBAL_SCOPE, **params)
+
+
+def list_schedule_periods(session, **params):
+    return schedule_routes.list_schedule_periods(session, GLOBAL_SCOPE, **params)
 
 
 class SchedulesPersistenceRoutesTest(unittest.TestCase):
@@ -106,14 +132,19 @@ class SchedulesPersistenceRoutesTest(unittest.TestCase):
 
 
 def _seed_topic_fixtures(session: Session) -> dict[str, int]:
+    coordination = Coordination(code="COORD-TEST", name="Coordinación de prueba")
     program = TrainingProgram(code="PROG-UNO", name="Programa uno")
     other_program = TrainingProgram(code="PROG-DOS", name="Programa dos")
+    session.add(coordination)
+    session.commit()
+    session.refresh(coordination)
     instructor = Instructor(
         document_type="CC",
         document_number="100",
         first_name="Ana",
         last_name="Perez",
         email="ana@example.com",
+        primary_coordination_id=coordination.id,
     )
     environment = Environment(code="A1", name="Aula 1", capacity=30)
     session.add(program)
@@ -125,8 +156,10 @@ def _seed_topic_fixtures(session: Session) -> dict[str, int]:
     session.refresh(other_program)
     session.refresh(instructor)
     session.refresh(environment)
+    session.add(InstructorCoordination(instructor_id=instructor.id, coordination_id=coordination.id))
+    session.commit()
 
-    group = Group(code="G1", training_program_id=program.id, learners_count=10, trimester="TRIMESTRE III")
+    group = Group(code="G1", training_program_id=program.id, coordination_id=coordination.id, learners_count=10, trimester="TRIMESTRE III")
     competency = Competency(code="C1", name="Competencia", training_program_id=program.id)
     session.add(group)
     session.add(competency)
@@ -181,6 +214,7 @@ def _seed_topic_fixtures(session: Session) -> dict[str, int]:
 
     return {
         "program": program.id,
+        "coordination": coordination.id,
         "group": group.id,
         "instructor": instructor.id,
         "environment": environment.id,
@@ -202,6 +236,7 @@ def _additional_payload(instructor_id: int, hours: int = 12) -> ScheduleCreate:
         duration_hours=hours,
         is_additional_hours=True,
         additional_hours_type="Apoyo a alistamiento mensual",
+        coordination_id=1,
     )
 
 
@@ -340,6 +375,7 @@ class ScheduleListingTest(unittest.TestCase):
             duration_hours=12,
             is_additional_hours=True,
             additional_hours_type="Apoyo a alistamiento mensual",
+            coordination_id=self.ids["coordination"],
         )
         create_schedule(additional_hours, session)
 
@@ -354,6 +390,7 @@ class ScheduleListingTest(unittest.TestCase):
             date=None,
             date_from=None,
             date_to=None,
+            coordination_id=None,
             include_inactive=False,
             include_cancelled=False,
             limit=500,
@@ -493,6 +530,8 @@ class ScheduleAdditionalHoursSyncTest(unittest.TestCase):
             session.add(other)
             session.commit()
             session.refresh(other)
+            session.add(InstructorCoordination(instructor_id=other.id, coordination_id=self.ids["coordination"]))
+            session.commit()
 
             result = create_schedule(_additional_payload(self.ids["instructor"], hours=8), session)
             schedule_id = result.schedule["id"]

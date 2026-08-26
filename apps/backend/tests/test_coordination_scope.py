@@ -5,6 +5,7 @@ from datetime import date, time
 from decimal import Decimal
 
 from app.api.deps import AccessScope
+from app.schemas.master_data import InstructorRead
 
 
 class AccessScopeTest(unittest.TestCase):
@@ -155,6 +156,22 @@ class PrivacyTest(unittest.TestCase):
         for key in forbidden_keys:
             self.assertNotIn(key, slot, f"busy slot must not contain {key}")
         self.assertEqual(slot["availability"], "busy_other_coordination")
+
+
+class InstructorContractTest(unittest.TestCase):
+    def test_read_contract_includes_all_coordination_ids(self):
+        instructor = InstructorRead(
+            id=7,
+            document_type="CC",
+            document_number="123",
+            first_name="Carlos",
+            last_name="Pérez",
+            email="carlos@example.com",
+            primary_coordination_id=3,
+            coordination_ids=[1, 2, 3],
+            is_active=True,
+        )
+        self.assertEqual(instructor.coordination_ids, [1, 2, 3])
 
 
 class ScopeBypassTest(unittest.TestCase):

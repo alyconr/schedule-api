@@ -8,6 +8,7 @@ import {
   ScheduleDetailed,
   SchedulePeriodSummary,
   ScheduleValidation,
+  BusySlot,
 } from "../types/schedules";
 
 export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedule[]> {
@@ -17,6 +18,7 @@ export async function fetchSchedules(filters?: ScheduleFilters): Promise<Schedul
   if (filters?.group_id) params.set("group_id", String(filters.group_id));
   if (filters?.environment_id) params.set("environment_id", String(filters.environment_id));
   if (filters?.learning_result_id) params.set("learning_result_id", String(filters.learning_result_id));
+  if (filters?.coordination_id) params.set("coordination_id", String(filters.coordination_id));
   if (filters?.schedule_year) params.set("schedule_year", String(filters.schedule_year));
   if (filters?.schedule_quarter) params.set("schedule_quarter", String(filters.schedule_quarter));
   if (filters?.date) params.set("date", filters.date);
@@ -36,6 +38,7 @@ export async function fetchSchedulesDetailed(filters?: ScheduleFilters): Promise
   if (filters?.instructor_id) params.set("instructor_id", String(filters.instructor_id));
   if (filters?.group_id) params.set("group_id", String(filters.group_id));
   if (filters?.learning_result_id) params.set("learning_result_id", String(filters.learning_result_id));
+  if (filters?.coordination_id) params.set("coordination_id", String(filters.coordination_id));
   if (filters?.schedule_year) params.set("schedule_year", String(filters.schedule_year));
   if (filters?.schedule_quarter) params.set("schedule_quarter", String(filters.schedule_quarter));
   if (filters?.date_from) params.set("date_from", filters.date_from);
@@ -49,11 +52,22 @@ export async function fetchSchedulesDetailed(filters?: ScheduleFilters): Promise
 export async function fetchSchedulePeriods(filters: {
   instructor_id?: number;
   group_id?: number;
+  coordination_id?: number;
 }): Promise<SchedulePeriodSummary[]> {
   const params = new URLSearchParams();
   if (filters.instructor_id) params.set("instructor_id", String(filters.instructor_id));
   if (filters.group_id) params.set("group_id", String(filters.group_id));
+  if (filters.coordination_id) params.set("coordination_id", String(filters.coordination_id));
   return apiRequest<SchedulePeriodSummary[]>(`/schedules/periods?${params.toString()}`);
+}
+
+export async function fetchInstructorBusySlots(
+  instructorId: number,
+  dateFrom: string,
+  dateTo: string,
+): Promise<BusySlot[]> {
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  return apiRequest<BusySlot[]>(`/instructors/${instructorId}/busy-slots?${params}`);
 }
 
 export async function createSchedule(payload: ScheduleCreate): Promise<SchedulePersistResponse> {

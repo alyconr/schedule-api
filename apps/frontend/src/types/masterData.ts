@@ -29,6 +29,7 @@ export interface Instructor {
   phone?: string;
   contract_type_id?: number;
   primary_coordination_id?: number;
+  coordination_ids: number[];
   area?: string;
   specialty?: string;
   monthly_training_hours: number;
@@ -73,7 +74,7 @@ export interface Group {
   code: string;
   name?: string;
   training_program_id?: number;
-  coordination_id?: number;
+  coordination_id?: number | null;
   jornada?: string;
   modality?: string;
   trimester?: string | null;

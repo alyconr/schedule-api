@@ -41,7 +41,7 @@ export function AppLayout({
   isNavigating = false,
   children,
 }: AppLayoutProps) {
-  const { activeCoordinationId, setActiveCoordinationId, scope, availableCoordinations, isGlobal } = useCoordinationScope();
+  const { activeCoordinationId, setActiveCoordinationId, availableCoordinations, isGlobal } = useCoordinationScope();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => {
       const storedPreference = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -56,9 +56,7 @@ export function AppLayout({
 
   // Coordination selector options
   const showCoordSelector = isGlobal || availableCoordinations.length > 1;
-  const selectorOptions = isGlobal
-    ? availableCoordinations
-    : availableCoordinations;
+  const selectorOptions = availableCoordinations;
   const activeCoordName = activeCoordinationId
     ? availableCoordinations.find((c) => c.id === activeCoordinationId)?.name
     : isGlobal ? "Todas las coordinaciones" : "Todas mis coordinaciones";
@@ -178,7 +176,7 @@ export function AppLayout({
           <div className="main-header-right">
             {showCoordSelector && (
               <div className="coord-scope-selector">
-                <label className="coord-scope-label">Ámbito</label>
+                <label className="coord-scope-label">Ámbito de trabajo</label>
                 <select
                   className="coord-scope-select"
                   value={activeCoordinationId ?? ""}
@@ -194,6 +192,9 @@ export function AppLayout({
                   ))}
                 </select>
               </div>
+            )}
+            {!showCoordSelector && activeCoordName && (
+              <span className="coord-scope-current">Coordinación: {activeCoordName}</span>
             )}
             <div className="user-profile">
               <span className="user-avatar">{userInitial}</span>

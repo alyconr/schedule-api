@@ -89,6 +89,13 @@ class InstructorUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class InstructorRead(InstructorCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    is_active: bool
+
+
 # --- TrainingProgram ---
 class TrainingProgramCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")

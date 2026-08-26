@@ -8,6 +8,7 @@ import { ScheduleDetailed, ScheduleFilters, SchedulePrefill } from "../types/sch
 import { ConfirmDialog } from "./ConfirmDialog";
 import { groupLabel, instructorLabel, rapLabel, ScheduleFilterBar, ScheduleQueryStatus } from "./ScheduleQueryShared";
 import { useToast } from "./ToastProvider";
+import { useCoordinationScope } from "./CoordinationScopeContext";
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -30,6 +31,7 @@ type ScheduleMatrixPageProps = {
 export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleMatrixPageProps) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
+  const { activeCoordinationId } = useCoordinationScope();
   const [filters, setFilters] = useState<ScheduleFilters>({});
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleDetailed | null>(null);
@@ -37,15 +39,15 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
   const canDelete = currentUser.roles?.includes("admin") || currentUser.roles?.includes("coordinador");
   const canWrite = canDelete || currentUser.roles?.includes("programador");
 
-  const groupsQuery = useQuery({ queryKey: ["groups"], queryFn: () => fetchList<Group>("groups") });
-  const instructorsQuery = useQuery({ queryKey: ["instructors"], queryFn: () => fetchList<Instructor>("instructors") });
+  const groupsQuery = useQuery({ queryKey: ["groups", activeCoordinationId], queryFn: () => fetchList<Group>("groups", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) });
+  const instructorsQuery = useQuery({ queryKey: ["instructors", activeCoordinationId], queryFn: () => fetchList<Instructor>("instructors", activeCoordinationId ? { coordination_id: activeCoordinationId } : undefined) });
   const learningResultsQuery = useQuery({ queryKey: ["learning-results"], queryFn: () => fetchList<LearningResult>("learning-results") });
   const hasFilter = Boolean(
     (filters.group_id || filters.instructor_id) && filters.schedule_year && filters.schedule_quarter,
   );
   const schedulesQuery = useQuery<ScheduleDetailed[]>({
-    queryKey: ["schedules-detailed", filters],
-    queryFn: () => fetchSchedulesDetailed(filters),
+    queryKey: ["schedules-detailed", activeCoordinationId, filters],
+    queryFn: () => fetchSchedulesDetailed({ ...filters, coordination_id: activeCoordinationId ?? undefined }),
     enabled: hasFilter,
   });
   const allSchedules = schedulesQuery.data ?? [];
@@ -65,6 +67,12 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
       addToast("error", error.message || "No fue posible eliminar el horario.");
     },
   });
+
+  useEffect(() => {
+    setFilters({});
+    setSelectedSchedule(null);
+    setDeleteTarget(null);
+  }, [activeCoordinationId]);
 
   useEffect(() => {
     const firstDate = filters.date_from || schedules[0]?.date;
@@ -127,6 +135,7 @@ export function ScheduleMatrixPage({ currentUser, onProgramSchedule }: ScheduleM
       </header>
 
       <ScheduleFilterBar
+        key={activeCoordinationId ?? "all"}
         groups={groupsQuery.data ?? []}
         instructors={instructorsQuery.data ?? []}
         learningResults={learningResultsQuery.data ?? []}

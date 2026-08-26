@@ -3,12 +3,24 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface CoordinationScopeItem {
+  id: number;
+  code: string;
+  name: string;
+}
+
+export interface AccessScope {
+  is_global: boolean;
+  coordinations: CoordinationScopeItem[];
+}
+
 export interface CurrentUser {
   id: number;
   email: string;
   full_name: string;
   roles: string[];
   is_active: boolean;
+  scope: AccessScope;
 }
 
 export type Role = {
@@ -23,6 +35,7 @@ export type User = {
   email: string;
   full_name: string;
   roles: string[];
+  coordination_ids: number[];
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -33,6 +46,7 @@ export type UserCreate = {
   full_name: string;
   password: string;
   roles: string[];
+  coordination_ids: number[];
 };
 
 export type UserUpdate = {
@@ -41,4 +55,5 @@ export type UserUpdate = {
   password?: string;
   is_active?: boolean;
   roles?: string[];
+  coordination_ids?: number[];
 };

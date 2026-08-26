@@ -16,6 +16,7 @@ from app.api.routes import (
     roles,
     imports,
     topics,
+    coordinations,
 )
 
 
@@ -25,6 +26,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(roles.router)
+api_router.include_router(coordinations.router)
 api_router.include_router(imports.router)
 api_router.include_router(topics.router)
 api_router.include_router(schedules.router)

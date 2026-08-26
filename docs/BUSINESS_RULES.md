@@ -294,3 +294,47 @@ La carga histórica selecciona un único año y trimestre antes de analizar el a
 ### RN-046. Alineación con la planeación académica
 
 Toda programación registrada en el sistema debe estar alineada con la planeación pedagógica, los resultados de aprendizaje, las competencias del programa de formación y los lineamientos institucionales definidos por el SENA.
+
+---
+
+## 16. Reglas de acceso por coordinación
+
+### RN-051. Rol ≠ Coordinación
+
+El rol determina qué puede hacer el usuario. La coordinación determina sobre qué información puede hacerlo. Estas son dimensiones independientes.
+
+### RN-052. Coordinaciones como ámbito de datos
+
+Cada coordinación (Logística, Mercadeo, Teleinformática e Industrias Creativas, Articulación con la Media, Transversales) define un ámbito de datos. Los usuarios no administrador sólo pueden consultar y operar sobre las coordinaciones que tengan asignadas.
+
+### RN-053. Administrador global
+
+El usuario con rol `admin` mantiene acceso global a todas las coordinaciones, fichas, instructores y horarios. No requiere asignaciones de coordinación para conservar el acceso.
+
+### RN-054. Fichas con coordinación obligatoria
+
+Toda ficha nueva debe tener una coordinación asignada. Las fichas existentes sin coordinación quedan como `NULL` temporalmente y son visibles únicamente para el administrador hasta ser clasificadas.
+
+### RN-055. Instructor transversal
+
+Un instructor puede estar disponible para una o varias coordinaciones. La coordinación principal es informativa. La disponibilidad M:N define qué usuarios pueden seleccionar al instructor.
+
+### RN-056. Ownership de horarios
+
+La coordinación de una programación académica normal se deriva de la ficha asociada, calculada en el servidor. Para horas adicionales sin ficha, se exige una coordinación explícita validada contra el scope del usuario.
+
+### RN-057. Validaciones globales
+
+Las validaciones de conflicto (instructor, ficha, ambiente) y el cálculo de carga horaria deben considerar todas las coordinaciones. La visibilidad filtrada por coordinación no puede afectar la detección de conflictos.
+
+### RN-058. Privacidad de horarios ajenos
+
+Cuando un instructor transversal tiene programación en otra coordinación, el sistema debe informar que está ocupado sin revelar datos académicos sensibles (ficha, RAP, ambiente, notas, IDs internos).
+
+### RN-059. Datos maestros globales
+
+Los ambientes, programas, competencias, RAP, bloques horarios y tipos de contrato continúan siendo globales. No se scopean por coordinación en esta fase.
+
+### RN-060. No inferencia de coordinación
+
+El sistema no debe inferir la coordinación de una ficha, instructor u horario a partir de textos libres, nombres, códigos o prefijos. La coordinación debe asignarse explícitamente o quedar como pendiente de clasificación.

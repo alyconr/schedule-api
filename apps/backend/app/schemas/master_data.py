@@ -5,6 +5,22 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+# --- Coordination ---
+class CoordinationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=500)
+
+
+class CoordinationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=500)
+    is_active: Optional[bool] = None
+
+
 # --- ContractType ---
 class ContractTypeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -41,6 +57,8 @@ class InstructorCreate(BaseModel):
     email: str = Field(max_length=200)
     phone: Optional[str] = Field(default=None, max_length=20)
     contract_type_id: Optional[int] = None
+    primary_coordination_id: Optional[int] = None
+    coordination_ids: list[int] = Field(default_factory=list)
     area: Optional[str] = Field(default=None, max_length=100)
     specialty: Optional[str] = Field(default=None, max_length=200)
     monthly_training_hours: Decimal = Field(default=Decimal("0"), max_digits=7, decimal_places=1)
@@ -59,6 +77,8 @@ class InstructorUpdate(BaseModel):
     email: Optional[str] = Field(default=None, max_length=200)
     phone: Optional[str] = Field(default=None, max_length=20)
     contract_type_id: Optional[int] = None
+    primary_coordination_id: Optional[int] = None
+    coordination_ids: Optional[list[int]] = None
     area: Optional[str] = Field(default=None, max_length=100)
     specialty: Optional[str] = Field(default=None, max_length=200)
     monthly_training_hours: Optional[Decimal] = Field(default=None, max_digits=7, decimal_places=1)
@@ -133,6 +153,7 @@ class GroupCreate(BaseModel):
     code: str = Field(min_length=1, max_length=50)
     name: Optional[str] = Field(default=None, max_length=300)
     training_program_id: Optional[int] = None
+    coordination_id: Optional[int] = None
     jornada: Optional[str] = Field(default=None, max_length=50)
     modality: Optional[str] = Field(default=None, max_length=50)
     trimester: str = Field(min_length=1, max_length=50)
@@ -159,6 +180,7 @@ class GroupUpdate(BaseModel):
     code: Optional[str] = Field(default=None, min_length=1, max_length=50)
     name: Optional[str] = Field(default=None, max_length=300)
     training_program_id: Optional[int] = None
+    coordination_id: Optional[int] = None
     jornada: Optional[str] = Field(default=None, max_length=50)
     modality: Optional[str] = Field(default=None, max_length=50)
     trimester: Optional[str] = None

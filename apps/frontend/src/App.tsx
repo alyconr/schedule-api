@@ -6,6 +6,7 @@ import { LoginForm } from "./components/LoginForm";
 import { LandingPage } from "./components/LandingPage";
 import { AppLayout } from "./components/AppLayout";
 import { ToastProvider } from "./components/ToastProvider";
+import { CoordinationScopeProvider, useCoordinationScope } from "./components/CoordinationScopeContext";
 import { ResourceCrud, ResourceConfig } from "./components/ResourceCrud";
 import { SchedulePlanner } from "./components/SchedulePlanner";
 import { ScheduleMatrixPage } from "./components/ScheduleMatrixPage";
@@ -85,6 +86,14 @@ const resourceConfigs: Record<string, ResourceConfig> = {
         relatedEndpoint: "contract-types",
         relatedDisplayField: "name",
       },
+      {
+        name: "primary_coordination_id",
+        label: "Coordinación",
+        type: "select",
+        relatedEndpoint: "coordinations",
+        relatedDisplayField: "name",
+        required: true,
+      },
       { name: "area", label: "Área", type: "text" },
       { name: "specialty", label: "Especialidad", type: "text" },
       { name: "monthly_training_hours", label: "Horas formación mes", type: "number" },
@@ -155,6 +164,14 @@ const resourceConfigs: Record<string, ResourceConfig> = {
         relatedEndpoint: "training-programs",
         relatedDisplayField: "name",
       },
+      {
+        name: "coordination_id",
+        label: "Coordinación",
+        type: "select",
+        relatedEndpoint: "coordinations",
+        relatedDisplayField: "name",
+        required: true,
+      },
       { name: "jornada", label: "Jornada", type: "text" },
       { name: "modality", label: "Modalidad", type: "text" },
       { name: "trimester", label: "Trimestre", type: "text", required: true },
@@ -217,11 +234,22 @@ const resourceConfigs: Record<string, ResourceConfig> = {
       { name: "jornada", label: "Jornada", type: "text" },
     ],
   },
+  coordinations: {
+    key: "coordinations",
+    label: "Coordinaciones",
+    endpoint: "coordinations",
+    fields: [
+      { name: "code", label: "Código", type: "text", required: true },
+      { name: "name", label: "Nombre", type: "text", required: true },
+      { name: "description", label: "Descripción", type: "textarea" },
+    ],
+  },
 };
 
 type PublicView = "landing" | "login";
 
 function AppContent() {
+  const { setScope, setActiveCoordinationId } = useCoordinationScope();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("schedules");
@@ -283,9 +311,19 @@ function AppContent() {
     try {
       const user = await getMe();
       setCurrentUser(user);
+      setScope(user.scope);
+      // Reset active coordination when scope changes
+      if (user.scope.is_global) {
+        setActiveCoordinationId(null);
+      } else if (user.scope.coordinations.length === 1) {
+        setActiveCoordinationId(user.scope.coordinations[0].id);
+      } else {
+        setActiveCoordinationId(null);
+      }
     } catch {
       localStorage.removeItem("schedule_api_token");
       setCurrentUser(null);
+      setScope(null);
     } finally {
       setLoadingUser(false);
     }
@@ -314,6 +352,8 @@ function AppContent() {
   const handleLogout = () => {
     localStorage.removeItem("schedule_api_token");
     setCurrentUser(null);
+    setScope(null);
+    setActiveCoordinationId(null);
     navigatePublicView("landing");
   };
 
@@ -550,7 +590,9 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <AppContent />
+        <CoordinationScopeProvider>
+          <AppContent />
+        </CoordinationScopeProvider>
       </ToastProvider>
     </QueryClientProvider>
   );

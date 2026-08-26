@@ -98,6 +98,7 @@ class ScheduleCreate(BaseModel):
     duration_hours: float = Field(gt=0)
     is_additional_hours: bool = False
     additional_hours_type: str | None = Field(default=None, max_length=500)
+    coordination_id: int | None = None
     notes: str | None = None
 
     @model_validator(mode="after")
@@ -145,6 +146,7 @@ class ScheduleUpdate(BaseModel):
     duration_hours: float | None = Field(default=None, gt=0)
     is_additional_hours: bool | None = None
     additional_hours_type: str | None = Field(default=None, max_length=500)
+    coordination_id: int | None = None
     notes: str | None = None
     status: str | None = None
 

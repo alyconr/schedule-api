@@ -47,6 +47,7 @@ class Schedule(SQLModel, table=True):
     duration_hours: Decimal = Field(default=Decimal("0"), max_digits=5, decimal_places=1)
     is_additional_hours: bool = Field(default=False)
     additional_hours_type: Optional[str] = Field(default=None, max_length=120)
+    coordination_id: Optional[int] = Field(default=None, foreign_key="coordinations.id")
     status: str = Field(default="draft", max_length=20)
     created_by: Optional[str] = Field(default=None, max_length=200)
     approved_by: Optional[str] = Field(default=None, max_length=200)

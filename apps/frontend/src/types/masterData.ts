@@ -1,3 +1,11 @@
+export interface Coordination {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  is_active?: boolean;
+}
+
 export interface ContractType {
   id: number;
   name: string;
@@ -20,6 +28,7 @@ export interface Instructor {
   email: string;
   phone?: string;
   contract_type_id?: number;
+  primary_coordination_id?: number;
   area?: string;
   specialty?: string;
   monthly_training_hours: number;
@@ -64,6 +73,7 @@ export interface Group {
   code: string;
   name?: string;
   training_program_id?: number;
+  coordination_id?: number;
   jornada?: string;
   modality?: string;
   trimester?: string | null;

@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { CurrentUser } from "../types/auth";
+import { useCoordinationScope } from "./CoordinationScopeContext";
 
 interface AppLayoutProps {
   currentUser: CurrentUser;
@@ -40,6 +41,7 @@ export function AppLayout({
   isNavigating = false,
   children,
 }: AppLayoutProps) {
+  const { activeCoordinationId, setActiveCoordinationId, scope, availableCoordinations, isGlobal } = useCoordinationScope();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => {
       const storedPreference = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -51,6 +53,15 @@ export function AppLayout({
   const roles = currentUser.roles || [];
   const canWrite = roles.includes("admin") || roles.includes("coordinador") || roles.includes("programador");
   const isAdmin = roles.includes("admin");
+
+  // Coordination selector options
+  const showCoordSelector = isGlobal || availableCoordinations.length > 1;
+  const selectorOptions = isGlobal
+    ? availableCoordinations
+    : availableCoordinations;
+  const activeCoordName = activeCoordinationId
+    ? availableCoordinations.find((c) => c.id === activeCoordinationId)?.name
+    : isGlobal ? "Todas las coordinaciones" : "Todas mis coordinaciones";
 
   const menuSections = [
     {
@@ -78,7 +89,10 @@ export function AppLayout({
     },
     {
       title: "Administración",
-      items: isAdmin ? [{ id: "users", label: "Usuarios", icon: ShieldCheck }] : [],
+      items: isAdmin ? [
+        { id: "users", label: "Usuarios", icon: ShieldCheck },
+        { id: "coordinations", label: "Coordinaciones", icon: Network },
+      ] : [],
     },
   ].filter((section) => section.items.length > 0);
   const activeLabel =
@@ -162,6 +176,25 @@ export function AppLayout({
           </div>
 
           <div className="main-header-right">
+            {showCoordSelector && (
+              <div className="coord-scope-selector">
+                <label className="coord-scope-label">Ámbito</label>
+                <select
+                  className="coord-scope-select"
+                  value={activeCoordinationId ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setActiveCoordinationId(val === "" ? null : Number(val));
+                  }}
+                  title="Seleccionar coordinación"
+                >
+                  <option value="">{isGlobal ? "Todas las coordinaciones" : "Todas mis coordinaciones"}</option>
+                  {selectorOptions.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="user-profile">
               <span className="user-avatar">{userInitial}</span>
               <div className="user-details">

@@ -13,6 +13,7 @@ from app.models.academic import (
 from app.models.schedules import Schedule, ScheduleValidation, ExceptionRequest
 from app.models.audit import AuditLog
 from app.models.auth import User, Role, UserRole
+from app.models.coordination import Coordination, UserCoordination, InstructorCoordination
 
 __all__ = [
     "ContractType",
@@ -32,4 +33,7 @@ __all__ = [
     "User",
     "Role",
     "UserRole",
+    "Coordination",
+    "UserCoordination",
+    "InstructorCoordination",
 ]

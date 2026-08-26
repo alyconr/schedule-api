@@ -2,6 +2,61 @@ SPECS.md
 
 ## Importacion relacional de semaforos
 
+## Acceso por coordinaciones
+
+### Principio
+
+Rol = qué puede hacer el usuario. Coordinación = sobre qué información puede hacerlo. Son dimensiones independientes.
+
+### Entidades
+
+- `Coordination`: id, code (unique), name, description, is_active, timestamps.
+- `UserCoordination`: M:N user ↔ coordination con UNIQUE(user_id, coordination_id).
+- `InstructorCoordination`: M:N instructor ↔ coordination con UNIQUE(instructor_id, coordination_id).
+- `Group.coordination_id`: FK nullable (legacy). Nuevas fichas deben tener coordinación.
+- `Instructor.primary_coordination_id`: FK nullable. Debe pertenecer a las coordinaciones disponibles.
+- `Schedule.coordination_id`: FK nullable (legacy). Para horarios académicos se deriva de Group. Para horas adicionales se exige explícita.
+
+### AccessScope
+
+```python
+@dataclass(frozen=True)
+class AccessScope:
+    user_id: int
+    roles: frozenset[str]
+    coordination_ids: frozenset[int]
+    is_global: bool  # True si el usuario es admin
+```
+
+Resuelto desde PostgreSQL en cada request, no desde el JWT.
+
+### Endpoints
+
+```
+GET    /api/v1/coordinations          # lista scope-visible
+GET    /api/v1/coordinations/{id}     # 404 si fuera de scope
+POST   /api/v1/coordinations          # admin
+PUT    /api/v1/coordinations/{id}     # admin
+DELETE /api/v1/coordinations/{id}    # admin (soft delete si hay refs)
+
+GET    /api/v1/instructors/{id}/busy-slots  # slots ajenos enmascarados
+```
+
+### Reglas de seguridad
+
+- Recursos individuales fuera de scope → 404 (no 403).
+- Query params `coordination_id` siempre se intersectan con el scope autorizado.
+- `_existing_for_date` y `validate_schedule` NO se filtran por coordinación (conflictos globales).
+- Carga horaria del instructor calculada globalmente.
+- Busy-slots no retornan IDs internos ni detalles académicos.
+
+### Coordinaciones iniciales
+
+```
+LOGISTICA, MERCADEO, TELEINFORMATICA_INDUSTRIAS_CREATIVAS,
+ARTICULACION_MEDIA, TRANSVERSALES
+```
+
 ## Periodo obligatorio de horarios
 
 - `schedules.schedule_year`: `SMALLINT NOT NULL`, rango 2000-2100.

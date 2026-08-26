@@ -776,3 +776,34 @@ La primera versión debe incluir:
 ## 23. Conclusión
 
 La aplicación debe funcionar como una herramienta centralizada para planear, validar y consultar horarios de instructores del CGMLTI SENA Bogotá. Su valor principal está en aplicar reglas de negocio de manera automática, evitar cruces, controlar cargas horarias y entregar información confiable para instructores, programadores y coordinación académica.
+
+---
+
+## 24. Acceso y aislamiento por coordinaciones
+
+### Principio
+
+> Rol = qué puede hacer el usuario. Coordinación = sobre qué información puede hacerlo.
+
+### Usuarios y coordinaciones
+
+- Un usuario puede pertenecer a una o varias coordinaciones.
+- El administrador mantiene acceso global.
+- Los roles (`admin`, `coordinador`, `programador`, `consulta`) determinan operaciones.
+- Las coordinaciones determinan el ámbito de datos.
+
+### Coordinaciones iniciales
+
+- Logística
+- Mercadeo
+- Teleinformática e Industrias Creativas
+- Articulación con la Media
+- Transversales
+
+### Instructores transversales
+
+Un instructor puede estar disponible para varias coordinaciones. Cuando tiene programación en otra coordinación, el sistema informa que está ocupado sin revelar datos académicos sensibles.
+
+### Validaciones globales
+
+Las validaciones de conflicto (instructor, ficha, ambiente) y el cálculo de carga horaria consideran todas las coordinaciones, sin importar el scope del usuario que consulta.

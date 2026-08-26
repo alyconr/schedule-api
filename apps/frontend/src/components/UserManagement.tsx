@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchUsers, createUser, updateUser, deactivateUser, fetchRoles } from "../api/users";
+import { fetchCoordinations } from "../api/coordinations";
 import { User, UserCreate, UserUpdate, Role, CurrentUser } from "../types/auth";
+import { Coordination } from "../types/masterData";
 import { useToast } from "./ToastProvider";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DetailDialog } from "./DetailDialog";
@@ -24,6 +26,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   const [password, setPassword] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedCoordinationIds, setSelectedCoordinationIds] = useState<number[]>([]);
 
   const isAdmin = currentUser.roles.includes("admin");
 
@@ -36,6 +39,12 @@ export function UserManagement({ currentUser }: UserManagementProps) {
   const { data: roles = [], isLoading: isLoadingRoles } = useQuery<Role[]>({
     queryKey: ["roles"],
     queryFn: fetchRoles,
+    enabled: isAdmin,
+  });
+
+  const { data: coordinations = [] } = useQuery<Coordination[]>({
+    queryKey: ["coordinations"],
+    queryFn: fetchCoordinations,
     enabled: isAdmin,
   });
 
@@ -81,6 +90,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     setPassword("");
     setIsActive(true);
     setSelectedRoles(["consulta"]);
+    setSelectedCoordinationIds([]);
     setErrorMsg(null);
     setIsFormOpen(true);
   };
@@ -92,6 +102,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     setPassword("");
     setIsActive(user.is_active);
     setSelectedRoles(user.roles || []);
+    setSelectedCoordinationIds(user.coordination_ids || []);
     setErrorMsg(null);
     setIsFormOpen(true);
   };
@@ -142,11 +153,11 @@ export function UserManagement({ currentUser }: UserManagementProps) {
     }
 
     if (editingUser) {
-      const payload: UserUpdate = { full_name: fullName, email: email, is_active: isActive, roles: selectedRoles };
+      const payload: UserUpdate = { full_name: fullName, email: email, is_active: isActive, roles: selectedRoles, coordination_ids: selectedCoordinationIds };
       if (password) payload.password = password;
       updateMutation.mutate({ id: editingUser.id, data: payload });
     } else {
-      createMutation.mutate({ full_name: fullName, email: email, password: password, roles: selectedRoles });
+      createMutation.mutate({ full_name: fullName, email: email, password: password, roles: selectedRoles, coordination_ids: selectedCoordinationIds });
     }
   };
 
@@ -190,6 +201,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                 <th>Nombre</th>
                 <th>Email</th>
                 <th>Roles</th>
+                <th>Coordinaciones</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -197,13 +209,15 @@ export function UserManagement({ currentUser }: UserManagementProps) {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center empty-cell">
+                  <td colSpan={6} className="text-center empty-cell">
                     <strong>Aún no hay usuarios registrados.</strong>
                     <span>Utilice el botón "Nuevo Usuario" para agregar el primero.</span>
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
+                users.map((user) => {
+                  const userCoordNames = (user.coordination_ids || []).map((cid) => coordinations.find((c) => c.id === cid)?.name).filter(Boolean);
+                  return (
                   <tr
                     key={user.id}
                     className="clickable-row"
@@ -228,6 +242,9 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                         ))}
                       </div>
                     </td>
+                    <td className="cell-default">
+                      <span className="cell-text">{userCoordNames.length > 0 ? userCoordNames.join(", ") : "—"}</span>
+                    </td>
                     <td>
                       <span className={`user-status ${user.is_active ? "user-status-active" : "user-status-inactive"}`}>
                         {user.is_active ? "Activo" : "Inactivo"}
@@ -240,7 +257,8 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -306,6 +324,28 @@ export function UserManagement({ currentUser }: UserManagementProps) {
                 )}
               </div>
 
+              <div className="roles-section">
+                <span className="section-label">Coordinaciones</span>
+                <div className="role-checkbox-grid">
+                  {coordinations.map((coord) => (
+                    <label key={coord.id} className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={selectedCoordinationIds.includes(coord.id)}
+                        onChange={() => {
+                          setSelectedCoordinationIds((prev) =>
+                            prev.includes(coord.id) ? prev.filter((c) => c !== coord.id) : [...prev, coord.id]
+                          );
+                        }}
+                      />
+                      <div className="role-details">
+                        <strong>{coord.name}</strong>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <div className="form-actions">
                 <button type="button" className="btn-secondary" onClick={closeForm} disabled={createMutation.isPending || updateMutation.isPending}>Cancelar</button>
                 <button type="submit" className="btn-primary" disabled={createMutation.isPending || updateMutation.isPending}>
@@ -324,6 +364,7 @@ export function UserManagement({ currentUser }: UserManagementProps) {
           { label: "Nombre", value: detailUser.full_name },
           { label: "Correo electrónico", value: detailUser.email },
           { label: "Roles", value: detailUser.roles?.join(", ") },
+          { label: "Coordinaciones", value: (detailUser.coordination_ids || []).map((cid) => coordinations.find((c) => c.id === cid)?.name).filter(Boolean).join(", ") || "—" },
           { label: "Estado", value: detailUser.is_active ? "Activo" : "Inactivo" },
         ] : []}
         onClose={() => setDetailUser(null)}

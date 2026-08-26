@@ -3,10 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
-from app.api.deps import get_current_user, get_current_user_roles
+from app.api.deps import get_current_access_scope, get_current_user
 from app.db import get_session
-from app.models import Role, User, UserRole
+from app.models import Coordination, Role, User, UserCoordination, UserRole
 from app.schemas.auth import (
+    AccessScopeResponse,
+    CoordinationScopeItem,
     CurrentUserResponse,
     LoginRequest,
     TokenResponse,
@@ -39,11 +41,22 @@ def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
     session: SessionDep,
 ) -> CurrentUserResponse:
-    roles = get_current_user_roles(current_user, session)
+    scope = get_current_access_scope(current_user, session)
+    coordination_ids = list(scope.coordination_ids)
+    coordinations: list[CoordinationScopeItem] = []
+    if coordination_ids:
+        rows = session.exec(select(Coordination).where(Coordination.id.in_(coordination_ids))).all()
+        coordinations = [
+            CoordinationScopeItem(id=c.id, code=c.code, name=c.name) for c in rows
+        ]
     return CurrentUserResponse(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
-        roles=roles,
+        roles=list(scope.roles),
         is_active=current_user.is_active,
+        scope=AccessScopeResponse(
+            is_global=scope.is_global,
+            coordinations=coordinations,
+        ),
     )

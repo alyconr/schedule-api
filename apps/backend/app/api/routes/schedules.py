@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
+from app.api.deps import AccessScopeDep, require_roles, ROLE_READ, ROLE_WRITE, ROLE_DELETE
 from app.db import get_session
 from app.models import (
     Competency,
@@ -15,6 +15,7 @@ from app.models import (
     ExceptionRequest,
     Group,
     Instructor,
+    InstructorCoordination,
     LearningResult,
     LearningResultTopic,
     Schedule,
@@ -40,6 +41,14 @@ from app.services.schedule_validation import validate_schedule
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 SessionDep = Annotated[Session, Depends(get_session)]
 INACTIVE_SCHEDULE_STATUSES = ["cancelled", "deleted"]
+
+
+def _scope_schedule_filter(stmt, scope: AccessScopeDep):
+    if scope.is_global:
+        return stmt
+    if not scope.coordination_ids:
+        return stmt.where(False)
+    return stmt.where(Schedule.coordination_id.in_(scope.coordination_ids))
 
 
 def _build_validation_payload(
@@ -240,6 +249,7 @@ def _validate_topic_assignment(
 @router.get("", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_schedules(
     session: SessionDep,
+    scope: AccessScopeDep,
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
     environment_id: int | None = Query(default=None),
@@ -249,6 +259,7 @@ def list_schedules(
     date: date_type | None = Query(default=None),
     date_from: date_type | None = Query(default=None),
     date_to: date_type | None = Query(default=None),
+    coordination_id: int | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     include_cancelled: bool = Query(default=False),
     limit: int = Query(default=500, ge=1, le=2000),
@@ -258,6 +269,12 @@ def list_schedules(
     stmt = select(Schedule).where(Schedule.status != "deleted")
     if not (include_inactive or include_cancelled):
         stmt = stmt.where(Schedule.status != "cancelled")
+    if coordination_id is not None:
+        if not scope.can_access(coordination_id):
+            return []
+        stmt = stmt.where(Schedule.coordination_id == coordination_id)
+    else:
+        stmt = _scope_schedule_filter(stmt, scope)
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -289,6 +306,7 @@ def list_schedules(
 )
 def list_schedules_detailed(
     session: SessionDep,
+    scope: AccessScopeDep,
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
     learning_result_id: int | None = Query(default=None),
@@ -322,6 +340,7 @@ def list_schedules_detailed(
     )
     if not (include_inactive or include_cancelled):
         stmt = stmt.where(Schedule.status != "cancelled")
+    stmt = _scope_schedule_filter(stmt, scope)
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -398,6 +417,7 @@ def list_schedules_detailed(
 @router.get("/periods", dependencies=[Depends(require_roles(*ROLE_READ))])
 def list_schedule_periods(
     session: SessionDep,
+    scope: AccessScopeDep,
     instructor_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
 ) -> list[dict[str, object]]:
@@ -416,6 +436,7 @@ def list_schedule_periods(
         .group_by(Schedule.schedule_year, Schedule.schedule_quarter)
         .order_by(Schedule.schedule_year.desc(), Schedule.schedule_quarter.desc())
     )
+    stmt = _scope_schedule_filter(stmt, scope)
     if instructor_id is not None:
         stmt = stmt.where(Schedule.instructor_id == instructor_id)
     if group_id is not None:
@@ -434,9 +455,11 @@ def list_schedule_periods(
 
 
 @router.get("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_READ))])
-def get_schedule(schedule_id: int, session: SessionDep) -> Schedule:
+def get_schedule(schedule_id: int, session: SessionDep, scope: AccessScopeDep) -> Schedule:
     obj = session.get(Schedule, schedule_id)
     if not obj:
+        raise HTTPException(404, detail="Schedule not found")
+    if not scope.can_access(obj.coordination_id):
         raise HTTPException(404, detail="Schedule not found")
     return obj
 
@@ -446,9 +469,12 @@ def get_schedule(schedule_id: int, session: SessionDep) -> Schedule:
     response_model=list[ScheduleValidationRead],
     dependencies=[Depends(require_roles(*ROLE_READ))],
 )
-def list_schedule_validations(schedule_id: int, session: SessionDep) -> list[ScheduleValidation]:
-    if session.get(Schedule, schedule_id) is None:
-        raise HTTPException(404, detail="Horario no encontrado")
+def list_schedule_validations(schedule_id: int, session: SessionDep, scope: AccessScopeDep) -> list[ScheduleValidation]:
+    obj = session.get(Schedule, schedule_id)
+    if not obj:
+        raise HTTPException(404, detail="Schedule not found")
+    if not scope.can_access(obj.coordination_id):
+        raise HTTPException(404, detail="Schedule not found")
     return list(
         session.exec(
             select(ScheduleValidation).where(ScheduleValidation.schedule_id == schedule_id)
@@ -457,10 +483,41 @@ def list_schedule_validations(schedule_id: int, session: SessionDep) -> list[Sch
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
-def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePersistResponse:
+def create_schedule(payload: ScheduleCreate, session: SessionDep, scope: AccessScopeDep) -> SchedulePersistResponse:
     validate_schedule_period(payload.date, payload.schedule_year, payload.schedule_quarter)
     instructor, group, environment, learning_result, competency, program = _check_entities(session, payload)
 
+    # Derive coordination_id server-side
+    is_additional_hours = payload.is_additional_hours
+    if is_additional_hours:
+        resolved_coordination_id = getattr(payload, "coordination_id", None)
+        if resolved_coordination_id is None:
+            raise HTTPException(422, detail="coordination_id is required for additional hours")
+        if not scope.can_access(resolved_coordination_id):
+            raise HTTPException(403, detail="Not authorized for this coordination")
+    else:
+        if group is None:
+            raise HTTPException(404, detail="Group not found")
+        if group.coordination_id is None:
+            raise HTTPException(422, detail="Group has no coordination assigned")
+        resolved_coordination_id = group.coordination_id
+        if not scope.can_access(resolved_coordination_id):
+            raise HTTPException(403, detail="Not authorized for this group's coordination")
+
+    # Validate instructor is available for this coordination
+    if resolved_coordination_id is not None:
+        avail = session.exec(
+            select(InstructorCoordination).where(
+                InstructorCoordination.instructor_id == instructor.id,
+                InstructorCoordination.coordination_id == resolved_coordination_id,
+            )
+        ).first()
+        if not avail and not scope.is_global:
+            raise HTTPException(422, detail="Instructor is not available for this coordination")
+        if not avail and scope.is_global:
+            raise HTTPException(422, detail="Instructor is not available for this coordination")
+
+    # Global conflict detection — NO scope filter
     existing = _existing_for_date(session, payload)
     vpayload = _build_validation_payload(
         payload, instructor, group, environment, learning_result, competency, program, existing, session
@@ -509,6 +566,7 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
         learning_result_topic_id=None if is_additional_hours else payload.learning_result_topic_id,
         manual_topic_name=None if is_additional_hours else manual_topic_name,
         environment_id=None if is_additional_hours else payload.environment_id,
+        coordination_id=resolved_coordination_id,
         date=schedule_date,
         schedule_year=payload.schedule_year,
         schedule_quarter=payload.schedule_quarter,
@@ -544,10 +602,12 @@ def create_schedule(payload: ScheduleCreate, session: SessionDep) -> SchedulePer
 
 @router.put("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def update_schedule(
-    schedule_id: int, payload: ScheduleUpdate, session: SessionDep
+    schedule_id: int, payload: ScheduleUpdate, session: SessionDep, scope: AccessScopeDep
 ) -> SchedulePersistResponse:
     sch = session.get(Schedule, schedule_id)
     if not sch:
+        raise HTTPException(404, detail="Schedule not found")
+    if not scope.can_access(sch.coordination_id):
         raise HTTPException(404, detail="Schedule not found")
     previous_instructor_id = sch.instructor_id
 
@@ -619,6 +679,19 @@ def update_schedule(
     instructor, group, environment, learning_result, competency, program = _check_entities(session, MergedPayload())
     if MergedPayload().is_additional_hours and not _clean_manual_topic(MergedPayload().additional_hours_type):
         raise HTTPException(422, detail="additional_hours_type is required as justification for additional hours")
+
+    # Derive coordination_id server-side
+    if MergedPayload().is_additional_hours:
+        resolved_coordination_id = payload.coordination_id if payload.coordination_id is not None else sch.coordination_id
+        if resolved_coordination_id is None:
+            raise HTTPException(422, detail="coordination_id is required for additional hours")
+    else:
+        if group is None or group.coordination_id is None:
+            raise HTTPException(422, detail="Group has no coordination assigned")
+        resolved_coordination_id = group.coordination_id
+    if not scope.can_access(resolved_coordination_id):
+        raise HTTPException(403, detail="Not authorized for this coordination")
+    sch.coordination_id = resolved_coordination_id
 
     existing = _existing_for_date(session, MergedPayload(), exclude_id=schedule_id)
     vpayload = _build_validation_payload(
@@ -731,9 +804,11 @@ def update_schedule(
     )
 
 
-def _mark_schedule_status(schedule_id: int, status: str, session: SessionDep) -> dict:
+def _mark_schedule_status(schedule_id: int, status: str, session: SessionDep, scope: AccessScopeDep) -> dict:
     obj = session.get(Schedule, schedule_id)
     if not obj:
+        raise HTTPException(404, detail="Schedule not found")
+    if not scope.can_access(obj.coordination_id):
         raise HTTPException(404, detail="Schedule not found")
     obj.status = status
     session.add(obj)
@@ -743,14 +818,16 @@ def _mark_schedule_status(schedule_id: int, status: str, session: SessionDep) ->
 
 
 @router.post("/{schedule_id}/cancel", dependencies=[Depends(require_roles(*ROLE_WRITE))])
-def cancel_schedule(schedule_id: int, session: SessionDep) -> dict:
-    return _mark_schedule_status(schedule_id, "cancelled", session)
+def cancel_schedule(schedule_id: int, session: SessionDep, scope: AccessScopeDep) -> dict:
+    return _mark_schedule_status(schedule_id, "cancelled", session, scope)
 
 
 @router.delete("/{schedule_id}", dependencies=[Depends(require_roles(*ROLE_DELETE))])
-def delete_schedule(schedule_id: int, session: SessionDep) -> dict:
+def delete_schedule(schedule_id: int, session: SessionDep, scope: AccessScopeDep) -> dict:
     obj = session.get(Schedule, schedule_id)
     if not obj:
+        raise HTTPException(404, detail="Schedule not found")
+    if not scope.can_access(obj.coordination_id):
         raise HTTPException(404, detail="Schedule not found")
 
     # Cascade delete validation records

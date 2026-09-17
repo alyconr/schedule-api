@@ -262,6 +262,44 @@ class MasterDataRoutesTest(unittest.TestCase):
             updated2 = update_group(created.id, GroupUpdate(trimester="TRIMESTRE II"), session, scope)
             self.assertEqual(updated2.trimester, "TRIMESTRE II")
 
+    def test_instructor_read_with_model_dump_handles_datetime_and_coordinations(self) -> None:
+        from app.api.routes.instructors import _instructor_read, list_instructors
+        from app.models import Instructor, InstructorCoordination, Coordination
+        from app.api.deps import AccessScope
+
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+        scope = AccessScope(user_id=1, roles=frozenset({"admin"}), coordination_ids=frozenset(), is_global=True)
+        with Session(engine) as session:
+            coord = Coordination(code="TEST-C", name="Coordinacion Test")
+            session.add(coord)
+            session.commit()
+            session.refresh(coord)
+
+            instructor = Instructor(
+                document_type="CC",
+                document_number="987654321",
+                first_name="Carlos",
+                last_name="Perez",
+                email="carlos.perez@sena.edu.co",
+                primary_coordination_id=coord.id,
+            )
+            session.add(instructor)
+            session.commit()
+            session.refresh(instructor)
+
+            session.add(InstructorCoordination(instructor_id=instructor.id, coordination_id=coord.id))
+            session.commit()
+
+            read_dto = _instructor_read(session, instructor)
+            self.assertEqual(read_dto.id, instructor.id)
+            self.assertEqual(read_dto.document_number, "987654321")
+            self.assertEqual(read_dto.coordination_ids, [coord.id])
+
+            listed = list_instructors(session, scope)
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0].document_number, "987654321")
+
 
 if __name__ == "__main__":
     unittest.main()

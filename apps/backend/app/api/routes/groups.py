@@ -40,7 +40,7 @@ def _scope_group_filter(stmt, scope: AccessScopeDep):
 def list_groups(
     session: SessionDep,
     scope: AccessScopeDep,
-    coordination_id: Optional[int] = Query(default=None),
+    coordination_id: Annotated[Optional[int], Query()] = None,
 ) -> list[Group]:
     stmt = select(Group).where(Group.is_active == True)  # noqa: E712
     if coordination_id is not None:

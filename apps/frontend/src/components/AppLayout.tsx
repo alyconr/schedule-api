@@ -142,7 +142,6 @@ export function AppLayout({
                     key={item.id}
                     onClick={() => navigateFromSidebar(item.id)}
                     className={`nav-btn ${activeTab === item.id ? "active" : ""}`}
-                    disabled={isNavigating}
                     aria-current={activeTab === item.id ? "page" : undefined}
                     title={isSidebarCollapsed ? item.label : undefined}
                   >

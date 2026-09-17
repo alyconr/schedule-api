@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -90,10 +90,12 @@ class InstructorUpdate(BaseModel):
 
 
 class InstructorRead(InstructorCreate):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: int
     is_active: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # --- TrainingProgram ---

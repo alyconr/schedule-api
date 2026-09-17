@@ -90,7 +90,7 @@ def _instructor_read(session: Session, instructor: Instructor) -> InstructorRead
 def list_instructors(
     session: SessionDep,
     scope: AccessScopeDep,
-    coordination_id: Optional[int] = Query(default=None),
+    coordination_id: Annotated[Optional[int], Query()] = None,
 ) -> list[InstructorRead]:
     if coordination_id is not None:
         if not scope.can_access(coordination_id):

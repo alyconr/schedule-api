@@ -106,9 +106,10 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
     queryFn: () => fetchList<any>(config.endpoint, activeCoordinationId && scopeAware ? { coordination_id: activeCoordinationId } : undefined),
   });
 
-  const relatedEndpoints = Array.from(
-    new Set(config.fields.map((f) => f.relatedEndpoint).filter(Boolean))
-  ) as string[];
+  const relatedEndpoints = useMemo(
+    () => Array.from(new Set(config.fields.map((f) => f.relatedEndpoint).filter(Boolean))) as string[],
+    [config.fields]
+  );
 
   const relatedQueries = useQueries({
     queries: relatedEndpoints.map((endpoint) => ({
@@ -123,8 +124,7 @@ export function ResourceCrud({ config, currentUser }: ResourceCrudProps) {
       map[endpoint] = relatedQueries[index]?.data || [];
     });
     return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [relatedEndpoints, ...relatedQueries.map((q) => q.data)]);
+  }, [relatedEndpoints, relatedQueries]);
 
   const filteredItems = useMemo(() => {
     if (!debouncedSearchTerm.trim()) return items;

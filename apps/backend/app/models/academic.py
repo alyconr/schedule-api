@@ -193,3 +193,19 @@ class TimeBlock(SQLModel, table=True):
     duration_minutes: int = Field(default=0)
     jornada: Optional[str] = Field(default=None, max_length=50)
     is_active: bool = Field(default=True)
+
+
+class AcademicPeriod(SQLModel, table=True):
+    __tablename__ = "academic_periods"
+    __table_args__ = (UniqueConstraint("year", "quarter_number", name="uq_academic_periods_year_quarter"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    year: int = Field(index=True)
+    quarter_number: int = Field(index=True)
+    name: str = Field(max_length=100)
+    start_date: date
+    end_date: date
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+

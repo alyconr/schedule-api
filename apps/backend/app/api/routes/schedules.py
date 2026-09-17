@@ -496,7 +496,7 @@ def list_schedule_validations(schedule_id: int, session: SessionDep, scope: Acce
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles(*ROLE_WRITE))])
 def create_schedule(payload: ScheduleCreate, session: SessionDep, scope: AccessScopeDep) -> SchedulePersistResponse:
-    validate_schedule_period(payload.date, payload.schedule_year, payload.schedule_quarter)
+    validate_schedule_period(payload.date, payload.schedule_year, payload.schedule_quarter, session=session)
     instructor, group, environment, learning_result, competency, program = _check_entities(session, payload)
 
     # Derive coordination_id server-side
@@ -687,6 +687,7 @@ def update_schedule(
         MergedPayload().date,
         MergedPayload().schedule_year,
         MergedPayload().schedule_quarter,
+        session=session,
     )
     instructor, group, environment, learning_result, competency, program = _check_entities(session, MergedPayload())
     if MergedPayload().is_additional_hours and not _clean_manual_topic(MergedPayload().additional_hours_type):

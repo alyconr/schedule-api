@@ -130,6 +130,8 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
         return "Programas de Formación";
       case "competencies":
         return "Competencias";
+      case "academic_periods":
+        return "Periodos Académicos";
       case "schedules":
         return "Horarios históricos";
       default:
@@ -203,7 +205,7 @@ export function ImportWizard({ currentUser }: ImportWizardProps) {
               <small className="field-help">
                 {importType === "schedule_history"
                   ? "Use una hoja con: fecha, documento_instructor, ficha, ambiente, codigo_rap, hora_inicio, hora_fin y duracion_horas. Todas las fechas deben pertenecer al periodo seleccionado."
-                  : "Cargue únicamente el archivo normalizado SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx con las hojas institucionales requeridas."}
+                  : "Cargue la matriz institucional normalizada .xlsx. El sistema admite la versión actual con FICHAS, LISTA INSTRUCTORES, AMBIENTES, TRIMESTRE y matrices de semáforo por nivel."}
               </small>
             </label>
           </div>

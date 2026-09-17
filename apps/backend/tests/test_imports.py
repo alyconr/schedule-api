@@ -5,8 +5,19 @@ from unittest.mock import MagicMock
 
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from fastapi import HTTPException
 from app.main import app
-from app.models import ContractType, Environment, Group, Instructor, LearningResult, LearningResultTopic, Topic, TrainingProgram
+from app.models import (
+    AcademicPeriod,
+    ContractType,
+    Environment,
+    Group,
+    Instructor,
+    LearningResult,
+    LearningResultTopic,
+    Topic,
+    TrainingProgram,
+)
 from app.services.import_service import (
     normalize_header,
     normalize_contract_type,
@@ -20,6 +31,11 @@ from app.services.import_service import (
     preview_workbook,
     commit_workbook
 )
+from app.services.imports import (
+    canonical_program_key,
+    parse_trimester_label,
+)
+from app.services.schedule_period import validate_schedule_period
 from app.api.routes.imports import get_template_info
 from app.api.routes.topics import _selection_statement, _to_selection_item
 
@@ -316,7 +332,13 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertEqual(info.supported_import_types, ["schedule_normalized", "schedule_history"])
         self.assertEqual(info.supported_formats, [".xlsx"])
         self.assertNotIn("semaforos_relacional", info.supported_import_types)
-        self.assertNotIn("Semaforo con RA", info.required_sheets)
+        self.assertEqual(info.required_sheets, ["LISTA INSTRUCTORES", "AMBIENTES", "FICHAS"])
+        self.assertFalse(any(name.startswith("Semaforo con RA") for name in info.required_sheets))
+        self.assertIn("TRIMESTRE", info.optional_sheets)
+        self.assertIn("TEC CADENA", info.optional_sheets)
+        self.assertIn("TEC REGULAR", info.optional_sheets)
+        self.assertIn("TECNICO", info.optional_sheets)
+        self.assertIn("AUXILIAR", info.optional_sheets)
         self.assertNotIn("LISTA_INSTRUCTORES_AMBIENTES", info.required_sheets)
 
     def test_parser_fails_when_mandatory_sheets_missing(self) -> None:
@@ -347,6 +369,436 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
         self.assertTrue(any(err.entity == "group" and "TRIMESTRE" in err.message for err in res.errors))
         self.assertNotIn("3068352", [g["code"] for g in res.items["groups"]])
 
+    def test_canonical_program_key_and_prefix_stripping(self) -> None:
+        self.assertEqual(
+            canonical_program_key("TÉCNICO EN ASESORÍA COMERCIAL"),
+            canonical_program_key("ASESORIA COMERCIAL"),
+        )
+        self.assertEqual(
+            build_program_code("TÉCNICO EN ASESORÍA COMERCIAL"),
+            build_program_code("ASESORIA COMERCIAL"),
+        )
+        self.assertEqual(
+            build_program_code("TECNÓLOGO EN DESARROLLO DE SOFTWARE"),
+            build_program_code("DESARROLLO DE SOFTWARE"),
+        )
+        self.assertEqual(
+            build_program_code("AUXILIAR EN PROMOCION DE PRODUCTOS"),
+            build_program_code("PROMOCION DE PRODUCTOS"),
+        )
+
+    def test_roman_trimesters_extended(self) -> None:
+        self.assertEqual(parse_trimester_label("TRIMESTRE I")[1], 1)
+        self.assertEqual(parse_trimester_label("TRIMESTRE VII")[1], 7)
+        self.assertEqual(parse_trimester_label("VII TRIMESTRE")[1], 7)
+        self.assertEqual(parse_trimester_label("TRIMESTRE XII")[1], 12)
+        self.assertEqual(parse_trimester_label("7")[1], 7)
+        self.assertEqual(parse_trimester_label("TRIMESTRE 7")[1], 7)
+        self.assertEqual(parse_trimester_label("TRIMESTRE I - II")[1], 1)
+
+    def test_preview_schedule_normalized_v2(self) -> None:
+        content = build_schedule_normalized_v2_workbook_bytes()
+        result = preview_workbook(
+            content,
+            "SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx",
+            "schedule_normalized",
+        )
+
+        self.assertEqual(result.errors, [])
+        self.assertIn("FICHAS", result.sheets_detected)
+        self.assertIn("LISTA INSTRUCTORES", result.sheets_detected)
+        self.assertIn("AMBIENTES", result.sheets_detected)
+        self.assertIn("TRIMESTRE", result.sheets_detected)
+        self.assertIn("TEC CADENA", result.sheets_detected)
+        self.assertIn("TEC REGULAR", result.sheets_detected)
+        self.assertIn("TECNICO", result.sheets_detected)
+        self.assertIn("AUXILIAR", result.sheets_detected)
+
+        self.assertGreater(result.summary["instructors"].valid, 0)
+        self.assertGreater(result.summary["environments"].valid, 0)
+        self.assertGreater(result.summary["groups"].valid, 0)
+        self.assertGreater(result.summary["programs"].valid, 0)
+        self.assertGreater(result.summary["learning_results"].valid, 0)
+        self.assertGreater(result.summary["topics"].valid, 0)
+        self.assertGreater(result.summary["ra_topic_relations"].valid, 0)
+        self.assertGreater(result.summary["academic_periods"].valid, 0)
+
+        # Trimester VII resolution
+        tri_vii_groups = [g for g in result.items["groups"] if g["code"] == "3068002"]
+        self.assertEqual(len(tri_vii_groups), 1)
+        self.assertEqual(tri_vii_groups[0]["trimester"], "TRIMESTRE VII")
+
+        # Instructor with real document
+        inst_real = next(i for i in result.items["instructors"] if i["document_number"] == "1017123456")
+        self.assertEqual(inst_real["email"], "carlos.ramirez@sena.edu.co")
+        self.assertEqual(inst_real["phone"], "3101234567")
+        self.assertEqual(inst_real["specialty"], "Sistemas e Informatica")
+
+        # Instructor without document gets TEMP-* and warning
+        inst_temp = next(i for i in result.items["instructors"] if i["document_number"].startswith("TEMP-"))
+        self.assertIsNotNone(inst_temp)
+        self.assertTrue(any(w.entity == "instructor" and "documento temporal" in w.message for w in result.warnings))
+
+        # Environment capacity and location
+        env_301 = next(e for e in result.items["environments"] if e["code"] == "301")
+        self.assertEqual(env_301["capacity"], 35)
+        self.assertEqual(env_301["location"], "Sede Central")
+        self.assertEqual(env_301["environment_type"], "fisico")
+
+        env_virt = next(e for e in result.items["environments"] if e["code"] == "VIRT-1")
+        self.assertEqual(env_virt["environment_type"], "virtual")
+
+        # Group modality
+        grp_virt = next(g for g in result.items["groups"] if g["code"] == "3068003")
+        self.assertEqual(grp_virt["modality"], "Virtual")
+
+        # Excel formula error #NAME? in AUXILIAR generated warning, not error
+        formula_warnings = [w for w in result.warnings if w.sheet == "AUXILIAR" and "#NAME?" in (w.raw_value or "")]
+        self.assertGreater(len(formula_warnings), 0)
+
+        # Cross-program RAP collision test: same description in DESARROLLO DE SOFTWARE vs ASESORIA COMERCIAL
+        ra_sw = next(
+            r for r in result.items["learning_results"]
+            if r["description"] == "Atencion al cliente y requerimientos" and "CAD" not in r["code"] and "TEC" not in r["code"]
+        )
+        ra_com = next(
+            r for r in result.items["learning_results"]
+            if r["description"] == "Atencion al cliente y requerimientos" and "TEC" in r["code"]
+        )
+        self.assertNotEqual(ra_sw["code"], ra_com["code"])
+
+    def test_commit_schedule_normalized_v2(self) -> None:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            result = commit_workbook(
+                session,
+                build_schedule_normalized_v2_workbook_bytes(),
+                "schedule_normalized",
+                filename="SEMAFOROS_NORMALIZADO_SCHEDULE_API.xlsx",
+            )
+
+            self.assertEqual(result.errors, [])
+            self.assertGreater(result.created["academic_periods"], 0)
+            self.assertGreater(result.created["groups"], 0)
+            self.assertGreater(result.created["instructors"], 0)
+            self.assertGreater(result.created["environments"], 0)
+            self.assertGreater(result.created["learning_results"], 0)
+            self.assertGreater(result.created["topics"], 0)
+            self.assertGreater(result.created["learning_result_topics"], 0)
+
+            # Check AcademicPeriod in DB
+            periods = session.exec(select(AcademicPeriod)).all()
+            self.assertEqual(len(periods), 4)
+            q1 = next(p for p in periods if p.quarter_number == 1)
+            self.assertEqual(q1.start_date, date(2026, 1, 29))
+            self.assertEqual(q1.end_date, date(2026, 4, 14))
+
+            # Check Instructor in DB
+            instructor = session.exec(select(Instructor).where(Instructor.document_number == "1017123456")).first()
+            self.assertIsNotNone(instructor)
+            self.assertEqual(instructor.phone, "3101234567")
+            self.assertEqual(instructor.specialty, "Sistemas e Informatica")
+
+            # Check Group in DB
+            group = session.exec(select(Group).where(Group.code == "3068003")).first()
+            self.assertIsNotNone(group)
+            self.assertEqual(group.modality, "Virtual")
+
+            # Check Environment in DB
+            env = session.exec(select(Environment).where(Environment.code == "301")).first()
+            self.assertIsNotNone(env)
+            self.assertEqual(env.capacity, 35)
+
+            # Check LearningResultTopic in DB
+            relation = session.exec(select(LearningResultTopic)).first()
+            self.assertIsNotNone(relation)
+            self.assertIsNotNone(relation.training_program_id)
+
+    def test_reimport_schedule_normalized_v2_is_idempotent(self) -> None:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            v2_bytes = build_schedule_normalized_v2_workbook_bytes()
+            res1 = commit_workbook(session, v2_bytes, "schedule_normalized")
+            self.assertEqual(res1.errors, [])
+
+            total_periods_1 = len(session.exec(select(AcademicPeriod)).all())
+            total_groups_1 = len(session.exec(select(Group)).all())
+            total_ras_1 = len(session.exec(select(LearningResult)).all())
+            total_topics_1 = len(session.exec(select(Topic)).all())
+            total_rels_1 = len(session.exec(select(LearningResultTopic)).all())
+
+            # Second import of exact same workbook
+            res2 = commit_workbook(session, v2_bytes, "schedule_normalized")
+            self.assertEqual(res2.errors, [])
+
+            total_periods_2 = len(session.exec(select(AcademicPeriod)).all())
+            total_groups_2 = len(session.exec(select(Group)).all())
+            total_ras_2 = len(session.exec(select(LearningResult)).all())
+            total_topics_2 = len(session.exec(select(Topic)).all())
+            total_rels_2 = len(session.exec(select(LearningResultTopic)).all())
+
+            self.assertEqual(total_periods_1, total_periods_2)
+            self.assertEqual(total_groups_1, total_groups_2)
+            self.assertEqual(total_ras_1, total_ras_2)
+            self.assertEqual(total_topics_1, total_topics_2)
+            self.assertEqual(total_rels_1, total_rels_2)
+            self.assertGreater(res2.updated["groups"], 0)
+
+    def test_institutional_period_validation_vs_calendar(self) -> None:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            # Commit v2 so academic periods exist
+            commit_workbook(session, build_schedule_normalized_v2_workbook_bytes(), "schedule_normalized")
+
+            # In institutional period: 2026-04-10 is inside Q1 (2026-01-29 to 2026-04-14)
+            # Validating with session -> SUCCESS
+            validate_schedule_period(date(2026, 4, 10), 2026, 1, session=session)
+
+            # Validating without session (calendar fallback: month 4 is calendar Q2, not Q1) -> FAILS 422
+            with self.assertRaises(HTTPException) as ctx:
+                validate_schedule_period(date(2026, 4, 10), 2026, 1, session=None)
+            self.assertEqual(ctx.exception.status_code, 422)
+            self.assertIn("no pertenece al trimestre 1", ctx.exception.detail)
+
+            # Date after period end (2026-04-16 is after 2026-04-14) with session -> FAILS 422
+            with self.assertRaises(HTTPException) as ctx_inst:
+                validate_schedule_period(date(2026, 4, 16), 2026, 1, session=session)
+            self.assertEqual(ctx_inst.exception.status_code, 422)
+            self.assertIn("no pertenece al periodo institucional", ctx_inst.exception.detail)
+
+
+def build_schedule_normalized_v2_workbook_bytes() -> bytes:
+    import io
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+
+    # 1. FICHAS
+    ws = wb.active
+    ws.title = "FICHAS"
+    ws.append([
+        "No. FICHA",
+        "NOMBRE DEL PROGRAMA DE FORMACIÓN",
+        "NIVEL",
+        "COORDINACION",
+        "TRIMESTRE",
+        "INICIO LECTIVA",
+        "FIN DE ETAPA LECTIVA",
+        "INICIO PRODUCTIVA",
+        "FIN PRODUCTIVA",
+        "JORNADA",
+        "SEDE",
+        "TIPO DE RESPUESTA",
+        "Modalidad",
+    ])
+    ws.append([
+        "3068001",
+        "DESARROLLO DE SOFTWARE",
+        "Tecnologo",
+        "Teleinformatica",
+        "TRIMESTRE I",
+        "2026-01-29",
+        "2026-04-14",
+        "2026-04-20",
+        "2026-10-20",
+        "Diurna",
+        "Sede Central",
+        "ABIERTA",
+        "Presencial",
+    ])
+    ws.append([
+        "3068002",
+        "GESTION CONTABLE",
+        "Tecnologo",
+        "Finanzas",
+        "TRIMESTRE VII",
+        "2026-04-20",
+        "2026-07-04",
+        "2026-07-05",
+        "2026-12-31",
+        "Nocturna",
+        "Sede Norte",
+        "CERRADA",
+        "Presencial",
+    ])
+    ws.append([
+        "3068003",
+        "TÉCNICO EN ASESORÍA COMERCIAL",
+        "Tecnico",
+        "Comercio",
+        "TRIMESTRE I",
+        "2026-01-29",
+        "2026-04-14",
+        "2026-04-20",
+        "2026-07-20",
+        "Diurna",
+        "Sede Central",
+        "ABIERTA",
+        "Virtual",
+    ])
+    ws.append([
+        "3068004",
+        "AUXILIAR EN PROMOCION DE PRODUCTOS",
+        "Auxiliar",
+        "Mercadeo",
+        "TRIMESTRE I",
+        "2026-01-29",
+        "2026-04-14",
+        "2026-04-20",
+        "2026-06-20",
+        "Diurna",
+        "Sede Sur",
+        "CERRADA",
+        "Presencial",
+    ])
+
+    # 2. LISTA INSTRUCTORES
+    ws = wb.create_sheet("LISTA INSTRUCTORES")
+    ws.append([
+        "TIPO",
+        "NUMERO",
+        "NOMBRE COMPLETO",
+        "TIPO DE VINCULACIÓN",
+        "HORAS FORMACION MES",
+        "HORAS ADICIONALES",
+        "COORDINACION",
+        "ESPECILIALIDAD O AREA",
+        "CORREO",
+        "TELEFONO",
+    ])
+    ws.append([
+        "CC",
+        "1017123456",
+        "CARLOS ANDRES RAMIREZ",
+        "CARRERA ADMINISTRATIVA",
+        170,
+        0,
+        "Teleinformatica",
+        "Sistemas e Informatica",
+        "carlos.ramirez@sena.edu.co",
+        "3101234567",
+    ])
+    ws.append([
+        "",
+        "",
+        "MARIA FERNANDA LOPEZ",
+        "CONTRATISTA SENA",
+        160,
+        0,
+        "Teleinformatica",
+        "Redes",
+        "",
+        "",
+    ])
+
+    # 3. AMBIENTES
+    ws = wb.create_sheet("AMBIENTES")
+    ws.append(["NUMERO", "SEDE", "CAPACIDAD", "COORDINACIÓN", "TIPO"])
+    ws.append(["301", "Sede Central", 35, "Teleinformatica", "FISICO"])
+    ws.append(["VIRT-1", "Sede Virtual", 50, "Teleinformatica", "VIRTUAL"])
+
+    # 4. TRIMESTRE
+    ws = wb.create_sheet("TRIMESTRE")
+    ws.append(["Nombre", "Fecha Inicio", "Fecha Fin"])
+    ws.append(["I Trimestre", "2026-01-29", "2026-04-14"])
+    ws.append(["II Trimestre", "2026-04-20", "2026-07-04"])
+    ws.append(["III Trimestre", "2026-07-09", "2026-09-28"])
+    ws.append(["IV Trimestre", "2026-10-02", "2026-12-16"])
+
+    sem_headers = [
+        "PROGRAMA DE FORMACION",
+        "TRIMESTRE",
+        "RESULTADO_APRENDIZAJE",
+        "TIPO_RESULTADO_RA (completo-parcial)",
+        "HORAS_SEMANA_RA",
+        "HORAS_TRIMESTRE_RA",
+        "TEMATICA",
+        "TIPO_RESULTADO_TEMATICA (completo-parcial)",
+        "HORAS_SEMANA_TEMATICA",
+    ]
+
+    # 5. TEC CADENA
+    ws = wb.create_sheet("TEC CADENA")
+    ws.append(sem_headers)
+    ws.append([
+        "GESTION CONTABLE",
+        "TRIMESTRE VII",
+        "Auditoria de estados financieros",
+        "completo",
+        6,
+        60,
+        "Procedimientos de control interno",
+        "completo",
+        6,
+    ])
+
+    # 6. TEC REGULAR
+    ws = wb.create_sheet("TEC REGULAR")
+    ws.append(sem_headers)
+    ws.append([
+        "DESARROLLO DE SOFTWARE",
+        "TRIMESTRE I",
+        "Construir algoritmos estructurados",
+        "completo",
+        4,
+        48,
+        "Estructuras de control y datos",
+        "completo",
+        4,
+    ])
+    ws.append([
+        "DESARROLLO DE SOFTWARE",
+        "TRIMESTRE I",
+        "Atencion al cliente y requerimientos",
+        "parcial",
+        4,
+        48,
+        "Levantamiento de requerimientos",
+        "parcial",
+        4,
+    ])
+
+    # 7. TECNICO
+    ws = wb.create_sheet("TECNICO")
+    ws.append(sem_headers)
+    ws.append([
+        "ASESORIA COMERCIAL",  # Canonical matching tests prefix stripping
+        "TRIMESTRE I",
+        "Atencion al cliente y requerimientos",  # Same text as in DESARROLLO DE SOFTWARE
+        "completo",
+        5,
+        50,
+        "Tecnicas de comunicacion asertiva",
+        "completo",
+        5,
+    ])
+
+    # 8. AUXILIAR
+    ws = wb.create_sheet("AUXILIAR")
+    ws.append(sem_headers)
+    ws.append([
+        "AUXILIAR EN PROMOCION DE PRODUCTOS",
+        "TRIMESTRE I",
+        "Organizacion de exhibiciones comerciales",
+        "completo",
+        8,
+        "#NAME?",  # Formula error in hours cell
+        "Merchandising visual en punto de venta",
+        "completo",
+        8,
+    ])
+
+    data = io.BytesIO()
+    wb.save(data)
+    return data.getvalue()
+
 
 if __name__ == "__main__":
     unittest.main()
+

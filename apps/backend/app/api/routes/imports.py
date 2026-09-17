@@ -100,8 +100,12 @@ def get_template_info() -> TemplateInfoResponse:
             "LISTA INSTRUCTORES",
             "AMBIENTES",
             "FICHAS",
-            "Semaforo con RA cadena",
-            "Semaforo con RA Oferta Abierta",
         ],
-        optional_sheets=[]
+        optional_sheets=[
+            "TRIMESTRE",
+            "TEC CADENA",
+            "TEC REGULAR",
+            "TECNICO",
+            "AUXILIAR",
+        ],
     )

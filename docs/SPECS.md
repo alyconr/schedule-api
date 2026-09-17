@@ -74,6 +74,48 @@ mismo contexto + mismo trimestre + mismo color de fondo
 ```
 
 La vista previa entrega `learning_results`, `topics`, `color_groups` y `ra_topic_relations`. En el commit se crean o actualizan resultados de aprendizaje, tematicas y la tabla puente `learning_result_topics`, conservando contexto, hoja, direccion de celda, trimestre, color y marca de revision manual cuando un bloque de color contiene varios RA y varias tematicas.
+
+## Importador `schedule_normalized` (v2 y retrocompatibilidad v1)
+
+El importador maestro bajo `import_type=schedule_normalized` procesa matrices institucionales Excel completas tanto en su versión histórica (v1) como en la nueva matriz institucional SENA (v2):
+
+### Hojas soportadas y perfiles
+- **Hojas requeridas (núcleo base):**
+  - `LISTA INSTRUCTORES` (alias: `INSTRUCTORES`)
+  - `AMBIENTES`
+  - `FICHAS`
+- **Hojas opcionales institucional v2:**
+  - `TRIMESTRE` (alias: `PERIODOS`): define el calendario institucional de trimestres académicos (`AcademicPeriod`).
+  - `TEC CADENA`: semáforo relacional para programas de articulación / cadena tecnólogos.
+  - `TEC REGULAR`: semáforo relacional para programas tecnólogos de oferta regular.
+  - `TECNICO`: semáforo relacional para programas técnicos.
+  - `AUXILIAR`: semáforo relacional para programas auxiliares / operarios.
+- **Hojas opcionales legadas v1 (retrocompatibilidad):**
+  - `Semaforo con RA cadena`
+  - `Semaforo con RA Oferta Abierta`
+
+### Periodos Académicos Institucionales (`AcademicPeriod`)
+- Almacena año (`year`), número de trimestre (`quarter_number`), nombre (`name`), fecha inicio (`start_date`), fecha fin (`end_date`) y estado activo (`is_active`).
+- La validación de fechas de programación de horarios (`validate_schedule_period`) consulta prioritariamente el periodo institucional en la base de datos para el año y trimestre dados.
+- Si no existe un periodo institucional registrado, aplica automáticamente la regla de contingencia basada en trimestre calendario (`Q1`: Jan-Mar, `Q2`: Apr-Jun, `Q3`: Jul-Sep, `Q4`: Oct-Dec).
+
+### Canonicalización de Programas
+- Sin coincidencias difusas ("fuzzy matching") silenciosas ni propensas a errores.
+- Se genera una clave canónica normalizada (`canonical_program_key`): mayúsculas, remoción de acentos, caracteres especiales y prefijos institucionales repetitivos (`TECNOLOGO EN`, `TECNICO EN`, `AUXILIAR EN`, `OPERARIO EN`, `ESPECIALIZACION TECNOLOGICA EN`).
+- El código de programa se genera determinísticamente: `PROG-{prefix}-{hash}`, asegurando coherencia entre la hoja de fichas y las hojas de semáforos.
+
+### Identidad de RAPs y Prevención de Colisiones
+- Los resultados de aprendizaje (RAP) incluyen en su código el identificador del programa, ámbito, número de trimestre y hash de la descripción (`build_ra_code`), evitando colisiones de RAPs idénticos entre diferentes programas o niveles.
+- El formato resultante mantiene legibilidad institucional (ej. `CAD-TRIMESTRE_I-RAP-{hash}`) y no supera el límite de 50 caracteres del esquema relacional.
+
+### Tolerancia a Errores y Fórmulas de Excel
+- Errores de fórmulas de Excel tales como `#NAME?`, `#REF!`, `#VALUE!`, `#N/A`, `#DIV/0!`, `#NUM!` en columnas numéricas (como horas de RAPs) se manejan de forma segura como `None` y generan advertencias informativas no bloqueantes (`warning`), evitando el rechazo del archivo.
+- Los instructores sin documento o correo identificable reciben identificadores determinísticos provisionales (`TEMP-...`) con advertencias visibles para corrección posterior en coordinación.
+- Se persisten atributos extendidos: `Group.modality`, `Instructor.phone`, `Instructor.specialty`, `Environment.capacity`, `Environment.environment_type`, `Environment.notes`.
+- Idempotencia estricta en re-importaciones (`upsert` sin duplicación de registros).
+
+---
+
 Aplicación de Programación de Horarios de Instructores SENA
 CGMLTI SENA Bogotá
 1. Propósito del proyecto

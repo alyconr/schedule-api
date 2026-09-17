@@ -9,6 +9,7 @@ from app.models.academic import (
     Group,
     Environment,
     TimeBlock,
+    AcademicPeriod,
 )
 from app.models.schedules import Schedule, ScheduleValidation, ExceptionRequest
 from app.models.audit import AuditLog
@@ -26,6 +27,7 @@ __all__ = [
     "Group",
     "Environment",
     "TimeBlock",
+    "AcademicPeriod",
     "Schedule",
     "ScheduleValidation",
     "ExceptionRequest",

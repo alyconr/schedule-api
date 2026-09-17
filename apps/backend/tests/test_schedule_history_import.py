@@ -1,6 +1,7 @@
 import unittest
 from io import BytesIO
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 from openpyxl import Workbook
@@ -33,7 +34,7 @@ def _workbook(schedule_date: str) -> bytes:
     return output.getvalue()
 
 
-def _session() -> MagicMock:
+def _session(academic_period: Any = None) -> MagicMock:
     session = MagicMock()
     entities = [
         SimpleNamespace(id=1),
@@ -49,8 +50,23 @@ def _session() -> MagicMock:
     topic_result = MagicMock()
     topic_result.all.return_value = []
     results.append(topic_result)
-    session.exec.side_effect = results
+
+    def _exec(stmt):
+        stmt_str = str(stmt)
+        if "academic_periods" in stmt_str:
+            period_mock = MagicMock()
+            period_mock.first.return_value = academic_period
+            return period_mock
+        if results:
+            return results.pop(0)
+        fallback = MagicMock()
+        fallback.first.return_value = None
+        fallback.all.return_value = []
+        return fallback
+
+    session.exec.side_effect = _exec
     return session
+
 
 
 class ScheduleHistoryImportTest(unittest.TestCase):

@@ -17,8 +17,20 @@ from app.models.academic import (
     Competency,
     LearningResult,
     Topic,
-    LearningResultTopic
+    LearningResultTopic,
+    AcademicPeriod,
 )
+from app.services.imports import (
+    WorkbookProfileDetector,
+    parse_instructors_sheet,
+    parse_environments_sheet,
+    parse_groups_sheet,
+    parse_academic_periods_sheet,
+    parse_semaforo_sheet as parse_canonical_semaforo_sheet,
+    canonical_program_key,
+    build_program_code as canonical_build_program_code,
+)
+
 from app.schemas.imports import (
     ImportIssue,
     ImportEntitySummary,
@@ -45,17 +57,12 @@ def normalize_program_name(value: Any) -> str:
 
 
 def program_code_from_name(value: Any) -> str:
-    text = normalize_program_name(value)
-    text = "".join(
-        c for c in unicodedata.normalize("NFD", text)
-        if unicodedata.category(c) != "Mn"
-    )
-    text = re.sub(r"[^A-Z0-9]+", " ", text)
-    return f"PROG-{get_stable_hash(' '.join(text.split()))}"
+    return canonical_build_program_code(value)
 
 
 def build_program_code(program_name: str) -> str:
-    return program_code_from_name(program_name)
+    return canonical_build_program_code(program_name)
+
 
 
 def parse_excel_date(value: Any) -> Optional[date]:
@@ -531,7 +538,8 @@ def process_normalized_relational_workbook(wb: Any) -> dict[str, list[dict[str, 
 
 
 def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], errors: list[ImportIssue]) -> dict[str, list[dict[str, Any]]]:
-    items = {
+    items: dict[str, list[dict[str, Any]]] = {
+        "academic_periods": [],
         "contract_types": [],
         "instructors": [],
         "environments": [],
@@ -542,293 +550,79 @@ def process_schedule_normalized_workbook(wb: Any, warnings: list[ImportIssue], e
         "color_groups": [],
         "ra_topic_relations": [],
     }
-    seen = {key: set() for key in items}
-    sheets = {name: sheet_by_normalized_name(wb, name) for name in NORMALIZED_SCHEDULE_SHEETS}
 
-    for name, sheet in sheets.items():
-        if sheet is None:
-            errors.append(ImportIssue(sheet=name, severity="error", message=f"La hoja obligatoria '{name}' no fue encontrada."))
+    resolved = WorkbookProfileDetector.resolve(wb, errors)
     if errors:
         return items
 
-    # LISTA INSTRUCTORES
-    sheet = sheets["LISTA INSTRUCTORES"]
-    rows = list(sheet.iter_rows(values_only=True))
-    headers = [normalize_header(c) for c in rows[0]] if rows else []
-    required = {
-        "NOMBRE COMPLETO": ("nombre_completo", "nombre"),
-        "TIPO DE VINCULACION": ("tipo_de_vinculacion", "tipo_vinculacion", "tipo_contrato", "contrato"),
-        "HORAS FORMACION MES": ("horas_formacion_mes", "horas_formacion", "horasfromacion", "horas_mes"),
-        "COORDINACION": ("coordinacion",),
-    }
-    if rows and not add_missing_columns_errors(sheet.title, headers, required, errors):
-        nombre_idx = find_col_idx(headers, "nombre_completo", "nombre")
-        tipo_idx = find_col_idx(headers, "tipo_de_vinculacion", "tipo_vinculacion", "tipo_contrato", "contrato")
-        base_idx = find_col_idx(headers, "horas_formacion_mes", "horas_formacion", "horasfromacion", "horas_mes")
-        add_idx = find_col_idx(headers, "horas_adicionales")
-        area_idx = find_col_idx(headers, "coordinacion")
-        if add_idx is None:
-            warnings.append(ImportIssue(sheet=sheet.title, entity="instructor", severity="warning", message="No se encontro HORAS ADICIONALES; se usara 0."))
+    # 1. Parse Academic Periods (if sheet exists)
+    periods_sheet = resolved.sheets.get("academic_periods")
+    if periods_sheet is not None:
+        items["academic_periods"] = parse_academic_periods_sheet(
+            periods_sheet,
+            parse_excel_date,
+            warnings,
+            errors,
+        )
 
-        for row_num, row in enumerate(rows[1:], start=2):
-            if not any(cell is not None and str(cell).strip() for cell in row):
-                continue
-            name = str(row_cell(row, nombre_idx) or "").strip()
-            if not name:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="error", message="NOMBRE COMPLETO es obligatorio."))
-                continue
-            parts = name.split()
-            first_name = " ".join(parts[:-1]) if len(parts) > 1 else name
-            last_name = parts[-1] if len(parts) > 1 else "PENDIENTE"
-            doc_num = f"TEMP-{get_stable_hash(name)}"
-            email_prefix = normalized_text(name).strip(".") or doc_num.lower()
-            vinculation_name = normalize_vinculation_label(row_cell(row, tipo_idx)) or "OTRO"
-            category = vinculation_category(vinculation_name)
-            weekly_rule_hours = weekly_rule_hours_for_vinculation(vinculation_name)
-            monthly_training_hours = parse_decimal(row_cell(row, base_idx)) or Decimal("0")
-            monthly_additional_hours = parse_decimal(row_cell(row, add_idx)) or Decimal("0")
-            area = str(row_cell(row, area_idx) or "").strip()
-            if not area:
-                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Instructor sin coordinacion.", raw_value=name))
-            if category == "otro":
-                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="instructor", severity="warning", message="Tipo de vinculacion no reconocido; se usara OTRO.", raw_value=row_cell(row, tipo_idx)))
-            if vinculation_name not in seen["contract_types"]:
-                items["contract_types"].append({
-                    "name": vinculation_name[:50],
-                    "description": f"Tipo de vinculacion importado desde archivo normalizado: {vinculation_name}"[:200],
-                    "category": category,
-                    "monthly_training_hours": monthly_training_hours,
-                    "monthly_additional_hours": monthly_additional_hours,
-                    "weekly_base_hours": weekly_rule_hours,
-                    "weekly_max_hours": weekly_rule_hours,
-                    "source_label": vinculation_name[:100],
-                })
-                seen["contract_types"].add(vinculation_name)
-            if doc_num not in seen["instructors"]:
-                items["instructors"].append({
-                    "document_type": "CC",
-                    "document_number": doc_num,
-                    "first_name": first_name[:100],
-                    "last_name": last_name[:100],
-                    "email": f"{email_prefix}@pendiente.sena.local"[:200],
-                    "monthly_training_hours": monthly_training_hours,
-                    "monthly_additional_hours": monthly_additional_hours,
-                    "weekly_base_hours": weekly_rule_hours,
-                    "weekly_max_hours": weekly_rule_hours,
-                    "area": area[:100] if area else None,
-                    "contract_type_name": vinculation_name[:50],
-                    "contract_type_category": category,
-                    "contract_type_base_hours": weekly_rule_hours,
-                    "contract_type_max_hours": weekly_rule_hours,
-                })
-                seen["instructors"].add(doc_num)
+    # 2. Parse Instructors & Contract Types
+    inst_sheet = resolved.sheets.get("instructors")
+    if inst_sheet is not None:
+        insts, c_types = parse_instructors_sheet(
+            inst_sheet,
+            normalize_contract_type,
+            vinculation_category,
+            weekly_rule_hours_for_vinculation,
+            warnings,
+            errors,
+        )
+        items["instructors"] = insts
+        items["contract_types"] = c_types
 
-    # AMBIENTES
-    sheet = sheets["AMBIENTES"]
-    rows = list(sheet.iter_rows(values_only=True))
-    headers = [normalize_header(c) for c in rows[0]] if rows else []
-    required = {"NUMERO": ("numero", "num"), "AMBIENTE O UBICACION": ("ambiente_o_ubicacion", "ambiente", "ubicacion")}
-    if rows and not add_missing_columns_errors(sheet.title, headers, required, errors):
-        code_idx = find_col_idx(headers, "numero", "num")
-        name_idx = find_col_idx(headers, "ambiente_o_ubicacion", "ambiente", "ubicacion")
-        for row_num, row in enumerate(rows[1:], start=2):
-            if not any(cell is not None and str(cell).strip() for cell in row):
-                continue
-            code = str(row_cell(row, code_idx) or "").strip()
-            name = str(row_cell(row, name_idx) or "").strip()
-            if not code:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="environment", severity="error", message="NUMERO es obligatorio."))
-                continue
-            if code not in seen["environments"]:
-                items["environments"].append({
-                    "code": code[:50],
-                    "name": (name or f"Ambiente {code}")[:200],
-                    "location": (name or f"Ambiente {code}")[:200],
-                    "capacity": 0,
-                    "environment_type": "fisico",
-                })
-                seen["environments"].add(code)
+    # 3. Parse Environments
+    env_sheet = resolved.sheets.get("environments")
+    if env_sheet is not None:
+        items["environments"] = parse_environments_sheet(env_sheet, warnings, errors)
 
-    # FICHAS
-    sheet = sheets["FICHAS"]
-    rows = list(sheet.iter_rows(values_only=True))
-    headers = [normalize_header(c) for c in rows[0]] if rows else []
-    required = {
-        "No. FICHA": ("no_ficha", "no_fichas"),
-        "FICHA": ("ficha",),
-        "NIVEL": ("nivel",),
-        "TRIMESTRE": ("trimestre",),
-        "FECHA INICIO": ("fecha_inicio",),
-        "FECHA FIN LECTIVA": ("fecha_fin_lectiva",),
-    }
-    if rows and not add_missing_columns_errors(sheet.title, headers, required, errors):
-        code_idx = find_col_idx(headers, "no_ficha", "no_fichas")
-        name_idx = find_col_idx(headers, "ficha")
-        level_idx = find_col_idx(headers, "nivel")
-        area_idx = find_col_idx(headers, "coordinacion")
-        tri_idx = find_col_idx(headers, "trimestre")
-        start_idx = find_col_idx(headers, "fecha_inicio")
-        end_idx = find_col_idx(headers, "fecha_fin_lectiva")
-        prod_start_idx = find_col_idx(headers, "fecha_inicio_productiva")
-        prod_end_idx = find_col_idx(headers, "fecha_fin_productiva")
-        jornada_idx = find_col_idx(headers, "jornada")
-        sede_idx = find_col_idx(headers, "sede")
-        for row_num, row in enumerate(rows[1:], start=2):
-            if not any(cell is not None and str(cell).strip() for cell in row):
-                continue
-            code = str(row_cell(row, code_idx) or "").strip()
-            if not code:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="group", severity="error", message="No. FICHA es obligatorio."))
-                continue
-            name = str(row_cell(row, name_idx) or f"Ficha {code}").strip()
-            program_name = normalize_program_name(name)
-            program_code = build_program_code(program_name)
-            level = str(row_cell(row, level_idx) or "").strip()
-            if program_code not in seen["programs"]:
-                items["programs"].append({"code": program_code, "name": program_name[:300], "level": level[:100] or None})
-                seen["programs"].add(program_code)
-            trimester, _trimester_number = parse_trimester_label(row_cell(row, tri_idx))
-            if not trimester:
-                errors.append(
-                    ImportIssue(
-                        sheet=sheet.title,
-                        row=row_num,
-                        entity="group",
-                        severity="error",
-                        message="TRIMESTRE es obligatorio para cada ficha.",
-                        raw_value=code,
-                    )
-                )
-                continue
-            jornada = str(row_cell(row, jornada_idx) or "").strip()
-            if not jornada:
-                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="group", severity="warning", message="Ficha sin jornada.", raw_value=code))
-            notes = []
-            if row_cell(row, area_idx):
-                notes.append(f"Coordinacion: {row_cell(row, area_idx)}")
-            sede = str(row_cell(row, sede_idx) or "").strip()
-            if sede:
-                notes.append(f"Sede: {sede}")
-            prod_start = parse_excel_date(row_cell(row, prod_start_idx))
-            prod_end = parse_excel_date(row_cell(row, prod_end_idx))
-            if prod_start:
-                notes.append(f"Fecha inicio productiva: {prod_start.isoformat()}")
-            if prod_end:
-                notes.append(f"Fecha fin productiva: {prod_end.isoformat()}")
-            if code not in seen["groups"]:
-                items["groups"].append({
-                    "code": code[:50],
-                    "name": name[:300],
-                    "jornada": jornada[:50] if jornada else None,
-                    "trimester": trimester[:50],
-                    "start_date": parse_excel_date(row_cell(row, start_idx)),
-                    "end_date": parse_excel_date(row_cell(row, end_idx)),
-                    "productive_stage_start_date": prod_start,
-                    "productive_stage_end_date": prod_end,
-                    "learners_count": 0,
-                    "notes": " | ".join(notes) if notes else None,
-                    "training_program_code": program_code,
-                })
-                seen["groups"].add(code)
+    # 4. Parse Groups (FICHAS) & extract program scope map
+    groups_sheet = resolved.sheets.get("groups")
+    program_scope_map: dict[str, str] = {}
+    if groups_sheet is not None:
+        grps, progs, scope_map = parse_groups_sheet(
+            groups_sheet,
+            parse_excel_date,
+            warnings,
+            errors,
+        )
+        items["groups"] = grps
+        items["programs"] = progs
+        program_scope_map = scope_map
 
-    semaforo_configs = (
-        ("Semaforo con RA cadena", "cadena", "CAD"),
-        ("Semaforo con RA Oferta Abierta", "oferta_abierta", "OA"),
-    )
-    sem_required = {
-        "PROGRAMA DE FORMACION": ("programa_de_formacion", "programa_formacion", "programa"),
-        "TRIMESTRE": ("trimestre",),
-        "RESULTADO_APRENDIZAJE": ("resultado_aprendizaje",),
-        "TEMATICA": ("tematica",),
-    }
-    for expected_name, scope, prefix in semaforo_configs:
-        sheet = sheets[expected_name]
-        rows = list(sheet.iter_rows(values_only=True))
-        headers = [normalize_header(c) for c in rows[0]] if rows else []
-        if not rows or add_missing_columns_errors(sheet.title, headers, sem_required, errors):
-            continue
-        program_idx = find_col_idx(headers, "programa_de_formacion", "programa_formacion", "programa")
-        tri_idx = find_col_idx(headers, "trimestre")
-        ra_desc_idx = find_col_idx(headers, "resultado_aprendizaje")
-        ra_type_idx = find_col_idx(headers, "tipo_resultado_ra")
-        ra_week_idx = find_col_idx(headers, "horas_semana_ra")
-        ra_trim_idx = find_col_idx(headers, "horas_trimestre_ra")
-        topic_idx = find_col_idx(headers, "tematica")
-        topic_week_idx = find_col_idx(headers, "horas_semana_tematica")
-        if ra_week_idx is None or ra_trim_idx is None or topic_week_idx is None:
-            warnings.append(ImportIssue(sheet=sheet.title, entity="learning_result", severity="warning", message="Faltan columnas de horas opcionales; se importaran como nulas cuando aplique."))
-        for row_num, row in enumerate(rows[1:], start=2):
-            if not any(cell is not None and str(cell).strip() for cell in row):
-                continue
-            trimester, trimester_number = parse_trimester_label(row_cell(row, tri_idx))
-            tri_code = normalize_header(trimester or "sin_trimestre").upper()
-            program_name = normalize_program_name(row_cell(row, program_idx))
-            if not program_name:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="program", severity="error", message="PROGRAMA DE FORMACION es obligatorio."))
-                continue
-            program_code = build_program_code(program_name)
-            if program_code not in seen["programs"]:
-                items["programs"].append({"code": program_code, "name": program_name[:300], "level": None})
-                seen["programs"].add(program_code)
-            ra_description = str(row_cell(row, ra_desc_idx) or "").strip()
-            if not ra_description:
-                errors.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="error", message="RESULTADO_APRENDIZAJE es obligatorio."))
-                continue
-            ra_code = f"{prefix}-{tri_code}-RAP-{get_stable_hash(ra_description)}"[:50]
-            ra_hours = parse_decimal(row_cell(row, ra_trim_idx)) or parse_decimal(row_cell(row, ra_week_idx))
-            if ra_code not in seen["learning_results"]:
-                items["learning_results"].append({
-                    "code": ra_code,
-                    "description": ra_description[:500],
-                    "estimated_hours": ra_hours,
-                    "result_type": str(row_cell(row, ra_type_idx) or "semaforo_normalizado")[:50],
-                })
-                seen["learning_results"].add(ra_code)
-            topic_name = str(row_cell(row, topic_idx) or "").strip()
-            if not topic_name:
-                warnings.append(ImportIssue(sheet=sheet.title, row=row_num, entity="learning_result", severity="warning", message="RA sin tematica relacionada.", raw_value=ra_description))
-                continue
-            topic_hash_source = f"{program_code}|{scope}|{trimester}|{topic_name}"
-            topic_code = f"TEM-{prefix}-{get_stable_hash(topic_hash_source)}"[:50]
-            if topic_code not in seen["topics"]:
-                items["topics"].append({
-                    "code": topic_code,
-                    "name": topic_name[:500],
-                    "description": topic_name[:500],
-                    "program_scope": scope,
-                    "trimester": trimester,
-                    "trimester_number": trimester_number,
-                    "estimated_hours": parse_decimal(row_cell(row, topic_week_idx)),
-                    "source_sheet": sheet.title,
-                    "source_address": f"{row_num}",
-                    "source_row": row_num,
-                    "source_col": topic_idx + 1 if topic_idx is not None else None,
-                    "color_key": None,
-                    "color_hex": None,
-                })
-                seen["topics"].add(topic_code)
-            relation_hash_source = f"{program_code}|{scope}|{trimester}|{ra_description}|{topic_name}"
-            relation_id = f"REL-{prefix}-{get_stable_hash(relation_hash_source)}"[:120]
-            if relation_id not in seen["ra_topic_relations"]:
-                items["ra_topic_relations"].append({
-                    "relation_id": relation_id,
-                    "group_id": f"{program_code}-{prefix}-{tri_code}"[:80],
-                    "training_program_code": program_code,
-                    "training_program_name": program_name[:300],
-                    "learning_result_code": ra_code,
-                    "topic_code": topic_code,
-                    "program_scope": scope,
-                    "trimester_number": trimester_number,
-                    "color_key": None,
-                    "color_hex": None,
-                    "relation_method": "normalized_excel_program_rap_topic_relation_without_color",
-                    "relation_status": "OK",
-                    "confidence": "alta",
-                    "needs_manual_review": False,
-                })
-                seen["ra_topic_relations"].add(relation_id)
+    seen_programs = {p["code"] for p in items["programs"]}
+    seen_ras: set[str] = set()
+    seen_topics: set[str] = set()
+    seen_relations: set[str] = set()
+
+    # 5. Parse Semaforo sheets with the generic parser
+    for sem_sheet, sem_config in resolved.semaforo_sheets:
+        parse_canonical_semaforo_sheet(
+            sheet=sem_sheet,
+            config=sem_config,
+            program_scope_map=program_scope_map,
+            programs_list=items["programs"],
+            learning_results_list=items["learning_results"],
+            topics_list=items["topics"],
+            relations_list=items["ra_topic_relations"],
+            seen_programs=seen_programs,
+            seen_ras=seen_ras,
+            seen_topics=seen_topics,
+            seen_relations=seen_relations,
+            warnings=warnings,
+            errors=errors,
+        )
 
     return items
+
 
 
 def parse_semaforo_sheet(sheet: Any) -> list[dict[str, Any]]:
@@ -885,6 +679,7 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
     ra_topic_relations_list = []
     
     counts = {
+        "academic_periods": {"valid": 0, "warnings": 0, "rejected": 0},
         "contract_types": {"valid": 0, "warnings": 0, "rejected": 0},
         "instructors": {"valid": 0, "warnings": 0, "rejected": 0},
         "environments": {"valid": 0, "warnings": 0, "rejected": 0},
@@ -899,9 +694,11 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
     if import_type == "schedule_normalized":
         normalized = process_schedule_normalized_workbook(wb, warnings, errors)
         for key, values in normalized.items():
-            counts[key]["valid"] = len(values)
+            if key in counts:
+                counts[key]["valid"] = len(values)
         for issue in warnings:
             entity_key = {
+                "academic_period": "academic_periods",
                 "instructor": "instructors",
                 "contract_type": "contract_types",
                 "environment": "environments",
@@ -915,6 +712,7 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
                 counts[entity_key]["warnings"] += 1
         for issue in errors:
             entity_key = {
+                "academic_period": "academic_periods",
                 "instructor": "instructors",
                 "contract_type": "contract_types",
                 "environment": "environments",
@@ -1408,6 +1206,7 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
         )
         
     created_counts = {
+        "academic_periods": 0,
         "contract_types": 0,
         "instructors": 0,
         "environments": 0,
@@ -1420,6 +1219,7 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
     }
     
     updated_counts = {
+        "academic_periods": 0,
         "contract_types": 0,
         "instructors": 0,
         "environments": 0,
@@ -1430,6 +1230,33 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
         "topics": 0,
         "learning_result_topics": 0
     }
+
+    # 0. Save Academic Periods
+    for period in res["items"].get("academic_periods", []):
+        stmt = (
+            select(AcademicPeriod)
+            .where(AcademicPeriod.year == period["year"])
+            .where(AcademicPeriod.quarter_number == period["quarter_number"])
+        )
+        existing = session.exec(stmt).first()
+        payload = {
+            "year": period["year"],
+            "quarter_number": period["quarter_number"],
+            "name": period["name"],
+            "start_date": period["start_date"],
+            "end_date": period["end_date"],
+            "is_active": True,
+        }
+        if existing:
+            for k, v in payload.items():
+                setattr(existing, k, v)
+            session.add(existing)
+            updated_counts["academic_periods"] += 1
+        else:
+            obj = AcademicPeriod(**payload)
+            session.add(obj)
+            created_counts["academic_periods"] += 1
+        session.commit()
     
     # Map from program code to db program id
     program_id_map = {}
@@ -1458,6 +1285,7 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "code": grp["code"],
             "name": grp["name"],
             "jornada": grp["jornada"],
+            "modality": grp.get("modality"),
             "trimester": grp.get("trimester"),
             "start_date": grp["start_date"],
             "end_date": grp["end_date"],
@@ -1531,6 +1359,8 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "first_name": inst["first_name"],
             "last_name": inst["last_name"],
             "email": inst["email"],
+            "phone": inst.get("phone"),
+            "specialty": inst.get("specialty"),
             "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
             "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
             "weekly_base_hours": inst["weekly_base_hours"],
@@ -1552,8 +1382,9 @@ def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filen
             "code": env["code"],
             "name": env["name"],
             "location": env.get("location"),
-            "capacity": env["capacity"],
-            "environment_type": env["environment_type"],
+            "capacity": env.get("capacity", 0),
+            "environment_type": env.get("environment_type", "fisico"),
+            "notes": env.get("notes"),
             "is_active": True
         }
         obj, created = upsert_entity(session, Environment, "code", env["code"], payload)

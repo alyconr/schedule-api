@@ -7,10 +7,12 @@ import unicodedata
 from openpyxl import load_workbook
 from sqlmodel import Session, select
 
+from fastapi import HTTPException
+
 from app.models import Environment, Group, Instructor, LearningResult, LearningResultTopic, Schedule, Topic
 from app.schemas.imports import ImportCommitResponse, ImportEntitySummary, ImportIssue, ImportPreviewResponse
 from app.schemas.schedules import ScheduleCreate
-from app.services.schedule_period import quarter_for_date
+from app.services.schedule_period import quarter_for_date, validate_schedule_period
 
 
 def _header(value: Any) -> str:
@@ -105,8 +107,10 @@ def _parse_rows(
     for row_number, row in rows:
         try:
             schedule_date = _date(row.get("fecha"))
-            if schedule_date.year != schedule_year or quarter_for_date(schedule_date) != schedule_quarter:
-                raise ValueError("La fecha no pertenece al año y trimestre seleccionados")
+            try:
+                validate_schedule_period(schedule_date, schedule_year, schedule_quarter, session=session)
+            except HTTPException as exc:
+                raise ValueError(exc.detail)
             instructor, group, environment, learning_result = _find_entities(session, row)
             if instructor is None:
                 raise ValueError("No existe el instructor indicado en documento_instructor")

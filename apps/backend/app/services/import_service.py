@@ -1,4 +1,5 @@
 import io
+import json
 import re
 import hashlib
 import unicodedata
@@ -20,6 +21,9 @@ from app.models.academic import (
     LearningResultTopic,
     AcademicPeriod,
 )
+from app.models.auth import User
+from app.models.coordination import Coordination, InstructorCoordination, EnvironmentCoordination
+from app.models.imports import ImportBatch, ImportBatchRecord
 from app.services.imports import (
     WorkbookProfileDetector,
     parse_instructors_sheet,
@@ -30,13 +34,30 @@ from app.services.imports import (
     canonical_program_key,
     build_program_code as canonical_build_program_code,
 )
-
+from app.services.imports.safe_merge import (
+    compute_file_sha256,
+    compute_record_fingerprint,
+    merge_field,
+    deduplicate_records,
+    ClassifiedRecord,
+    classify_group,
+    classify_instructor,
+    classify_environment,
+    classify_training_program,
+    classify_academic_period,
+    classify_contract_type,
+    classify_generic_global_entity,
+)
 from app.schemas.imports import (
     ImportIssue,
     ImportEntitySummary,
     ImportPreviewResponse,
-    ImportCommitResponse
+    ImportCommitResponse,
+    ImportConflictItem,
+    ImportChangeItem,
+    ImportFieldChange,
 )
+
 
 
 def normalize_header(value: Any) -> str:
@@ -653,13 +674,17 @@ def upsert_entity(session: Session, model_cls: Any, lookup_field: str, lookup_va
     existing = session.exec(stmt).first()
     if existing:
         for k, v in payload.items():
-            setattr(existing, k, v)
+            merged = merge_field(getattr(existing, k, None), v)
+            setattr(existing, k, merged)
         session.add(existing)
+        session.flush()
         return existing, False
     else:
         new_obj = model_cls(**payload)
         session.add(new_obj)
+        session.flush()
         return new_obj, True
+
 
 
 def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict[str, Any]:
@@ -693,9 +718,43 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
 
     if import_type == "schedule_normalized":
         normalized = process_schedule_normalized_workbook(wb, warnings, errors)
+        if not errors:
+            normalized["instructors"] = deduplicate_records(
+                normalized.get("instructors", []),
+                lambda x: x.get("document_number", ""),
+                "instructors",
+                "LISTA INSTRUCTORES",
+                warnings,
+                errors,
+            )
+            normalized["environments"] = deduplicate_records(
+                normalized.get("environments", []),
+                lambda x: x.get("code", ""),
+                "environments",
+                "AMBIENTES",
+                warnings,
+                errors,
+            )
+            normalized["groups"] = deduplicate_records(
+                normalized.get("groups", []),
+                lambda x: x.get("code", ""),
+                "groups",
+                "FICHAS",
+                warnings,
+                errors,
+            )
+            normalized["programs"] = deduplicate_records(
+                normalized.get("programs", []),
+                lambda x: x.get("code", ""),
+                "programs",
+                "FICHAS",
+                warnings,
+                errors,
+            )
         for key, values in normalized.items():
             if key in counts:
                 counts[key]["valid"] = len(values)
+
         for issue in warnings:
             entity_key = {
                 "academic_period": "academic_periods",
@@ -1163,6 +1222,44 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
         counts["color_groups"]["valid"] = len(color_groups_list)
         counts["ra_topic_relations"]["valid"] = len(ra_topic_relations_list)
 
+    instructors_list = deduplicate_records(
+        instructors_list,
+        lambda x: x.get("document_number", ""),
+        "instructors",
+        "LISTA INSTRUCTORES",
+        warnings,
+        errors,
+    )
+    environments_list = deduplicate_records(
+        environments_list,
+        lambda x: x.get("code", ""),
+        "environments",
+        "AMBIENTES",
+        warnings,
+        errors,
+    )
+    groups_list = deduplicate_records(
+        groups_list,
+        lambda x: x.get("code", ""),
+        "groups",
+        "FICHAS",
+        warnings,
+        errors,
+    )
+    programs_list = deduplicate_records(
+        programs_list,
+        lambda x: x.get("code", ""),
+        "programs",
+        "FICHAS",
+        warnings,
+        errors,
+    )
+
+    counts["instructors"]["valid"] = len(instructors_list)
+    counts["environments"]["valid"] = len(environments_list)
+    counts["groups"]["valid"] = len(groups_list)
+    counts["programs"]["valid"] = len(programs_list)
+
     return {
         "import_type": import_type,
         "filename": filename,
@@ -1171,6 +1268,8 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
             k: ImportEntitySummary(**v) for k, v in counts.items()
         },
         "items": {
+            "academic_periods": [],
+            "contract_types": [],
             "instructors": instructors_list,
             "environments": environments_list,
             "groups": groups_list,
@@ -1185,346 +1284,834 @@ def process_workbook(file_bytes: bytes, filename: str, import_type: str) -> dict
     }
 
 
+def _record_classification(
+    entity_key: str,
+    record: ClassifiedRecord,
+    classified_counts: dict[str, dict[str, int]],
+    conflicts_detail: list[ImportConflictItem],
+    changes_detail: list[ImportChangeItem],
+):
+    if entity_key not in classified_counts:
+        classified_counts[entity_key] = {"created": 0, "updated": 0, "unchanged": 0, "conflicts": 0}
+
+    action_lower = record.action.lower()
+    if action_lower == "create":
+        classified_counts[entity_key]["created"] += 1
+    elif action_lower == "update":
+        classified_counts[entity_key]["updated"] += 1
+        if record.changes:
+            changes_detail.append(
+                ImportChangeItem(
+                    entity=entity_key,
+                    natural_key=record.natural_key,
+                    changes={
+                        k: ImportFieldChange(before=v["before"], after=v["after"])
+                        for k, v in record.changes.items()
+                    },
+                )
+            )
+    elif action_lower == "unchanged":
+        classified_counts[entity_key]["unchanged"] += 1
+    elif action_lower == "conflict":
+        classified_counts[entity_key]["conflicts"] += 1
+        conflicts_detail.append(
+            ImportConflictItem(
+                entity=entity_key,
+                natural_key=record.natural_key,
+                sheet=record.source_sheet,
+                row=record.source_row,
+                message=record.conflict_reason or "Conflicto con datos existentes",
+            )
+        )
+
+
+def preview_import_for_coordination(
+    session: Session,
+    file_bytes: bytes,
+    filename: str,
+    import_type: str,
+    coordination_id: Optional[int],
+    is_global: bool = False,
+) -> ImportPreviewResponse:
+    res = process_workbook(file_bytes, filename, import_type)
+    file_sha256 = compute_file_sha256(file_bytes)
+
+    # Check if reimport
+    is_reimport = False
+    if coordination_id is not None:
+        prev_batch = session.exec(
+            select(ImportBatch).where(
+                ImportBatch.coordination_id == coordination_id,
+                ImportBatch.file_sha256 == file_sha256,
+                ImportBatch.import_type == import_type,
+                ImportBatch.status.in_(["completed", "completed_with_warnings"]),
+            )
+        ).first()
+        if prev_batch:
+            is_reimport = True
+            res["warnings"].append(
+                ImportIssue(
+                    sheet="GENERAL",
+                    severity="warning",
+                    message="Este mismo archivo ya fue importado anteriormente para esta coordinación.",
+                )
+            )
+
+    conflicts_detail: list[ImportConflictItem] = []
+    changes_detail: list[ImportChangeItem] = []
+
+    classified_counts: dict[str, dict[str, int]] = {
+        k: {"created": 0, "updated": 0, "unchanged": 0, "conflicts": 0}
+        for k in res["summary"].keys()
+    }
+
+    # 1. Academic Periods
+    for item in res["items"].get("academic_periods", []):
+        c = classify_academic_period(session, item, is_global)
+        _record_classification("academic_periods", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 2. Programs
+    for item in res["items"].get("programs", []):
+        c = classify_training_program(session, item)
+        _record_classification("programs", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 3. Contract types
+    for item in res["items"].get("contract_types", []):
+        c = classify_contract_type(session, item)
+        _record_classification("contract_types", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 4. Instructors
+    for item in res["items"].get("instructors", []):
+        c = classify_instructor(session, item, coordination_id, is_global)
+        _record_classification("instructors", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 5. Environments
+    for item in res["items"].get("environments", []):
+        c = classify_environment(session, item, coordination_id, is_global)
+        _record_classification("environments", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 6. Groups
+    for item in res["items"].get("groups", []):
+        c = classify_group(session, item, coordination_id, is_global)
+        _record_classification("groups", c, classified_counts, conflicts_detail, changes_detail)
+
+    # 7. Learning Results, Topics, etc.
+    for item in res["items"].get("learning_results", []):
+        c = classify_generic_global_entity(session, LearningResult, "code", "learning_results", item)
+        _record_classification("learning_results", c, classified_counts, conflicts_detail, changes_detail)
+
+    for item in res["items"].get("topics", []):
+        c = classify_generic_global_entity(session, Topic, "code", "topics", item)
+        _record_classification("topics", c, classified_counts, conflicts_detail, changes_detail)
+
+    for item in res["items"].get("ra_topic_relations", []):
+        c = classify_generic_global_entity(session, LearningResultTopic, "relation_id", "ra_topic_relations", item)
+        _record_classification("ra_topic_relations", c, classified_counts, conflicts_detail, changes_detail)
+
+    # Update summaries
+    for entity_name, counts in classified_counts.items():
+        if entity_name in res["summary"]:
+            curr_summary = res["summary"][entity_name]
+            total_valid = counts["created"] + counts["updated"] + counts["unchanged"]
+            curr_summary.valid = total_valid
+            curr_summary.created = counts["created"]
+            curr_summary.updated = counts["updated"]
+            curr_summary.unchanged = counts["unchanged"]
+            curr_summary.conflicts = counts["conflicts"]
+            curr_summary.rejected += counts["conflicts"]
+
+    return ImportPreviewResponse(
+        import_type=res["import_type"],
+        filename=res["filename"],
+        sheets_detected=res["sheets_detected"],
+        summary=res["summary"],
+        items=res["items"],
+        warnings=res["warnings"],
+        errors=res["errors"],
+        file_sha256=file_sha256,
+        coordination_id=coordination_id,
+        mode="safe_merge",
+        is_reimport=is_reimport,
+        conflicts_detail=conflicts_detail,
+        changes_detail=changes_detail,
+    )
+
+
 def preview_workbook(file_bytes: bytes, filename: str, import_type: str) -> ImportPreviewResponse:
     res = process_workbook(file_bytes, filename, import_type)
     return ImportPreviewResponse(**res)
 
 
-def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filename: str = "import.xlsx", mode: str = "upsert") -> ImportCommitResponse:
+def commit_workbook_for_coordination(
+    session: Session,
+    file_bytes: bytes,
+    import_type: str,
+    coordination_id: Optional[int],
+    user_id: int,
+    filename: str = "import.xlsx",
+    mode: str = "safe_merge",
+    is_global: bool = False,
+) -> ImportCommitResponse:
+    file_sha256 = compute_file_sha256(file_bytes)
     res = process_workbook(file_bytes, filename, import_type)
-    
-    # Check if there are critical errors
+
     errors = res["errors"]
     if any(e.severity == "error" for e in errors):
         return ImportCommitResponse(
             status="failed",
             created={},
             updated={},
-            rejected=0,
+            unchanged={},
+            conflicts={},
+            rejected=len([e for e in errors if e.severity == "error"]),
             warnings=res["warnings"],
-            errors=errors
+            errors=errors,
+            file_sha256=file_sha256,
         )
-        
-    created_counts = {
-        "academic_periods": 0,
-        "contract_types": 0,
-        "instructors": 0,
-        "environments": 0,
-        "groups": 0,
-        "programs": 0,
-        "competencies": 0,
-        "learning_results": 0,
-        "topics": 0,
-        "learning_result_topics": 0
-    }
-    
-    updated_counts = {
-        "academic_periods": 0,
-        "contract_types": 0,
-        "instructors": 0,
-        "environments": 0,
-        "groups": 0,
-        "programs": 0,
-        "competencies": 0,
-        "learning_results": 0,
-        "topics": 0,
-        "learning_result_topics": 0
-    }
 
-    # 0. Save Academic Periods
-    for period in res["items"].get("academic_periods", []):
-        stmt = (
-            select(AcademicPeriod)
-            .where(AcademicPeriod.year == period["year"])
-            .where(AcademicPeriod.quarter_number == period["quarter_number"])
+    created_counts = {k: 0 for k in [
+        "academic_periods", "contract_types", "instructors", "environments",
+        "groups", "programs", "competencies", "learning_results", "topics",
+        "learning_result_topics"
+    ]}
+    updated_counts = {k: 0 for k in created_counts.keys()}
+    unchanged_counts = {k: 0 for k in created_counts.keys()}
+    conflict_counts = {k: 0 for k in created_counts.keys()}
+
+    try:
+        # Create ImportBatch in the transaction
+        batch = ImportBatch(
+            import_type=import_type,
+            coordination_id=coordination_id,
+            uploaded_by_user_id=user_id,
+            filename=filename,
+            file_sha256=file_sha256,
+            mode=mode,
+            status="processing",
+            created_at=datetime.utcnow(),
         )
-        existing = session.exec(stmt).first()
-        payload = {
-            "year": period["year"],
-            "quarter_number": period["quarter_number"],
-            "name": period["name"],
-            "start_date": period["start_date"],
-            "end_date": period["end_date"],
-            "is_active": True,
-        }
-        if existing:
-            for k, v in payload.items():
-                setattr(existing, k, v)
-            session.add(existing)
-            updated_counts["academic_periods"] += 1
-        else:
-            obj = AcademicPeriod(**payload)
-            session.add(obj)
-            created_counts["academic_periods"] += 1
-        session.commit()
-    
-    # Map from program code to db program id
-    program_id_map = {}
-    
-    # 1. Save Programs
-    for prog in res["items"]["programs"]:
-        payload = {
-            "code": prog["code"],
-            "name": prog["name"],
-            "level": prog["level"],
-            "is_active": True
-        }
-        obj, created = upsert_entity(session, TrainingProgram, "code", prog["code"], payload)
-        session.commit()
-        session.refresh(obj)
-        program_id_map[prog["code"]] = obj.id
-        if created:
-            created_counts["programs"] += 1
-        else:
-            updated_counts["programs"] += 1
-            
-    # 2. Save Groups
-    for grp in res["items"]["groups"]:
-        prog_id = program_id_map.get(grp["training_program_code"])
-        payload = {
-            "code": grp["code"],
-            "name": grp["name"],
-            "jornada": grp["jornada"],
-            "modality": grp.get("modality"),
-            "trimester": grp.get("trimester"),
-            "start_date": grp["start_date"],
-            "end_date": grp["end_date"],
-            "productive_stage_start_date": grp.get("productive_stage_start_date"),
-            "productive_stage_end_date": grp.get("productive_stage_end_date"),
-            "learners_count": grp["learners_count"],
-            "notes": grp["notes"],
-            "training_program_id": prog_id,
-            "is_active": True
-        }
-        obj, created = upsert_entity(session, Group, "code", grp["code"], payload)
-        session.commit()
-        if created:
-            created_counts["groups"] += 1
-        else:
-            updated_counts["groups"] += 1
-            
-    # 3. Save Contract Types and Instructors
-    # Cache Contract Types
-    contract_type_map = {}
+        session.add(batch)
+        session.flush()
 
-    for item in res["items"].get("contract_types", []):
-        payload = {
-            "name": item["name"],
-            "description": item.get("description"),
-            "category": item.get("category"),
-            "monthly_training_hours": item.get("monthly_training_hours", Decimal("0")),
-            "monthly_additional_hours": item.get("monthly_additional_hours", Decimal("0")),
-            "weekly_base_hours": item.get("weekly_base_hours", Decimal("0")),
-            "weekly_max_hours": item.get("weekly_max_hours", Decimal("0")),
-            "source_label": item.get("source_label"),
-            "is_active": True,
-        }
-        obj, created = upsert_entity(session, ContractType, "name", item["name"], payload)
-        session.commit()
-        session.refresh(obj)
-        contract_type_map[item["name"]] = obj.id
-        if created:
-            created_counts["contract_types"] += 1
-        else:
-            updated_counts["contract_types"] += 1
+        # 0. Academic Periods
+        for period in res["items"].get("academic_periods", []):
+            classified = classify_academic_period(session, period, is_global)
+            if classified.action == "CONFLICT":
+                conflict_counts["academic_periods"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="academic_periods",
+                    natural_key=classified.natural_key,
+                    action="CONFLICT",
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                    conflict_reason=classified.conflict_reason,
+                ))
+                continue
 
-    for inst in res["items"]["instructors"]:
-        ct_name = inst["contract_type_name"]
-        if ct_name not in contract_type_map:
-            ct_payload = {
-                "name": ct_name,
-                "description": f"Tipo de vinculacion {ct_name}",
-                "category": inst.get("contract_type_category"),
-                "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
-                "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
-                "weekly_base_hours": inst.get("contract_type_base_hours", Decimal("0")),
-                "weekly_max_hours": inst.get("contract_type_max_hours", Decimal("0")),
-                "source_label": ct_name,
-                "is_active": True
+            if classified.action == "CREATE" and is_global:
+                payload = {
+                    "year": period["year"],
+                    "quarter_number": period["quarter_number"],
+                    "name": period["name"],
+                    "start_date": period["start_date"],
+                    "end_date": period["end_date"],
+                    "is_active": True,
+                }
+                obj = AcademicPeriod(**payload)
+                session.add(obj)
+                session.flush()
+                created_counts["academic_periods"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="academic_periods",
+                    entity_id=obj.id,
+                    natural_key=classified.natural_key,
+                    action="CREATE",
+                    after_hash=compute_record_fingerprint(obj.model_dump()),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+            elif classified.action == "UPDATE" and is_global:
+                existing = classified.existing_obj
+                for k, v in period.items():
+                    merged = merge_field(getattr(existing, k, None), v)
+                    setattr(existing, k, merged)
+                session.add(existing)
+                session.flush()
+                updated_counts["academic_periods"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="academic_periods",
+                    entity_id=existing.id,
+                    natural_key=classified.natural_key,
+                    action="UPDATE",
+                    before_hash=classified.before_hash,
+                    after_hash=compute_record_fingerprint(existing.model_dump()),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+            else:
+                unchanged_counts["academic_periods"] += 1
+
+        # 1. Programs
+        program_id_map = {}
+        for prog in res["items"]["programs"]:
+            classified = classify_training_program(session, prog)
+            if classified.action == "CONFLICT":
+                conflict_counts["programs"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="programs",
+                    natural_key=classified.natural_key,
+                    action="CONFLICT",
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                    conflict_reason=classified.conflict_reason,
+                ))
+                continue
+
+            payload = {
+                "code": prog["code"],
+                "name": prog["name"],
+                "level": prog["level"],
+                "is_active": True,
             }
-            ct_obj, ct_created = upsert_entity(session, ContractType, "name", ct_name, ct_payload)
-            session.commit()
-            session.refresh(ct_obj)
-            contract_type_map[ct_name] = ct_obj.id
-            if ct_created:
+            obj, created = upsert_entity(session, TrainingProgram, "code", prog["code"], payload)
+            program_id_map[prog["code"]] = obj.id
+            if created:
+                created_counts["programs"] += 1
+                act = "CREATE"
+            else:
+                act = "UNCHANGED"
+                unchanged_counts["programs"] += 1
+            session.add(ImportBatchRecord(
+                batch_id=batch.id,
+                coordination_id=coordination_id,
+                entity_type="programs",
+                entity_id=obj.id,
+                natural_key=prog["code"],
+                action=act,
+                source_sheet="FICHAS",
+                source_row=prog.get("source_row"),
+            ))
+
+        # 2. Groups (Fichas)
+        for grp in res["items"]["groups"]:
+            classified = classify_group(session, grp, coordination_id, is_global)
+            if classified.action == "CONFLICT":
+                conflict_counts["groups"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="groups",
+                    natural_key=classified.natural_key,
+                    action="CONFLICT",
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                    conflict_reason=classified.conflict_reason,
+                ))
+                continue
+
+            prog_id = program_id_map.get(grp["training_program_code"])
+            if not prog_id:
+                prog = session.exec(select(TrainingProgram).where(TrainingProgram.code == grp["training_program_code"])).first()
+                prog_id = prog.id if prog else None
+
+            if classified.action == "CREATE":
+                payload = {
+                    "code": grp["code"],
+                    "name": grp["name"],
+                    "jornada": grp["jornada"],
+                    "modality": grp.get("modality"),
+                    "trimester": grp.get("trimester"),
+                    "start_date": grp["start_date"],
+                    "end_date": grp["end_date"],
+                    "productive_stage_start_date": grp.get("productive_stage_start_date"),
+                    "productive_stage_end_date": grp.get("productive_stage_end_date"),
+                    "learners_count": grp["learners_count"],
+                    "notes": grp.get("notes"),
+                    "training_program_id": prog_id,
+                    "coordination_id": coordination_id,
+                    "is_active": True,
+                }
+                new_group = Group(**payload)
+                session.add(new_group)
+                session.flush()
+                created_counts["groups"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="groups",
+                    entity_id=new_group.id,
+                    natural_key=grp["code"],
+                    action="CREATE",
+                    after_hash=compute_record_fingerprint(new_group.model_dump()),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+            elif classified.action == "UPDATE":
+                existing = classified.existing_obj
+                # Concurrency optimistic check
+                curr_db_hash = compute_record_fingerprint(existing.model_dump())
+                if classified.before_hash and curr_db_hash != classified.before_hash:
+                    conflict_counts["groups"] += 1
+                    session.add(ImportBatchRecord(
+                        batch_id=batch.id,
+                        coordination_id=coordination_id,
+                        entity_type="groups",
+                        entity_id=existing.id,
+                        natural_key=grp["code"],
+                        action="CONFLICT",
+                        conflict_reason="CONFLICT_CONCURRENT_CHANGE: El registro fue modificado concurrentemente.",
+                        source_sheet=classified.source_sheet,
+                        source_row=classified.source_row,
+                    ))
+                    continue
+
+                for fld, diff in classified.changes.items():
+                    setattr(existing, fld, diff["after"])
+                session.add(existing)
+                session.flush()
+                updated_counts["groups"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="groups",
+                    entity_id=existing.id,
+                    natural_key=grp["code"],
+                    action="UPDATE",
+                    before_hash=classified.before_hash,
+                    after_hash=compute_record_fingerprint(existing.model_dump()),
+                    changes=json.dumps(classified.changes, default=str),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+            else:
+                unchanged_counts["groups"] += 1
+
+        # 3. Contract Types & Instructors
+        contract_type_map = {}
+        for item in res["items"].get("contract_types", []):
+            payload = {
+                "name": item["name"],
+                "description": item.get("description"),
+                "category": item.get("category"),
+                "monthly_training_hours": item.get("monthly_training_hours", Decimal("0")),
+                "monthly_additional_hours": item.get("monthly_additional_hours", Decimal("0")),
+                "weekly_base_hours": item.get("weekly_base_hours", Decimal("0")),
+                "weekly_max_hours": item.get("weekly_max_hours", Decimal("0")),
+                "source_label": item.get("source_label"),
+                "is_active": True,
+            }
+            obj, created = upsert_entity(session, ContractType, "name", item["name"], payload)
+            contract_type_map[item["name"]] = obj.id
+            if created:
                 created_counts["contract_types"] += 1
             else:
-                updated_counts["contract_types"] += 1
-                
-        ct_id = contract_type_map[ct_name]
-        
-        payload = {
-            "document_type": inst["document_type"],
-            "document_number": inst["document_number"],
-            "first_name": inst["first_name"],
-            "last_name": inst["last_name"],
-            "email": inst["email"],
-            "phone": inst.get("phone"),
-            "specialty": inst.get("specialty"),
-            "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
-            "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
-            "weekly_base_hours": inst["weekly_base_hours"],
-            "weekly_max_hours": inst["weekly_max_hours"],
-            "area": inst["area"],
-            "contract_type_id": ct_id,
-            "is_active": True
-        }
-        obj, created = upsert_entity(session, Instructor, "document_number", inst["document_number"], payload)
-        session.commit()
-        if created:
-            created_counts["instructors"] += 1
-        else:
-            updated_counts["instructors"] += 1
-            
-    # 4. Save Environments
-    for env in res["items"]["environments"]:
-        payload = {
-            "code": env["code"],
-            "name": env["name"],
-            "location": env.get("location"),
-            "capacity": env.get("capacity", 0),
-            "environment_type": env.get("environment_type", "fisico"),
-            "notes": env.get("notes"),
-            "is_active": True
-        }
-        obj, created = upsert_entity(session, Environment, "code", env["code"], payload)
-        session.commit()
-        if created:
-            created_counts["environments"] += 1
-        else:
-            updated_counts["environments"] += 1
+                unchanged_counts["contract_types"] += 1
 
-    # 5. Create generic competencies for created programs and link learning results (RAPs)
-    # Get all training program IDs created/updated
-    comp_map = {} # program_id -> competency_id
-    
-    # Only create competencies/RAPs if we have RAPs in preview items
-    raps_to_import = res["items"].get("learning_results", [])
-    if raps_to_import and program_id_map and import_type not in ("semaforos_relacional", "schedule_normalized"):
-        for prog_code, prog_id in program_id_map.items():
-            # Create a generic competency
-            comp_code = f"COMP-GEN-{prog_code}"
-            comp_payload = {
-                "code": comp_code,
-                "name": f"Competencia Genérica para el programa",
-                "training_program_id": prog_id,
-                "is_active": True
-            }
-            comp_obj, comp_created = upsert_entity(session, Competency, "code", comp_code, comp_payload)
-            session.commit()
-            session.refresh(comp_obj)
-            comp_map[prog_id] = comp_obj.id
-            if comp_created:
-                created_counts["competencies"] += 1
+        for inst in res["items"]["instructors"]:
+            classified = classify_instructor(session, inst, coordination_id, is_global)
+            if classified.action == "CONFLICT":
+                conflict_counts["instructors"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="instructors",
+                    natural_key=classified.natural_key,
+                    action="CONFLICT",
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                    conflict_reason=classified.conflict_reason,
+                ))
+                continue
+
+            ct_name = inst["contract_type_name"]
+            if ct_name not in contract_type_map:
+                ct_payload = {
+                    "name": ct_name,
+                    "description": f"Tipo de vinculacion {ct_name}",
+                    "category": inst.get("contract_type_category"),
+                    "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
+                    "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
+                    "weekly_base_hours": inst.get("contract_type_base_hours", Decimal("0")),
+                    "weekly_max_hours": inst.get("contract_type_max_hours", Decimal("0")),
+                    "source_label": ct_name,
+                    "is_active": True,
+                }
+                ct_obj, ct_created = upsert_entity(session, ContractType, "name", ct_name, ct_payload)
+                contract_type_map[ct_name] = ct_obj.id
+                if ct_created:
+                    created_counts["contract_types"] += 1
+
+            ct_id = contract_type_map[ct_name]
+
+            if classified.action == "CREATE":
+                payload = {
+                    "document_type": inst["document_type"],
+                    "document_number": inst["document_number"],
+                    "first_name": inst["first_name"],
+                    "last_name": inst["last_name"],
+                    "email": inst["email"],
+                    "phone": inst.get("phone"),
+                    "specialty": inst.get("specialty"),
+                    "monthly_training_hours": inst.get("monthly_training_hours", Decimal("0")),
+                    "monthly_additional_hours": inst.get("monthly_additional_hours", Decimal("0")),
+                    "weekly_base_hours": inst["weekly_base_hours"],
+                    "weekly_max_hours": inst["weekly_max_hours"],
+                    "area": inst["area"],
+                    "contract_type_id": ct_id,
+                    "primary_coordination_id": coordination_id,
+                    "is_active": True,
+                }
+                new_inst = Instructor(**payload)
+                session.add(new_inst)
+                session.flush()
+                if coordination_id is not None:
+                    session.add(InstructorCoordination(instructor_id=new_inst.id, coordination_id=coordination_id))
+                    session.flush()
+                created_counts["instructors"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="instructors",
+                    entity_id=new_inst.id,
+                    natural_key=inst["document_number"],
+                    action="CREATE",
+                    after_hash=compute_record_fingerprint(new_inst.model_dump()),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
             else:
-                updated_counts["competencies"] += 1
-                
-        # Link RAPs to the generic competencies
-        for rap in raps_to_import:
-            # We insert it under each program's generic competency
-            for prog_id, comp_id in comp_map.items():
-                # Make code program-specific to avoid collision in db (since code is unique)
-                rap_code = f"{rap['code']}-{prog_id}"
-                rap_payload = {
-                    "code": rap_code[:50],
+                existing = classified.existing_obj
+                is_updated = False
+                if classified.action == "UPDATE":
+                    curr_db_hash = compute_record_fingerprint(existing.model_dump())
+                    if classified.before_hash and curr_db_hash != classified.before_hash:
+                        conflict_counts["instructors"] += 1
+                        session.add(ImportBatchRecord(
+                            batch_id=batch.id,
+                            coordination_id=coordination_id,
+                            entity_type="instructors",
+                            entity_id=existing.id,
+                            natural_key=inst["document_number"],
+                            action="CONFLICT",
+                            conflict_reason="CONFLICT_CONCURRENT_CHANGE",
+                            source_sheet=classified.source_sheet,
+                            source_row=classified.source_row,
+                        ))
+                        continue
+
+                    for fld, diff in classified.changes.items():
+                        setattr(existing, fld, diff["after"])
+                    is_updated = bool(classified.changes)
+
+                if coordination_id is not None:
+                    link = session.exec(
+                        select(InstructorCoordination).where(
+                            InstructorCoordination.instructor_id == existing.id,
+                            InstructorCoordination.coordination_id == coordination_id,
+                        )
+                    ).first()
+                    if not link:
+                        session.add(InstructorCoordination(instructor_id=existing.id, coordination_id=coordination_id))
+                        is_updated = True
+
+                session.add(existing)
+                session.flush()
+                if is_updated:
+                    updated_counts["instructors"] += 1
+                    act = "UPDATE"
+                else:
+                    unchanged_counts["instructors"] += 1
+                    act = "UNCHANGED"
+
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="instructors",
+                    entity_id=existing.id,
+                    natural_key=inst["document_number"],
+                    action=act,
+                    before_hash=classified.before_hash,
+                    after_hash=compute_record_fingerprint(existing.model_dump()),
+                    changes=json.dumps(classified.changes, default=str) if classified.changes else None,
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+
+        # 4. Environments
+        for env in res["items"]["environments"]:
+            classified = classify_environment(session, env, coordination_id, is_global)
+            if classified.action == "CONFLICT":
+                conflict_counts["environments"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="environments",
+                    natural_key=classified.natural_key,
+                    action="CONFLICT",
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                    conflict_reason=classified.conflict_reason,
+                ))
+                continue
+
+            if classified.action == "CREATE":
+                payload = {
+                    "code": env["code"],
+                    "name": env["name"],
+                    "location": env.get("location"),
+                    "capacity": env.get("capacity", 0),
+                    "environment_type": env.get("environment_type", "fisico"),
+                    "notes": env.get("notes"),
+                    "is_active": True,
+                }
+                new_env = Environment(**payload)
+                session.add(new_env)
+                session.flush()
+                if coordination_id is not None:
+                    session.add(EnvironmentCoordination(environment_id=new_env.id, coordination_id=coordination_id))
+                    session.flush()
+                created_counts["environments"] += 1
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="environments",
+                    entity_id=new_env.id,
+                    natural_key=env["code"],
+                    action="CREATE",
+                    after_hash=compute_record_fingerprint(new_env.model_dump()),
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+            else:
+                existing = classified.existing_obj
+                is_updated = False
+                if classified.action == "UPDATE":
+                    curr_db_hash = compute_record_fingerprint(existing.model_dump())
+                    if classified.before_hash and curr_db_hash != classified.before_hash:
+                        conflict_counts["environments"] += 1
+                        session.add(ImportBatchRecord(
+                            batch_id=batch.id,
+                            coordination_id=coordination_id,
+                            entity_type="environments",
+                            entity_id=existing.id,
+                            natural_key=env["code"],
+                            action="CONFLICT",
+                            conflict_reason="CONFLICT_CONCURRENT_CHANGE",
+                            source_sheet=classified.source_sheet,
+                            source_row=classified.source_row,
+                        ))
+                        continue
+
+                    for fld, diff in classified.changes.items():
+                        setattr(existing, fld, diff["after"])
+                    is_updated = bool(classified.changes)
+
+                if coordination_id is not None:
+                    link = session.exec(
+                        select(EnvironmentCoordination).where(
+                            EnvironmentCoordination.environment_id == existing.id,
+                            EnvironmentCoordination.coordination_id == coordination_id,
+                        )
+                    ).first()
+                    if not link:
+                        session.add(EnvironmentCoordination(environment_id=existing.id, coordination_id=coordination_id))
+                        is_updated = True
+
+                session.add(existing)
+                session.flush()
+                if is_updated:
+                    updated_counts["environments"] += 1
+                    act = "UPDATE"
+                else:
+                    unchanged_counts["environments"] += 1
+                    act = "UNCHANGED"
+
+                session.add(ImportBatchRecord(
+                    batch_id=batch.id,
+                    coordination_id=coordination_id,
+                    entity_type="environments",
+                    entity_id=existing.id,
+                    natural_key=env["code"],
+                    action=act,
+                    before_hash=classified.before_hash,
+                    after_hash=compute_record_fingerprint(existing.model_dump()),
+                    changes=json.dumps(classified.changes, default=str) if classified.changes else None,
+                    source_sheet=classified.source_sheet,
+                    source_row=classified.source_row,
+                ))
+
+        # 5. Generic Competencies and Learning Results (RAPs)
+        raps_to_import = res["items"].get("learning_results", [])
+        if raps_to_import and program_id_map and import_type not in ("semaforos_relacional", "schedule_normalized"):
+            comp_map = {}
+            for prog_code, prog_id in program_id_map.items():
+                comp_code = f"COMP-GEN-{prog_code}"
+                comp_payload = {
+                    "code": comp_code,
+                    "name": "Competencia Genérica para el programa",
+                    "training_program_id": prog_id,
+                    "is_active": True,
+                }
+                comp_obj, comp_created = upsert_entity(session, Competency, "code", comp_code, comp_payload)
+                comp_map[prog_id] = comp_obj.id
+                if comp_created:
+                    created_counts["competencies"] += 1
+                else:
+                    unchanged_counts["competencies"] += 1
+
+            for rap in raps_to_import:
+                for prog_id, comp_id in comp_map.items():
+                    rap_code = f"{rap['code']}-{prog_id}"
+                    rap_payload = {
+                        "code": rap_code[:50],
+                        "description": rap["description"][:500],
+                        "competency_id": comp_id,
+                        "estimated_hours": rap["estimated_hours"],
+                        "result_type": rap["result_type"],
+                        "is_active": True,
+                    }
+                    obj, created = upsert_entity(session, LearningResult, "code", rap_code[:50], rap_payload)
+                    if created:
+                        created_counts["learning_results"] += 1
+                    else:
+                        unchanged_counts["learning_results"] += 1
+
+        if import_type in ("semaforos_relacional", "schedule_normalized"):
+            learning_result_id_map = {}
+            for rap in raps_to_import:
+                payload = {
+                    "code": rap["code"][:50],
                     "description": rap["description"][:500],
-                    "competency_id": comp_id,
+                    "competency_id": None,
                     "estimated_hours": rap["estimated_hours"],
                     "result_type": rap["result_type"],
-                    "is_active": True
+                    "is_active": True,
                 }
-                obj, created = upsert_entity(session, LearningResult, "code", rap_code[:50], rap_payload)
-                session.commit()
+                obj, created = upsert_entity(session, LearningResult, "code", rap["code"][:50], payload)
+                learning_result_id_map[rap["code"]] = obj.id
                 if created:
                     created_counts["learning_results"] += 1
                 else:
-                    updated_counts["learning_results"] += 1
+                    unchanged_counts["learning_results"] += 1
 
-    if import_type in ("semaforos_relacional", "schedule_normalized"):
-        learning_result_id_map = {}
-        for rap in raps_to_import:
-            payload = {
-                "code": rap["code"][:50],
-                "description": rap["description"][:500],
-                "competency_id": None,
-                "estimated_hours": rap["estimated_hours"],
-                "result_type": rap["result_type"],
-                "is_active": True
-            }
-            obj, created = upsert_entity(session, LearningResult, "code", rap["code"][:50], payload)
-            session.commit()
-            session.refresh(obj)
-            learning_result_id_map[rap["code"]] = obj.id
-            if created:
-                created_counts["learning_results"] += 1
-            else:
-                updated_counts["learning_results"] += 1
+            topic_id_map = {}
+            for topic in res["items"].get("topics", []):
+                payload = {
+                    "code": topic["code"][:50],
+                    "name": topic.get("name", topic.get("description", ""))[:500],
+                    "program_scope": topic["program_scope"],
+                    "trimester": topic["trimester"],
+                    "trimester_number": topic["trimester_number"],
+                    "estimated_hours": topic["estimated_hours"],
+                    "source_sheet": topic["source_sheet"],
+                    "source_address": topic["source_address"],
+                    "source_row": topic["source_row"],
+                    "source_col": topic["source_col"],
+                    "color_key": topic["color_key"],
+                    "color_hex": topic["color_hex"],
+                    "is_active": True,
+                }
+                obj, created = upsert_entity(session, Topic, "code", topic["code"][:50], payload)
+                topic_id_map[topic["code"]] = obj.id
+                if created:
+                    created_counts["topics"] += 1
+                else:
+                    unchanged_counts["topics"] += 1
 
-        topic_id_map = {}
-        for topic in res["items"].get("topics", []):
-            payload = {
-                "code": topic["code"][:50],
-                "name": topic.get("name", topic.get("description", ""))[:500],
-                "program_scope": topic["program_scope"],
-                "trimester": topic["trimester"],
-                "trimester_number": topic["trimester_number"],
-                "estimated_hours": topic["estimated_hours"],
-                "source_sheet": topic["source_sheet"],
-                "source_address": topic["source_address"],
-                "source_row": topic["source_row"],
-                "source_col": topic["source_col"],
-                "color_key": topic["color_key"],
-                "color_hex": topic["color_hex"],
-                "is_active": True
-            }
-            obj, created = upsert_entity(session, Topic, "code", topic["code"][:50], payload)
-            session.commit()
-            session.refresh(obj)
-            topic_id_map[topic["code"]] = obj.id
-            if created:
-                created_counts["topics"] += 1
-            else:
-                updated_counts["topics"] += 1
+            for relation in res["items"].get("ra_topic_relations", []):
+                learning_result_id = learning_result_id_map.get(relation["learning_result_code"])
+                topic_id = topic_id_map.get(relation["topic_code"])
+                if learning_result_id is None or topic_id is None:
+                    continue
+                training_program_code = relation.get("training_program_code")
+                training_program_id = program_id_map.get(training_program_code)
+                if training_program_id is None and training_program_code:
+                    program = session.exec(select(TrainingProgram).where(TrainingProgram.code == training_program_code)).first()
+                    training_program_id = program.id if program else None
+                payload = {
+                    "relation_id": relation["relation_id"],
+                    "training_program_id": training_program_id,
+                    "training_program_code": training_program_code,
+                    "training_program_name": relation.get("training_program_name"),
+                    "learning_result_id": learning_result_id,
+                    "topic_id": topic_id,
+                    "group_id": relation["group_id"],
+                    "program_scope": relation["program_scope"],
+                    "trimester_number": relation["trimester_number"],
+                    "color_key": relation["color_key"],
+                    "color_hex": relation["color_hex"],
+                    "relation_method": relation["relation_method"],
+                    "relation_status": relation["relation_status"],
+                    "confidence": relation["confidence"],
+                    "needs_manual_review": relation["needs_manual_review"],
+                }
+                obj, created = upsert_entity(session, LearningResultTopic, "relation_id", relation["relation_id"], payload)
+                if created:
+                    created_counts["learning_result_topics"] += 1
+                else:
+                    unchanged_counts["learning_result_topics"] += 1
 
-        for relation in res["items"].get("ra_topic_relations", []):
-            learning_result_id = learning_result_id_map.get(relation["learning_result_code"])
-            topic_id = topic_id_map.get(relation["topic_code"])
-            if learning_result_id is None or topic_id is None:
-                continue
-            training_program_code = relation.get("training_program_code")
-            training_program_id = program_id_map.get(training_program_code)
-            if training_program_id is None and training_program_code:
-                program = session.exec(select(TrainingProgram).where(TrainingProgram.code == training_program_code)).first()
-                training_program_id = program.id if program else None
-            payload = {
-                "relation_id": relation["relation_id"],
-                "training_program_id": training_program_id,
-                "training_program_code": training_program_code,
-                "training_program_name": relation.get("training_program_name"),
-                "learning_result_id": learning_result_id,
-                "topic_id": topic_id,
-                "group_id": relation["group_id"],
-                "program_scope": relation["program_scope"],
-                "trimester_number": relation["trimester_number"],
-                "color_key": relation["color_key"],
-                "color_hex": relation["color_hex"],
-                "relation_method": relation["relation_method"],
-                "relation_status": relation["relation_status"],
-                "confidence": relation["confidence"],
-                "needs_manual_review": relation["needs_manual_review"],
-            }
-            obj, created = upsert_entity(session, LearningResultTopic, "relation_id", relation["relation_id"], payload)
-            session.commit()
-            if created:
-                created_counts["learning_result_topics"] += 1
-            else:
-                updated_counts["learning_result_topics"] += 1
+        total_created = sum(created_counts.values())
+        total_updated = sum(updated_counts.values())
+        total_unchanged = sum(unchanged_counts.values())
+        total_conflicts = sum(conflict_counts.values())
 
-    return ImportCommitResponse(
-        status="completed_with_warnings" if res["warnings"] else "completed",
-        created=created_counts,
-        updated=updated_counts,
-        rejected=sum(summary.rejected for summary in res["summary"].values()),
-        warnings=res["warnings"],
-        errors=errors
+        batch.created_count = total_created
+        batch.updated_count = total_updated
+        batch.unchanged_count = total_unchanged
+        batch.conflict_count = total_conflicts
+        batch.warning_count = len(res["warnings"])
+        batch.error_count = len(res["errors"])
+        batch.status = "completed_with_warnings" if (total_conflicts > 0 or res["warnings"]) else "completed"
+        batch.committed_at = datetime.utcnow()
+        batch.summary_data = json.dumps({
+            "created": created_counts,
+            "updated": updated_counts,
+            "unchanged": unchanged_counts,
+            "conflicts": conflict_counts,
+        })
+        session.flush()
+
+        # SINGLE TRANSACTION COMMIT
+        session.commit()
+
+        return ImportCommitResponse(
+            status=batch.status,
+            batch_id=batch.id,
+            created=created_counts,
+            updated=updated_counts,
+            unchanged=unchanged_counts,
+            conflicts=conflict_counts,
+            rejected=total_conflicts,
+            warnings=res["warnings"],
+            errors=errors,
+            file_sha256=file_sha256,
+        )
+
+    except Exception:
+        session.rollback()
+        raise
+
+
+def commit_workbook(session: Session, file_bytes: bytes, import_type: str, filename: str = "import.xlsx", mode: str = "upsert") -> ImportCommitResponse:
+    admin_user = session.exec(select(User)).first()
+    user_id = admin_user.id if admin_user else 1
+    return commit_workbook_for_coordination(
+        session=session,
+        file_bytes=file_bytes,
+        import_type=import_type,
+        coordination_id=None,
+        user_id=user_id,
+        filename=filename,
+        mode=mode,
+        is_global=True,
     )
+

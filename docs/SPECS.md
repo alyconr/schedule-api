@@ -1151,3 +1151,51 @@ Está documentada.
 Funciona en entorno Docker.
 Puede desplegarse en Dokploy.
 Cumple los criterios de aceptación definidos.
+---
+21. Gobernanza de importaciones por coordinación
+
+### 21.1 Principio de operación
+El sistema opera en un único centro de formación SENA (no multi-tenant), pero con un aislamiento lógico estricto por coordinación para la carga de datos maestros e históricos. Cada coordinación puede importar sus archivos Excel de programación sin sobrescribir, desactivar o alterar los datos cargados por otras coordinaciones.
+
+### 21.2 Clasificación de entidades
+Las entidades del sistema se dividen en tres categorías respecto a la importación:
+
+1. **Entidades Globales Compartidas (Centro de Formación)**
+   - `TrainingProgram`, `Competency`, `LearningResult`, `Topic`, `AcademicPeriod`, `ContractType`.
+   - *Política:* Si ya existen con la misma clave natural institucional (e.g. código de programa, código de competencia, año+trimestre), son reutilizadas transversalmente por todas las coordinaciones.
+   - Si la fila entrante no altera atributos estructurales, no genera conflicto. Si intenta modificar un dato canónico central (ej. cambiar nombre oficial de un programa o capacidad máxima base) de forma incompatible, se genera un conflicto y no se altera el registro maestro.
+
+2. **Entidades con Titularidad Exclusiva (Scoped)**
+   - `Group` (Fichas) y `Schedule` (Sesiones de Horario).
+   - *Política:* Cada ficha pertenece a una única coordinación (`Group.coordination_id`).
+   - El parámetro `coordination_id` enviado en el endpoint (validado con `AccessScope`) es la **fuente de verdad** para la autorización y titularidad.
+   - Si un archivo de la Coordinación A contiene una ficha que ya pertenece a la Coordinación B, el sistema genera `CONFLICT` y **rechaza terminantemente** su modificación o reapropiación.
+   - Si una ficha ya pertenece a la coordinación activa, se actualizan sus atributos de manera no destructiva.
+   - Las nuevas fichas se asignan obligatoriamente a la coordinación activa del importador.
+
+3. **Recursos Físicos y Humanos Compartidos (Relaciones M:N)**
+   - `Instructor` e `InstructorCoordination`:
+     - El instructor tiene un registro maestro único (clave: `document_number`).
+     - Al importar un instructor en la coordinación C, el sistema crea o mantiene el registro del instructor y vincula automáticamente la relación `InstructorCoordination(instructor_id, coordination_id=C)`.
+     - Si el instructor ya existe, sus datos de contacto no destructivos se fusionan; si existe una discrepancia incompatible (ej. nombres o emails incompatibles), se preserva el maestro existente y se reporta en auditoría.
+   - `Environment` y `EnvironmentCoordination`:
+     - El ambiente físico tiene un registro maestro único (clave: `code`).
+     - Al importarse en la coordinación C, el sistema asegura el registro del ambiente y crea el vínculo `EnvironmentCoordination(environment_id, coordination_id=C)`.
+     - Si dos coordinaciones usan el mismo ambiente, ambas conservan acceso a él mediante sus relaciones puente sin duplicar el ambiente en la base de datos.
+     - Si un archivo intenta forzar un cambio de capacidad incompatible sobre un ambiente físico ya existente, se conserva la capacidad maestra previa y se reporta el conflicto.
+
+### 21.3 Estrategia de fusión segura (`safe_merge`)
+- **Carácter No Destructivo:** La ausencia de un registro (instructor, ficha, ambiente) en un archivo nuevo de importación **NUNCA** elimina, desvincula ni desactiva registros previamente existentes en la base de datos.
+- **Protección contra campos vacíos:** Valores vacíos, celdas en blanco o nulos en el Excel **NUNCA** sobrescriben información existente en la base de datos (`merge_field`).
+- **Idempotencia:** Cargar el mismo archivo por segunda vez resulta en `created=0`, `updated=0`, `unchanged=N`, sin duplicación de registros ni modificaciones innecesarias.
+
+### 21.4 Manejo de duplicados dentro del mismo archivo
+- **Filas vacías:** Las filas sin clave natural (sin número de ficha, sin documento de instructor, etc.) se descartan silenciosamente sin error.
+- **Duplicados idénticos:** Múltiples filas en el mismo archivo con la misma clave y valores compatibles se procesan una sola vez y generan una advertencia informativa (`ImportIssue` con `warning`).
+- **Duplicados contradictorios:** Si en el mismo archivo la misma entidad aparece con valores mutuamente contradictorios (ej. el mismo código con dos programas distintos), la importación se detiene con error bloqueante (`ImportIssue` con `error`).
+
+### 21.5 Transaccionalidad y Concurrencia
+- **Transacción Atómica Única:** Todo el procesamiento del archivo (`commit_workbook_for_coordination`) se ejecuta en una única transacción de base de datos (`session.flush()`). No existen commits parciales dentro de bucles. En caso de fallo o excepción crítica, se produce un rollback completo del lote.
+- **Control de Lote (`ImportBatch`):** Cada importación ejecutada registra su hash `file_hash` (SHA-256), `coordination_id`, `user_id`, `filename`, `summary` y estado (`completed`, `failed`).
+- **Trazabilidad a Nivel de Fila (`ImportBatchRecord`):** Cada entidad creada o modificada registra `entity_type`, `entity_id`, `action` (`created`, `updated`, `skipped`, `conflict`), fingerprint antes (`before_hash`) y después (`after_hash`), garantizando auditoría completa.
+

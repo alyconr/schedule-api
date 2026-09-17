@@ -546,7 +546,9 @@ class ImportsRoutesAndServiceTest(unittest.TestCase):
             self.assertEqual(total_ras_1, total_ras_2)
             self.assertEqual(total_topics_1, total_topics_2)
             self.assertEqual(total_rels_1, total_rels_2)
-            self.assertGreater(res2.updated["groups"], 0)
+            self.assertEqual(res2.created.get("groups", 0), 0)
+            self.assertGreater(res2.unchanged.get("groups", 0) + res2.updated.get("groups", 0), 0)
+
 
     def test_institutional_period_validation_vs_calendar(self) -> None:
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False})

@@ -14,7 +14,8 @@ from app.models.academic import (
 from app.models.schedules import Schedule, ScheduleValidation, ExceptionRequest
 from app.models.audit import AuditLog
 from app.models.auth import User, Role, UserRole
-from app.models.coordination import Coordination, UserCoordination, InstructorCoordination
+from app.models.coordination import Coordination, UserCoordination, InstructorCoordination, EnvironmentCoordination
+from app.models.imports import ImportBatch, ImportBatchRecord
 
 __all__ = [
     "ContractType",
@@ -38,4 +39,8 @@ __all__ = [
     "Coordination",
     "UserCoordination",
     "InstructorCoordination",
+    "EnvironmentCoordination",
+    "ImportBatch",
+    "ImportBatchRecord",
 ]
+

@@ -28,6 +28,20 @@ from app.services.imports.workbook_profile import (
     SheetDefinition,
     WorkbookProfileDetector,
 )
+from app.services.imports.safe_merge import (
+    compute_file_sha256,
+    compute_record_fingerprint,
+    merge_field,
+    deduplicate_records,
+    ClassifiedRecord,
+    classify_group,
+    classify_instructor,
+    classify_environment,
+    classify_training_program,
+    classify_academic_period,
+    classify_contract_type,
+    classify_generic_global_entity,
+)
 
 __all__ = [
     "PROGRAM_ALIASES",
@@ -53,4 +67,17 @@ __all__ = [
     "SemaforoSheetConfig",
     "SheetDefinition",
     "WorkbookProfileDetector",
+    "compute_file_sha256",
+    "compute_record_fingerprint",
+    "merge_field",
+    "deduplicate_records",
+    "ClassifiedRecord",
+    "classify_group",
+    "classify_instructor",
+    "classify_environment",
+    "classify_training_program",
+    "classify_academic_period",
+    "classify_contract_type",
+    "classify_generic_global_entity",
 ]
+

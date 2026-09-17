@@ -33,3 +33,13 @@ class InstructorCoordination(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     instructor_id: int = Field(foreign_key="instructors.id")
     coordination_id: int = Field(foreign_key="coordinations.id")
+
+
+class EnvironmentCoordination(SQLModel, table=True):
+    __tablename__ = "environment_coordinations"
+    __table_args__ = (UniqueConstraint("environment_id", "coordination_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    environment_id: int = Field(foreign_key="environments.id")
+    coordination_id: int = Field(foreign_key="coordinations.id")
+

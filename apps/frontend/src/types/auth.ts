@@ -23,6 +23,15 @@ export interface CurrentUser {
   scope: AccessScope;
 }
 
+export type Specialty = {
+  id: number;
+  coordination_id: number;
+  code: string;
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+};
+
 export type Role = {
   id: number;
   name: string;
@@ -34,6 +43,13 @@ export type User = {
   id: number;
   email: string;
   full_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  coordination_id?: number | null;
+  specialty_id?: number | null;
+  coordination_name?: string | null;
+  specialty_name?: string | null;
   roles: string[];
   coordination_ids: number[];
   is_active: boolean;
@@ -43,8 +59,14 @@ export type User = {
 
 export type UserCreate = {
   email: string;
-  full_name: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
   password: string;
+  confirm_password?: string;
+  coordination_id?: number | null;
+  specialty_id?: number | null;
   roles: string[];
   coordination_ids: number[];
 };
@@ -52,8 +74,15 @@ export type UserCreate = {
 export type UserUpdate = {
   email?: string;
   full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
   password?: string;
+  confirm_password?: string;
+  coordination_id?: number | null;
+  specialty_id?: number | null;
   is_active?: boolean;
   roles?: string[];
   coordination_ids?: number[];
 };
+

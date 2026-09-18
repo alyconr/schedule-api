@@ -13,10 +13,12 @@ from app.services.auth_service import decode_access_token
 security = HTTPBearer(auto_error=False)
 SessionDep = Annotated[Session, Depends(get_session)]
 
-ROLE_READ = ("admin", "coordinador", "programador", "consulta")
-ROLE_WRITE = ("admin", "coordinador", "programador")
-ROLE_DELETE = ("admin", "coordinador")
+ROLE_READ = ("superadmin", "admin", "coordinador", "programador", "consulta", "lider_equipo", "usuario_adicional")
+ROLE_WRITE = ("superadmin", "admin", "coordinador", "programador", "lider_equipo", "usuario_adicional")
+ROLE_DELETE = ("superadmin", "admin", "coordinador")
 ADMIN_ROLE = "admin"
+ADMIN_ROLES = ("superadmin", "admin")
+
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,8 @@ def get_current_access_scope(
     session: SessionDep,
 ) -> AccessScope:
     roles = frozenset(_load_user_roles(session, current_user.id))
-    is_global = ADMIN_ROLE in roles
+    is_global = bool(roles & frozenset(ADMIN_ROLES))
+
     coordination_ids = frozenset(_load_user_coordination_ids(session, current_user.id))
     return AccessScope(
         user_id=current_user.id,

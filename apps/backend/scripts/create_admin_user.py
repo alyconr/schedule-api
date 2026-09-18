@@ -28,14 +28,53 @@ def main() -> None:
         print("ERROR: ADMIN_PASSWORD must be at least 8 characters")
         sys.exit(1)
 
-    role_names = ["admin", "coordinador", "programador", "consulta"]
+    role_names = [
+        "superadmin",
+        "admin",
+        "lider_equipo",
+        "usuario_adicional",
+        "coordinador",
+        "programador",
+        "consulta",
+    ]
+
+    from app.models import Coordination, Specialty
 
     with Session(engine) as session:
         for name in role_names:
             existing = session.exec(select(Role).where(Role.name == name)).first()
             if not existing:
-                session.add(Role(name=name, description=f"Rol {name}"))
+                session.add(Role(name=name, description=f"Rol {name.replace('_', ' ').title()}"))
                 print(f"Created role: {name}")
+
+        # Seed initial coordinations if missing
+        initial_coords = [
+            ("TELEINFORMATICA", "Teleinformática", "Coordinación de Teleinformática"),
+            ("INDUSTRIAS_CREATIVAS", "Industrias Creativas", "Coordinación de Industrias Creativas"),
+            ("LOGISTICA", "Logística", "Coordinación de Logística"),
+            ("MERCADEO", "Mercadeo", "Coordinación de Mercadeo"),
+            ("TRANSVERSALES", "Transversales", "Coordinación de Transversales"),
+        ]
+        for code, name, desc in initial_coords:
+            coord = session.exec(select(Coordination).where(Coordination.code == code)).first()
+            if not coord:
+                coord = Coordination(code=code, name=name, description=desc)
+                session.add(coord)
+                session.flush()
+                print(f"Created coordination: {name}")
+
+        # Seed initial specialties for Teleinformatica
+        teleinfo = session.exec(select(Coordination).where(Coordination.code == "TELEINFORMATICA")).first()
+        if teleinfo:
+            sample_specs = [
+                ("REDES_DATOS", "Redes de Datos"),
+                ("ADSO", "Análisis y Desarrollo de Software"),
+            ]
+            for scode, sname in sample_specs:
+                spec = session.exec(select(Specialty).where(Specialty.code == scode)).first()
+                if not spec:
+                    session.add(Specialty(coordination_id=teleinfo.id, code=scode, name=sname))
+                    print(f"Created specialty for {teleinfo.name}: {sname}")
 
         admin_role = session.exec(select(Role).where(Role.name == "admin")).first()
         if not admin_role:
@@ -59,6 +98,7 @@ def main() -> None:
         session.commit()
 
     print("Done.")
+
 
 
 if __name__ == "__main__":

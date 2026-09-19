@@ -16,9 +16,3 @@ export async function updateCoordination(id: number, data: { code?: string; name
 export async function deleteCoordination(id: number): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>(`/coordinations/${id}`, { method: "DELETE" });
 }
-
-export async function fetchSpecialties(coordinationId?: number): Promise<import("../types/auth").Specialty[]> {
-  const query = coordinationId ? `?coordination_id=${coordinationId}` : "";
-  return apiRequest<import("../types/auth").Specialty[]>(`/specialties${query}`);
-}
-

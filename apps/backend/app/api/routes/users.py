@@ -1,12 +1,12 @@
-from typing import Annotated, Optional
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import require_roles, CurrentUserDep, SessionDep, ADMIN_ROLES
+from app.api.deps import require_roles, CurrentUserDep, SessionDep
 from app.db import get_session
-from app.models import Coordination, Role, User, UserCoordination, UserRole, Specialty
+from app.models import Coordination, Role, User, UserCoordination, UserRole
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
 from app.services.auth_service import hash_password
 
@@ -20,30 +20,10 @@ def _user_to_response(user: User, session: Session) -> UserResponse:
     coordination_ids = session.exec(
         select(UserCoordination.coordination_id).where(UserCoordination.user_id == user.id)
     ).all()
-
-    coord_name: Optional[str] = None
-    if user.coordination_id:
-        coord = session.get(Coordination, user.coordination_id)
-        if coord:
-            coord_name = coord.name
-
-    spec_name: Optional[str] = None
-    if user.specialty_id:
-        spec = session.get(Specialty, user.specialty_id)
-        if spec:
-            spec_name = spec.name
-
     return UserResponse(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        phone=user.phone,
-        coordination_id=user.coordination_id,
-        specialty_id=user.specialty_id,
-        coordination_name=coord_name,
-        specialty_name=spec_name,
         is_active=user.is_active,
         roles=list(roles),
         coordination_ids=list(coordination_ids),
@@ -55,24 +35,10 @@ def _user_to_response(user: User, session: Session) -> UserResponse:
 def _resolve_roles(session: Session, role_names: list[str]) -> list[Role]:
     role_names = list(dict.fromkeys(role_names))
     roles = []
-    known_roles = {
-        "superadmin": "Rol Superadministrador",
-        "admin": "Rol Administrador (Equipo Pedagógico)",
-        "lider_equipo": "Rol Líder de Equipo Ejecutor",
-        "usuario_adicional": "Rol Usuario Adicional de Apoyo",
-        "coordinador": "Rol Coordinador",
-        "programador": "Rol Programador",
-        "consulta": "Rol Consulta",
-    }
     for name in role_names:
         role = session.exec(select(Role).where(Role.name == name)).first()
         if not role:
-            if name in known_roles:
-                role = Role(name=name, description=known_roles[name])
-                session.add(role)
-                session.flush()
-            else:
-                raise HTTPException(422, detail=f"Role '{name}' does not exist")
+            raise HTTPException(422, detail=f"Role '{name}' does not exist")
         roles.append(role)
     return roles
 
@@ -95,22 +61,13 @@ def _sync_user_coordinations(session: Session, user_id: int, coordination_ids: l
         session.add(UserCoordination(user_id=user_id, coordination_id=cid))
 
 
-@router.get("", dependencies=[Depends(require_roles(*ADMIN_ROLES))])
-def list_users(
-    session: SessionDep,
-    coordination_id: Optional[int] = Query(default=None),
-    specialty_id: Optional[int] = Query(default=None),
-) -> list[UserResponse]:
-    query = select(User)
-    if coordination_id is not None:
-        query = query.where(User.coordination_id == coordination_id)
-    if specialty_id is not None:
-        query = query.where(User.specialty_id == specialty_id)
-    users = session.exec(query).all()
+@router.get("", dependencies=[Depends(require_roles("admin"))])
+def list_users(session: SessionDep) -> list[UserResponse]:
+    users = session.exec(select(User)).all()
     return [_user_to_response(u, session) for u in users]
 
 
-@router.get("/{user_id}", dependencies=[Depends(require_roles(*ADMIN_ROLES))])
+@router.get("/{user_id}", dependencies=[Depends(require_roles("admin"))])
 def get_user(user_id: int, session: SessionDep) -> UserResponse:
     user = session.get(User, user_id)
     if not user:
@@ -118,44 +75,14 @@ def get_user(user_id: int, session: SessionDep) -> UserResponse:
     return _user_to_response(user, session)
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_roles(*ADMIN_ROLES))])
+@router.post("", status_code=201, dependencies=[Depends(require_roles("admin"))])
 def create_user(payload: UserCreate, session: SessionDep) -> UserResponse:
     roles = _resolve_roles(session, payload.roles)
-    role_names = {r.name for r in roles}
-
-    # Strict check: Leader or Additional User requires coordination and specialty
-    if any(r in {"lider_equipo", "usuario_adicional"} for r in role_names):
-        if not payload.coordination_id:
-            raise HTTPException(422, detail="La coordinación es obligatoria para Líder de equipo o Usuario adicional")
-        if not payload.specialty_id:
-            raise HTTPException(422, detail="La especialidad es obligatoria para Líder de equipo o Usuario adicional")
-
-    if payload.coordination_id:
-        coord = session.get(Coordination, payload.coordination_id)
-        if not coord or not coord.is_active:
-            raise HTTPException(422, detail="La coordinación seleccionada no existe o está inactiva")
-
-    if payload.specialty_id:
-        specialty = session.get(Specialty, payload.specialty_id)
-        if not specialty or not specialty.is_active:
-            raise HTTPException(422, detail="La especialidad seleccionada no existe o está inactiva")
-        if payload.coordination_id and specialty.coordination_id != payload.coordination_id:
-            raise HTTPException(422, detail="La especialidad no pertenece a la coordinación seleccionada")
-
-    effective_coord_ids = list(payload.coordination_ids)
-    if payload.coordination_id and payload.coordination_id not in effective_coord_ids:
-        effective_coord_ids.append(payload.coordination_id)
-
-    coordinations = _resolve_coordinations(session, effective_coord_ids)
+    coordinations = _resolve_coordinations(session, payload.coordination_ids)
 
     user = User(
         email=payload.email,
         full_name=payload.full_name,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
-        phone=payload.phone,
-        coordination_id=payload.coordination_id,
-        specialty_id=payload.specialty_id,
         hashed_password=hash_password(payload.password),
     )
     try:
@@ -173,14 +100,14 @@ def create_user(payload: UserCreate, session: SessionDep) -> UserResponse:
     return _user_to_response(user, session)
 
 
-@router.put("/{user_id}", dependencies=[Depends(require_roles(*ADMIN_ROLES))])
+@router.put("/{user_id}", dependencies=[Depends(require_roles("admin"))])
 def update_user(
     user_id: int,
     payload: UserUpdate,
     session: SessionDep,
     current_user: CurrentUserDep,
 ) -> UserResponse:
-    if user_id == current_user.id and payload.roles is not None and not any(r in ADMIN_ROLES for r in payload.roles):
+    if user_id == current_user.id and payload.roles is not None and "admin" not in payload.roles:
         raise HTTPException(422, detail="You cannot remove your own admin role")
 
     user = session.get(User, user_id)
@@ -191,24 +118,11 @@ def update_user(
     if payload.roles is not None:
         resolved_roles = _resolve_roles(session, payload.roles)
 
-    if payload.coordination_id:
-        coord = session.get(Coordination, payload.coordination_id)
-        if not coord or not coord.is_active:
-            raise HTTPException(422, detail="La coordinación seleccionada no existe o está inactiva")
-
-    if payload.specialty_id:
-        specialty = session.get(Specialty, payload.specialty_id)
-        if not specialty or not specialty.is_active:
-            raise HTTPException(422, detail="La especialidad seleccionada no existe o está inactiva")
-        effective_coord_id = payload.coordination_id or user.coordination_id
-        if effective_coord_id and specialty.coordination_id != effective_coord_id:
-            raise HTTPException(422, detail="La especialidad no pertenece a la coordinación seleccionada")
-
     resolved_coordinations: list[Coordination] | None = None
     if payload.coordination_ids is not None:
         resolved_coordinations = _resolve_coordinations(session, payload.coordination_ids)
 
-    update_data = payload.model_dump(exclude_unset=True, exclude={"roles", "coordination_ids", "confirm_password"})
+    update_data = payload.model_dump(exclude_unset=True, exclude={"roles", "coordination_ids"})
     if "password" in update_data and update_data["password"] is not None:
         update_data["hashed_password"] = hash_password(update_data.pop("password"))
 
@@ -234,7 +148,7 @@ def update_user(
     return _user_to_response(user, session)
 
 
-@router.delete("/{user_id}", dependencies=[Depends(require_roles(*ADMIN_ROLES))])
+@router.delete("/{user_id}", dependencies=[Depends(require_roles("admin"))])
 def delete_user(
     user_id: int,
     session: SessionDep,
@@ -249,4 +163,4 @@ def delete_user(
     user.is_active = False
     session.add(user)
     session.commit()
-    return {"ok": True}
+    return {"ok": True}
